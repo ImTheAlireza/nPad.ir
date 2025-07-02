@@ -26,6 +26,18 @@ function debounce(func, wait) {
   };
 }
 
+// IndexedDB Setup
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('npadDB', 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('notes', { keyPath: 'id' });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 // ========== Core Functions ==========
 function toggleDropdown(listId) {
   const list = document.getElementById(listId);
@@ -153,10 +165,19 @@ function showAutosaveStatus(msg) {
   setTimeout(() => autosaveStatusEl.classList.remove('visible'), 2000);
 }
 
-function autosaveContent() {
-  const content = editor.innerHTML;
-  localStorage.setItem('npad-content', content);
-  showAutosaveStatus('Draft Saved.');
+async function autosaveContent() {
+  try {
+    const content = DOMPurify.sanitize(editor.innerHTML);
+    const compressed = LZString.compress(content);
+    const db = await openDB();
+    const tx = db.transaction('notes', 'readwrite');
+    const store = tx.objectStore('notes');
+    await store.put({ id: 'current', content: compressed });
+    showAutosaveStatus('Draft Saved.');
+  } catch (error) {
+    console.error('Autosave failed:', error);
+    showAutosaveStatus('Autosave failed.');
+  }
 }
 
 function triggerAutosave() {
@@ -193,21 +214,50 @@ function updateToolbarStates() {
   }
 }
 
-function loadInitialState() {
+async function loadInitialState() {
   console.log('Loading initial state...');
   document.getElementById('year').textContent = new Date().getFullYear();
 
-  const savedContent = localStorage.getItem('npad-content');
-  if (savedContent) {
-    editor.innerHTML = savedContent;
-    console.log('Loaded saved content from localStorage');
+  async function loadContent() {
+    try {
+      console.log('Attempting to load content from IndexedDB...');
+      const db = await openDB();
+      const tx = db.transaction('notes', 'readonly');
+      const store = tx.objectStore('notes');
+      const request = store.get('current');
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => {
+          const data = request.result;
+          if (data && data.content) {
+            const decompressed = LZString.decompress(data.content);
+            if (decompressed) {
+              editor.innerHTML = DOMPurify.sanitize(decompressed);
+              console.log('Loaded sanitized content from IndexedDB');
+            } else {
+              console.log('No valid content found in IndexedDB');
+            }
+            resolve();
+          } else {
+            console.log('No content found in IndexedDB');
+            resolve();
+          }
+        };
+        request.onerror = () => {
+          console.error('Failed to load content from IndexedDB:', request.error);
+          resolve(); // Continue even if error occurs
+        };
+      });
+    } catch (error) {
+      console.error('Error in loadContent:', error);
+    }
   }
+  await loadContent();
 
   const isDarkMode = localStorage.getItem('npad-dark-mode') === 'true';
   if (isDarkMode) {
     document.body.classList.add('dark-mode');
-    darkModeIcon.classList.remove('fa-moon');
-    darkModeIcon.classList.add('fa-sun');
+    document.querySelector('.dark-mode-toggle i').classList.remove('fa-moon');
+    document.querySelector('.dark-mode-toggle i').classList.add('fa-sun');
     console.log('Dark mode enabled from localStorage');
   }
 
@@ -226,9 +276,9 @@ function loadInitialState() {
   const savedDirection = localStorage.getItem('npad-direction') || 'ltr';
   editor.style.direction = savedDirection;
   if (savedDirection === 'rtl') {
-    document.getElementById('directionRTL').classList.add('active');
+    document.getElementById('directionRTL')?.classList.add('active');
   } else {
-    document.getElementById('directionLTR').classList.add('active');
+    document.getElementById('directionLTR')?.classList.add('active');
   }
   console.log(`Text direction set to: ${savedDirection}`);
 
@@ -255,8 +305,11 @@ function openFile(event) {
   const proceed = () => {
     const reader = new FileReader();
     reader.onload = function (e) {
-      editor.innerText = e.target.result;
+      editor.innerHTML = DOMPurify.sanitize(e.target.result);
       console.log(`File opened: ${file.name}`);
+    };
+    reader.onerror = function () {
+      alert('Error reading file.');
     };
     reader.readAsText(file);
   };
@@ -271,7 +324,6 @@ function openFile(event) {
   proceed();
   event.target.value = "";
 }
-
 function undoAction() {
   document.execCommand('undo', false, null);
   console.log('Undo action performed');
@@ -504,18 +556,16 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  editor.addEventListener('input', () => {
+  const debounceUpdate = debounce(() => {
+    updateToolbarStates();
+    updateLiveCount();
     resetIdleTimer();
-    console.log('Editor input event triggered');
-  });
-  editor.addEventListener('keyup', () => {
-    updateToolbarStates();
-    console.log('Editor keyup event triggered');
-  });
-  editor.addEventListener('mouseup', () => {
-    updateToolbarStates();
-    console.log('Editor mouseup event triggered');
-  });
+    console.log('Editor event triggered (debounced)');
+  }, 100);
+
+  editor.addEventListener('input', debounceUpdate);
+  editor.addEventListener('keyup', debounceUpdate);
+  editor.addEventListener('mouseup', debounceUpdate);
 
   const toolbar = document.querySelector('.toolbar');
   toolbar.addEventListener('click', (e) => {
@@ -527,19 +577,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const style = document.createElement('style');
   style.textContent = `
-	.mobile-toolbar {
-	  position: fixed;
-	  bottom: 20px;
-	  left: 10%;
-	  right: 0;
-	  width: 80%;
-	  box-sizing: border-box;
-	  transform: translateY(0%);
-	  transition: transform 0.2s ease;
-	}
-	.mobile-toolbar.keyboard-active {
-	  transform: translateY(calc(-1 * var(--keyboard-height, 0px)));
-	}
+    .mobile-toolbar {
+      position: fixed;
+      bottom: 20px;
+      left: 10%;
+      right: 0;
+      width: 80%;
+      box-sizing: border-box;
+      transform: translateY(0%);
+      transition: transform 0.2s ease;
+    }
+    .mobile-toolbar.keyboard-active {
+      transform: translateY(calc(-1 * var(--keyboard-height, 0px)));
+    }
   `;
   document.head.appendChild(style);
   console.log('Dynamic CSS for mobile-toolbar positioning added');
