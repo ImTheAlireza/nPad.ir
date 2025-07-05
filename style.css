@@ -17,6 +17,11 @@
 	--dark-subtle: rgba(209, 213, 219, 0.5);
 	--blur: blur(20px);
 	--transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	
+		--site-header-margin-bottom: 20px;
+	--npad-font-size: 100px;
+	--ir-font-size: 50px;
+	--h3-font-size: 22px;
 }
 
 * {
@@ -34,9 +39,9 @@ body {
 	flex-direction: column;
 	align-items: center;
 	padding: 24px;
-
 	position: relative;
 }
+
 
 body.dark-mode {
 	background: var(--dark-bg);
@@ -900,22 +905,98 @@ body.dark-mode .mobile-control-label {
 	color: var(--dark-subtle);
 }
 
+
+.site-header {
+	max-width: 960px;
+	width: 100%;
+	text-align: center;
+	margin-bottom: var(--site-header-margin-bottom);
+	font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.site-header h1 {
+    margin: 0;
+    line-height: 1;
+}
+
+.site-header .npad {
+    font-size: var(--npad-font-size);
+    font-weight: 600;
+    color: var(--light-accent);
+}
+
+.site-header .ir {
+    font-size: var(--ir-font-size);
+    font-weight: 600;
+    color: var(--light-text);
+}
+
+.site-header h3 {
+	font-size: var(--h3-font-size);
+    font-weight: 600;
+    color: var(--light-subtle);
+    margin: 8px 0 0;
+}
+
+body.dark-mode .site-header .npad,
+body.dark-mode .site-header .ir {
+    color: var(--dark-text);
+}
+
+body.dark-mode .site-header h3 {
+    color: var(--dark-subtle);
+}
+
+.site-header {
+	max-width: 960px;
+	width: 100%;
+	text-align: center;
+	margin-bottom: var(--site-header-margin-bottom);
+	font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.site-header h1 {
+    margin: 0;
+    line-height: 1;
+}
+
+.site-header .npad {
+    font-size: var(--npad-font-size);
+    font-weight: 600;
+    color: var(--light-accent);
+}
+
+.site-header .ir {
+    font-size: var(--ir-font-size);
+    font-weight: 600;
+    color: var(--light-text);
+}
+
+.site-header h3 {
+	font-size: var(--h3-font-size);
+    font-weight: 600;
+    color: var(--light-subtle);
+    margin: 8px 0 0;
+}
+
+body.dark-mode .site-header .npad,
+body.dark-mode .site-header .ir {
+    color: var(--dark-text);
+}
+
+body.dark-mode .site-header h3 {
+    color: var(--dark-subtle);
+}
+
 @media (max-width: 994px) {
-	
-	.site-header {
-	margin-bottom: 0px;
-    }
-    .site-header .npad {
-        font-size: 60px;
-			
-    }
-    .site-header .ir {
-        font-size: 16px;
-    }
-    .site-header h3 {
-        font-size: 20px;
-    }
-    .editor {
+	:root {
+		--site-header-margin-bottom: 0;
+		--npad-font-size: 60px;
+		--ir-font-size: 16px;
+		--h3-font-size: 20px;
+	}
+
+	.editor {
         margin-top: 80px;
     }
     .toolbar {
@@ -948,55 +1029,12 @@ body.dark-mode .mobile-control-label {
         right: 16px;
     }
     .editor {
-        margin-bottom: 0px;
+        margin-bottom: 0;
         margin-top: 40px;
     }
     #editor {
         height: 90%;
         padding-bottom: 10px;
     }
-
-}
-.site-header {
-	max-width: 960px;
-	width: 100%;
-	text-align: center;
-	margin-bottom: 20px;
-	font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
-
-}
-
-
-.site-header h1 {
-    margin: 0;
-    line-height: 1;
-}
-
-.site-header .npad {
-    font-size: 100px;
-    font-weight: 600;
-    color: var(--light-accent);
-}
-
-.site-header .ir {
-    font-size: 50px;
-    font-weight: 600;
-    color: var(--light-text);
-}
-
-.site-header h3 {
-	font-size: 22px;
-    font-weight: 600;
-    color: var(--light-subtle);
-    margin: 8px 0 0;
-}
-
-body.dark-mode .site-header .npad,
-body.dark-mode .site-header .ir {
-    color: var(--dark-text);
-}
-
-body.dark-mode .site-header h3 {
-    color: var(--dark-subtle);
 }
 
