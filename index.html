@@ -1,335 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
-   <head>
-      <meta charset="UTF-8" />
-     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Notepad</title>
-      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
-      <link rel="stylesheet" href="style.css?v=1">
-      <script src="script.js" defer></script>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
-   </head>
-   <body>
-      <div class="autosave-status" id="autosave-status" role="status" aria-live="polite">Draft Saved.</div>
-<div class="site-header">
-    <h1><span class="npad">nPad</span><span class="ir">.ir</span></h1>
-    <h3>Private and Simple Online Notepad</h3>
-</div>
-      <div class="dark-mode-toggle" onclick="toggleDarkMode()" role="button" aria-label="Toggle dark mode">
-         <div class="slider">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Custom Text Editor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri&family=Lateef&family=Rokh&family=Vazirmatn:wght@400;700&display=swap">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.0.17/purify.min.js"></script>
+
+
+
+
+</head>
+<body>
+    <div id="navbar">
+        <div style="display: flex;">
+            <div class="dropdown">
+                <button class="dropbtn">File</button>
+                <div class="dropdown-content">
+                    <a href="#" onclick="newFile()">New</a>
+                    <a href="#" onclick="openFile()">Open</a>
+                    <a href="#" onclick="saveFile()">Save TXT</a>
+					<a href="#" onclick="openShareModal()">Share</a>
+                    <a href="#" onclick="printFile()">Print</a>
+                    <a href="#" onclick="showDetails()">Details</a>
+                </div>
+            </div>
+            <div class="dropdown">
+                <button class="dropbtn">Edit</button>
+                <div class="dropdown-content">
+                    <a href="#" onclick="copyText()">Copy</a>
+                    <a href="#" onclick="cutText()">Cut</a>
+                    <a href="#" onclick="pasteText()">Paste</a>
+                    <a href="#" onclick="pasteWithoutFormatting()">Paste Without Formatting</a>
+                    <a href="#" onclick="selectAll()">Select All</a>
+                </div>
+            </div>
+        </div>
+        <div class="dark-mode-toggle">
             <i class="fas fa-moon"></i>
-         </div>
-      </div>
-<div class="file-actions" role="region" aria-label="File actions">
-   <div class="left-buttons">
-      <button onclick="newFile()" aria-label="Create new file"><i class="fas fa-file"></i> New File</button>
-      <label for="fileInput" class="icon-button" style="padding: 10px 16px; width: auto; display: flex; align-items: center; gap: 6px;" aria-label="Open file">
-         <input type="file" id="fileInput" style="display: none" accept="text/plain" onchange="openFile(event)" />
-         <i class="fas fa-folder-open" style="margin-right: 1px;"></i> Open
-      </label>
-   </div>
-   <div class="right-buttons">
-      <button onclick="downloadNote()" aria-label="Download as text file"><i class="fas fa-download"></i> Download as .txt</button>
-      <button onclick="printNote()" aria-label="Print note"><i class="fas fa-print"></i> Print</button>
-   </div>
+            <input type="checkbox" id="darkModeToggle">
+            <label for="darkModeToggle"></label>
+        </div>
+    </div>
+    <div class="editor-wrapper">
+        <div id="toolbar">
+            <span class="button-group">
+                <select id="fontSelect" onchange="changeFont(this.value)">
+                    <option value="Arial">Arial</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Tahoma">Tahoma</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Lucida Sans Unicode">Lucida Sans Unicode</option>
+                    <option value="Trebuchet MS">Trebuchet MS</option>
+                    <option value="Impact">Impact</option>
+                    <option value="Palatino Linotype">Palatino Linotype</option>
+                    <option value="Garamond">Garamond</option>
+                    <option value="Vazirmatn">Vazirmatn</option>
+                    <option value="Lateef">Lateef</option>
+                    <option value="Amiri">Amiri</option>
+                    <option value="Rokh">Rokh</option>
+                </select>
+                <select id="sizeSelect">
+                    <option value="1">10px</option>
+                    <option value="2">13px</option>
+                    <option value="3">16px</option>
+                    <option value="4">18px</option>
+                    <option value="5">24px</option>
+                    <option value="6">32px</option>
+                    <option value="7">48px</option>
+                </select>
+            </span>
+            <span class="button-group">
+                <button id="boldBtn" title="Bold"><i class="fa-solid fa-bold"></i></button>
+                <button id="italicBtn" title="Italic"><i class="fa-solid fa-italic"></i></button>
+                <button id="underlineBtn" title="Underline"><i class="fa-solid fa-underline"></i></button>
+                <button id="strikeBtn" title="Strikethrough"><i class="fa-solid fa-strikethrough"></i></button>
+                <button id="subscriptBtn" title="Subscript"><i class="fa-solid fa-subscript"></i></button>
+                <button id="superscriptBtn" title="Superscript"><i class="fa-solid fa-superscript"></i></button>
+                <button id="bulletListBtn" title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
+                <button id="orderedListBtn" title="Ordered List"><i class="fa-solid fa-list-ol"></i></button>
+            </span>
+            <span class="button-group">
+                <button id="alignLeftBtn" title="Align Left"><i class="fa-solid fa-align-left"></i></button>
+                <button id="alignCenterBtn" title="Align Center"><i class="fa-solid fa-align-center"></i></button>
+                <button id="alignRightBtn" title="Align Right"><i class="fa-solid fa-align-right"></i></button>
+                <button id="alignJustifyBtn" title="Justify"><i class="fa-solid fa-align-justify"></i></button>
+            </span>
+            <span class="button-group">
+                <label for="foreColorInput" title="Text Color" style="display: flex; align-items: center; cursor: pointer; padding: 5px;">
+                    <span style="display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;">
+                        <i class="fa-solid fa-palette"></i>
+                    </span>
+                    <input type="color" id="foreColorInput" value="#333333">
+                </label>
+                <label for="backColorInput" title="Highlight Color" style="display: flex; align-items: center; cursor: pointer; padding: 5px;">
+                    <span style="display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;">
+                        <i class="fa-solid fa-fill-drip"></i>
+                    </span>
+                    <input type="color" id="backColorInput" value="#FFFF00">
+                </label>
+            </span>
+            <span class="button-group">
+                <button id="undoBtn" title="Undo"><i class="fa-solid fa-undo"></i></button>
+                <button id="redoBtn" title="Redo"><i class="fa-solid fa-redo"></i></button>
+            </span>
+            <span class="button-group">
+                <button id="indentBtn" title="Increase Indent"><i class="fa-solid fa-indent"></i></button>
+                <button id="outdentBtn" title="Decrease Indent"><i class="fa-solid fa-outdent"></i></button>
+            </span>
+            <span class="button-group">
+                <button id="createLinkBtn" title="Insert Link"><i class="fa-solid fa-link"></i></button>
+            </span>
+            <span class="button-group">
+                <button id="removeFormatBtn" title="Clear Formatting"><i class="fa-solid fa-eraser"></i></button>
+            </span>
+        </div>
+        <div id="editor" contenteditable="true" data-placeholder="Start typing here..."></div>
+        <div id="wordCountDisplay" style="margin-top: 10px; margin-left: 5px; font-size: 12px; color: #939393;">
+            Words: 0 - Characters: 0 | Selected words: 0 - Selected characters: 0
+        </div>
+        <div id="customModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <p id="modal-message">Message goes here</p>
+                <div id="modal-actions">
+                    <button id="modal-confirm">Confirm</button>
+                    <button id="modal-cancel">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<div id="shareConfirmModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeModal('shareConfirmModal')">&times;</span>
+    <p>
+      This action will upload your content to our server so you can share it.
+      No data will be sent unless you confirm. Do you want to continue?
+    </p>
+    <div id="modal-actions">
+      <button onclick="confirmShare()">Confirm</button>
+      <button id="modal-cancel" onclick="closeModal('shareConfirmModal')">Cancel</button>
+    </div>
+  </div>
 </div>
-	  
-<div class="toolbar" role="toolbar" aria-label="Text formatting toolbar">
-	<div class="tab">
-		<button class="tablinks" onclick="openTab(event, 'Home')" id="defaultOpen">Home</button>
-		<button class="tablinks" onclick="openTab(event, 'Insert')">Insert</button>
-		<button class="tablinks" onclick="openTab(event, 'Review')">Review</button>
-		<button class="tablinks" onclick="openTab(event, 'Format')">Format</button>
-		<button class="tablinks" onclick="openTab(event, 'View')">View</button>
-	</div>
-    <div id="Home" class="tabcontent">
-        <div class="toolbar-section">
-            <div class="toolbar-row">
-                <div class="dropdown-container">
-                    <input
-                     type="text"
-                     id="fontInput"
-                     class="dropdown-input"
-                     placeholder="Font"
-                     onchange="applyFont()"
-                     onclick="toggleDropdown('fontList')"
-                     value="Inter"
-                     readonly
-                     aria-label="Select font"
-                     />
-                  <ul id="fontList" class="dropdown-list" role="listbox" aria-label="Font options">
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Inter')" role="option" aria-selected="true">Inter</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Roboto')" role="option">Roboto</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Lora')" role="option">Lora</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Ubuntu Mono')" role="option">Ubuntu Mono</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Merriweather')" role="option">Merriweather</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Vazirmatn')" role="option">Vazirmatn</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Arial')" role="option">Arial</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Times New Roman')" role="option">Times New Roman</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Courier New')" role="option">Courier New</li>
-                     <li onmousedown="event.preventDefault()" onclick="selectFont('Verdana')" role="option">Verdana</li>
-                  </ul>
-               </div>
-               <div class="control-group" role="group" aria-label="Font size controls">
-                  <button onmousedown="event.preventDefault()" onclick="adjustValue('fontSize', -2)" aria-label="Decrease font size">
-                  <i class="fas fa-minus"></i>
-                  </button>
-                  <input type="text" id="fontSizeInput" class="control-input" value="16" readonly aria-label="Font size" />
-                  <button onmousedown="event.preventDefault()" onclick="adjustValue('fontSize', 2)" aria-label="Increase font size">
-                  <i class="fas fa-plus"></i>
-                  </button>
-               </div>
-               <button id="bold" onmousedown="event.preventDefault()" onclick="formatText('bold')" aria-label="Toggle bold" aria-pressed="false">
-               <i class="fas fa-bold"></i>
-               </button>
-               <button id="italic" onmousedown="event.preventDefault()" onclick="formatText('italic')" aria-label="Toggle italic" aria-pressed="false">
-               <i class="fas fa-italic"></i>
-               </button>
-               <button id="underline" onmousedown="event.preventDefault()" onclick="formatText('underline')" aria-label="Toggle underline" aria-pressed="false">
-               <i class="fas fa-underline"></i>
-               </button>
-               <button id="strikeThrough" onmousedown="event.preventDefault()" onclick="formatText('strikeThrough')" aria-label="Toggle strikethrough" aria-pressed="false">
-               <i class="fas fa-strikethrough"></i>
-               </button>
-               <button id="superscript" onmousedown="event.preventDefault()" onclick="formatText('superscript')" aria-label="Toggle superscript" aria-pressed="false">
-               <i class="fas fa-superscript"></i>
-               </button>
-               <button id="subscript" onmousedown="event.preventDefault()" onclick="formatText('subscript')" aria-label="Toggle subscript" aria-pressed="false">
-               <i class="fas fa-subscript"></i>
-               </button>
-            </div>
-            <div class="toolbar-section-title">Character</div>
-         </div>
-         <div class="toolbar-section">
-            <div class="toolbar-row">
-               <button id="justifyLeft" onmousedown="event.preventDefault()" onclick="formatText('justifyLeft')" aria-label="Align text left" aria-pressed="false">
-               <i class="fas fa-align-left"></i>
-               </button>
-               <button id="justifyCenter" onmousedown="event.preventDefault()" onclick="formatText('justifyCenter')" aria-label="Align text center" aria-pressed="false">
-               <i class="fas fa-align-center"></i>
-               </button>
-               <button id="justifyRight" onmousedown="event.preventDefault()" onclick="formatText('justifyRight')" aria-label="Align text right" aria-pressed="false">
-               <i class="fas fa-align-right"></i>
-               </button>
-               <button id="justifyFull" onmousedown="event.preventDefault()" onclick="formatText('justifyFull')" aria-label="Justify text fully" aria-pressed="false">
-               <i class="fas fa-align-justify"></i>
-               </button>
-               <button id="directionLTR" onmousedown="event.preventDefault()" onclick="formatText('directionLTR')" aria-label="Set text direction left-to-right" aria-pressed="true">
-               <i class="fas fa-paragraph"></i>
-               </button>
-               <button id="directionRTL" onmousedown="event.preventDefault()" onclick="formatText('directionRTL')" aria-label="Set text direction right-to-left" aria-pressed="false">
-               <i class="fas fa-paragraph" style="transform: scaleX(-1);"></i>
-               </button>
-            </div>
-            <div class="control-wrapper">
-               <div class="control-group" role="group" aria-label="Line spacing controls">
-                  <div class="control-label">Line</div>
-                  <button onmousedown="event.preventDefault()" onclick="adjustValue('lineSpacing', -0.2)" aria-label="Decrease line spacing">
-                  <i class="fas fa-minus"></i>
-                  </button>
-                  <input type="text" id="lineSpacingInput" class="control-input" value="1.2" readonly aria-label="Line spacing" />
-                  <button onmousedown="event.preventDefault()" onclick="adjustValue('lineSpacing', 0.2)" aria-label="Increase line spacing">
-                  <i class="fas fa-plus"></i>
-                  </button>
-               </div>
-               <div class="control-group" role="group" aria-label="Character spacing controls">
-                  <div class="control-label">Char</div>
-                  <button onmousedown="event.preventDefault()" onclick="adjustValue('charSpacing', -0.5)" aria-label="Decrease character spacing">
-                  <i class="fas fa-minus"></i>
-                  </button>
-                  <input type="text" id="charSpacingInput" class="control-input" value="0" readonly aria-label="Character spacing" />
-                  <button onmousedown="event.preventDefault()" onclick="adjustValue('charSpacing', 0.5)" aria-label="Increase character spacing">
-                  <i class="fas fa-plus"></i>
-                  </button>
-               </div>
-            </div>
-            <div class="toolbar-section-title">Paragraph</div>
-         </div>
-         <div class="toolbar-section">
-            <div class="toolbar-row">
-               <button class="square-button" onclick="formatText('insertOrderedList')" aria-label="Insert numbered list">
-               <i class="fas fa-list-ol"></i>
-               </button>
-               <button class="square-button" onclick="formatText('insertUnorderedList')" aria-label="Insert bullet list">
-               <i class="fas fa-list-ul"></i>
-               </button>
-               <button class="square-button" onclick="insertHorizontalRule()" aria-label="Insert horizontal line">
-               <i class="fas fa-minus"></i>
-               </button>
-               <button class="square-button" onclick="insertDateTime()" aria-label="Insert date and time">
-               <i class="fas fa-clock"></i>
-               </button>
-            </div>
-            <div class="toolbar-row">
-               <button class="square-button" onclick="showWordCount()" aria-label="Show word and character count">
-               <i class="fas fa-file-alt"></i>
-               </button>
-               <button class="square-button" onclick="undoAction()" aria-label="Undo">
-               <i class="fas fa-undo"></i>
-               </button>
-               <button class="square-button" onclick="redoAction()" aria-label="Redo">
-               <i class="fas fa-redo"></i>
-               </button>
-            </div>
-            <div class="toolbar-section-title">Tools</div>
-         </div>
+
+<div id="setPasswordModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeModal('setPasswordModal')">&times;</span>
+    <p>Set a password for this shared file</p>
+    <input type="password" id="passwordInput" placeholder="Password" style="width: 100%; padding: 8px; margin: 10px 0; border-radius: 4px; border: 1px solid #ccc;">
+    <input type="password" id="confirmPasswordInput" placeholder="Confirm Password" style="width: 100%; padding: 8px; margin: 10px 0; border-radius: 4px; border: 1px solid #ccc;">
+    <div id="modal-actions">
+      <button onclick="submitPassword()">Set Password</button>
+      <button id="modal-cancel" onclick="closeModal('setPasswordModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="shareResultModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeModal('shareResultModal')">&times;</span>
+    <p id="shareResultMessage"></p>
+    <div id="shareLinkContainer" style="margin: 15px 0; display: none;">
+      <input type="text" id="shareLinkInput" readonly style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+      <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <button onclick="copyShareLink()" style="flex: 1;">Copy Link</button>
+        <button id="setPasswordBtn" style="flex: 1;">Set Password</button>
       </div>
-	  
-	      <div id="Insert" class="tabcontent">
-        <div class="toolbar-section">
-            <div class="toolbar-row">
-                <!-- Placeholder for Review tab content -->
-                <p>Insert features coming soon...</p>
-            </div>
-
-        </div>
     </div>
-
-    <div id="Review" class="tabcontent">
-        <div class="toolbar-section">
-            <div class="toolbar-row">
-                <!-- Placeholder for Review tab content -->
-                <p>Review features coming soon...</p>
-            </div>
-
-        </div>
-		
+    <div id="modal-actions">
+      <button onclick="closeModal('shareResultModal')">Close</button>
     </div>
-	    <div id="Design" class="tabcontent">
-        <div class="toolbar-section">
-            <div class="toolbar-row">
-                <!-- Placeholder for Review tab content -->
-                <p>Design features coming soon...</p>
-            </div>
+  </div>
+</div>
 
-        </div>
-    </div>
-	
-		<div id="Format" class="tabcontent">
-		<div class="toolbar-section">
-            <div class="toolbar-row">
-                <!-- Placeholder for Review tab content -->
-                <p>Format features coming soon...</p>
-            </div>
-
-        </div>
-	</div>
-
-	<!-- New View Tab Content -->
-	<div id="View" class="tabcontent">
-		<div class="toolbar-section">
-            <div class="toolbar-row">
-                <!-- Placeholder for Review tab content -->
-                <p>View features coming soon...</p>
-            </div>
-
-        </div>	
-
-    </div>
-    </div>
-    
-	
-
-
-	<div class="mobile-toolbar" role="toolbar" aria-label="Mobile text formatting toolbar">
-         <div class="mobile-toolbar-row">
-            <button class="tool-button" onclick="formatText('bold')" aria-label="Toggle bold" aria-pressed="false">
-            <i class="fas fa-bold"></i>
-            </button>
-            <button class="tool-button" onclick="formatText('italic')" aria-label="Toggle italic" aria-pressed="false">
-            <i class="fas fa-italic"></i>
-            </button>
-            <button class="tool-button" onclick="formatText('underline')" aria-label="Toggle underline" aria-pressed="false">
-            <i class="fas fa-underline"></i>
-            </button>
-            <button class="tool-button" onclick="formatText('strikeThrough')" aria-label="Toggle strikethrough" aria-pressed="false">
-            <i class="fas fa-strikethrough"></i>
-            </button>
-            <button class="tool-button" onclick="formatText('insertUnorderedList')" aria-label="Insert bullet list">
-            <i class="fas fa-list-ul"></i>
-            </button>
-            <button class="tool-button expand-button" onclick="toggleMobileOptions()" aria-label="Toggle more options">
-            <i class="fas fa-chevron-up"></i>
-            </button>
-         </div>
-         <div class="mobile-options">
-            <div class="mobile-options-row">
-               <div class="mobile-dropdown">
-                  <select class="mobile-font-select" onchange="selectFont(this.value)" aria-label="Select font">
-                     <option value="Inter">Inter</option>
-                     <option value="Roboto">Roboto</option>
-                     <option value="Lora">Lora</option>
-                     <option value="Ubuntu Mono">Ubuntu Mono</option>
-                     <option value="Merriweather">Merriweather</option>
-                     <option value="Vazirmatn">Vazirmatn</option>
-                  </select>
-                  <i class="fas fa-caret-down"></i>
-               </div>
-               <div class="mobile-control-group" role="group" aria-label="Font size controls">
-                  <button onclick="adjustValue('fontSize', -2)" aria-label="Decrease font size">
-                  <i class="fas fa-minus"></i>
-                  </button>
-                  <input type="text" id="mobileFontSize" class="mobile-control-input" value="16" readonly aria-label="Font size" />
-                  <button onclick="adjustValue('fontSize', 2)" aria-label="Increase font size">
-                  <i class="fas fa-plus"></i>
-                  </button>
-               </div>
-            </div>
-            <div class="mobile-options-row">
-               <button class="tool-button" onclick="formatText('justifyLeft')" aria-label="Align text left" aria-pressed="false">
-               <i class="fas fa-align-left"></i>
-               </button>
-               <button class="tool-button" onclick="formatText('justifyCenter')" aria-label="Align text center" aria-pressed="false">
-               <i class="fas fa-align-center"></i>
-               </button>
-               <button class="tool-button" onclick="formatText('justifyRight')" aria-label="Align text right" aria-pressed="false">
-               <i class="fas fa-align-right"></i>
-               </button>
-               <button class="tool-button" onclick="formatText('directionRTL')" aria-label="Set text direction right-to-left" aria-pressed="false">
-               <i class="fas fa-paragraph" style="transform: scaleX(-1);"></i>
-               </button>
-               <button class="tool-button" onclick="formatText('directionLTR')" aria-label="Set text direction left-to-right" aria-pressed="true">
-               <i class="fas fa-paragraph"></i>
-               </button>
-            </div>
-            <div class="mobile-options-row">
-               <div class="mobile-control-wrapper">
-                  <span class="mobile-control-label">Char Spacing</span>
-                  <div class="mobile-control-group" role="group" aria-label="Character spacing controls">
-                     <button onclick="adjustValue('charSpacing', -0.5)" aria-label="Decrease character spacing">
-                     <i class="fas fa-minus"></i>
-                     </button>
-                     <input type="text" id="mobileCharSpacing" class="mobile-control-input" value="0" readonly aria-label="Character spacing" />
-                     <button onclick="adjustValue('charSpacing', 0.5)" aria-label="Increase character spacing">
-                     <i class="fas fa-plus"></i>
-                     </button>
-                  </div>
-               </div>
-               <div class="mobile-control-wrapper">
-                  <span class="mobile-control-label">Line Spacing</span>
-                  <div class="mobile-control-group" role="group" aria-label="Line spacing controls">
-                     <button onclick="adjustValue('lineSpacing', -0.2)" aria-label="Decrease line spacing">
-                     <i class="fas fa-minus"></i>
-                     </button>
-                     <input type="text" id="mobileLineSpacing" class="mobile-control-input" value="1.2" readonly aria-label="Line spacing" />
-                     <button onclick="adjustValue('lineSpacing', 0.2)" aria-label="Increase line spacing">
-                     <i class="fas fa-plus"></i>
-                     </button>
-                  </div>
-               </div>
-            </div>
-         </div>
-      </div>
-      <div class="editor" role="region" aria-label="Text editor region">
-         <div id="editor" contenteditable="true" tabindex="0" aria-label="Text editor for writing and formatting notes"></div>
-         <div class="count-display" id="countDisplay" role="status" aria-live="polite"></div>
-      </div>
-
-      <div class="footer">
-         © <span id="year"></span>
-         npad.ir – Created by <a href="https://alirezashabanzadeh.ir">Alirezashabanzadeh.ir</a>
-      </div>
-      <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9590c0d31a9b65cf',t:'MTc1MTQ4NjY3Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-   </body>
+    <script src="/scripts.js"></script>
+</body>
 </html>
