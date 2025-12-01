@@ -1,0 +1,72 @@
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  
+  <!-- Main Page (English) -->
+  <url>
+    <loc>https://npad.ir/</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="fa" href="https://npad.ir/fa/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://npad.ir/"/>
+  </url>
+  
+  <!-- Persian Version -->
+  <url>
+    <loc>https://npad.ir/fa/</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://npad.ir/"/>
+    <xhtml:link rel="alternate" hreflang="fa" href="https://npad.ir/fa/"/>
+  </url>
+  
+  <!-- Blog Index -->
+  <url>
+    <loc>https://npad.ir/blog/</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  
+  <!-- Blog Post 1: How to Use Online Notepad -->
+  <url>
+    <loc>https://npad.ir/blog/how-to-use-online-notepad</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <!-- Blog Post 2: Benefits of Auto-Save -->
+  <url>
+    <loc>https://npad.ir/blog/benefits-of-auto-save-notepad</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <!-- Blog Post 3: Privacy in Online Notepads -->
+  <url>
+    <loc>https://npad.ir/blog/privacy-first-online-notepad</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <!-- Blog Post 4: Dark Mode Benefits -->
+  <url>
+    <loc>https://npad.ir/blog/dark-mode-for-note-taking</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <!-- Blog Post 5: Rich Text Formatting Guide -->
+  <url>
+    <loc>https://npad.ir/blog/rich-text-formatting-guide</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+</urlset>

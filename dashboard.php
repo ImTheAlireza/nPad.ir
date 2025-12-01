@@ -1,6 +1,6 @@
 <?php
 // --- SECURITY ---
-$admin_password = "mypassword123"; // CHANGE THIS!
+$admin_password = "9510290042";
 
 session_start();
 
@@ -354,4 +354,7 @@ $browser_labels = []; $browser_data = []; while($row = $user_agents->fetch_assoc
     </script>
 </body>
 </html>
+
+
 <?php $conn->close(); ?>
+

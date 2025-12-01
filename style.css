@@ -356,3 +356,21 @@ body.dark-mode #modal-cancel { border-color: #475569; color: #cbd5e1; }
 }
 .close:hover { color: black; }
 body.dark-mode .close:hover { color: white; }
+
+article h1, article h2, article h3 {
+    transition: color 0.3s ease;
+}
+
+body.dark-mode article {
+    color: #cbd5e1;
+}
+
+body.dark-mode article h1,
+body.dark-mode article h2,
+body.dark-mode article h3 {
+    color: #f1f5f9;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
