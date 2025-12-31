@@ -1,0 +1,61 @@
+# NPad - Git Ignore File
+# CRITICAL: Never commit sensitive data to version control
+
+# Configuration files with credentials
+config.php
+
+# Error logs
+error.log
+*.log
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Database dumps
+*.sql
+*.sqlite
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Temporary files
+tmp/
+temp/
+cache/
+*.tmp
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Composer (if you use it)
+/vendor/
+composer.lock
+
+# Node modules (if you add any JS tooling)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build artifacts
+dist/
+build/

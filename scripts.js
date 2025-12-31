@@ -250,6 +250,131 @@ function updateWordCount() {
     wordCountDisplay.textContent = `Words: ${wordCount} - Characters: ${charCount}`;
 }
 
+function toggleFaq(element) {
+    const faqItem = element.parentElement;
+    const allFaqs = document.querySelectorAll('.faq-item');
+    
+    allFaqs.forEach(item => {
+        if (item !== faqItem) {
+            item.classList.remove('active');
+        }
+    });
+    
+    faqItem.classList.toggle('active');
+}
+
+// Language Detection and Toggle System
+(function() {
+    const FALLBACK_LANG = 'en';
+    
+    function getSavedLang() {
+        return localStorage.getItem('npad_lang') || null;
+    }
+    
+    function saveLang(lang) {
+        localStorage.setItem('npad_lang', lang);
+    }
+    
+    async function detectCountry() {
+        const services = [
+            { url: 'https://ipwho.is/', getCountry: (data) => data.country_code },
+            { url: 'https://api.country.is/', getCountry: (data) => data.country },
+            { url: 'https://ipapi.co/json/', getCountry: (data) => data.country_code }
+        ];
+        
+        for (const service of services) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                
+                const response = await fetch(service.url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const countryCode = service.getCountry(data);
+                    if (countryCode) {
+                        console.log(`Country detected: ${countryCode}`);
+                        return countryCode;
+                    }
+                }
+            } catch (error) {
+                console.warn(`IP detection failed for ${service.url}`);
+                continue;
+            }
+        }
+        return null;
+    }
+    
+    function isPersianCountry(countryCode) {
+        const persianCountries = ['IR', 'AF', 'TJ'];
+        return persianCountries.includes(countryCode?.toUpperCase());
+    }
+    
+    function getBrowserLanguage() {
+        const browserLang = navigator.language || navigator.userLanguage || '';
+        return (browserLang.startsWith('fa') || browserLang.startsWith('per')) ? 'fa' : 'en';
+    }
+    
+    function setLanguage(lang) {
+        document.body.setAttribute('data-lang', lang);
+        
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        const activeBtn = document.querySelector(`.lang-btn[data-lang="${lang}"]`);
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+        }
+        
+        saveLang(lang);
+        document.documentElement.lang = lang === 'fa' ? 'fa' : 'en';
+        
+        console.log(`Language set to: ${lang}`);
+    }
+    
+    async function initLanguage() {
+        const savedLang = getSavedLang();
+        
+        if (savedLang) {
+            setLanguage(savedLang);
+            return;
+        }
+        
+        const loading = document.getElementById('langLoading');
+        if (loading) loading.style.display = 'block';
+        
+        try {
+            const countryCode = await detectCountry();
+            let defaultLang = FALLBACK_LANG;
+            
+            if (countryCode && isPersianCountry(countryCode)) {
+                defaultLang = 'fa';
+            } else if (!countryCode) {
+                defaultLang = getBrowserLanguage();
+            }
+            
+            setLanguage(defaultLang);
+        } catch (error) {
+            setLanguage(getBrowserLanguage());
+        } finally {
+            if (loading) loading.style.display = 'none';
+        }
+    }
+    
+    function ready(fn) {
+        if (document.readyState !== 'loading') fn();
+        else document.addEventListener('DOMContentLoaded', fn);
+    }
+    
+    ready(function() {
+        document.getElementById('btnEn')?.addEventListener('click', () => setLanguage('en'));
+        document.getElementById('btnFa')?.addEventListener('click', () => setLanguage('fa'));
+        initLanguage();
+    });
+})();
+
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     
@@ -365,3 +490,5 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     fileMenu.appendChild(clearLink);
 });
+
+
