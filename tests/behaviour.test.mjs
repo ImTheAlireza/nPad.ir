@@ -164,6 +164,67 @@ export default async function run(check, group) {
         assert.ok(tracked.some((e) => e.startsWith('dark_mode_')), `tracked: ${tracked}`);
     });
 
+    group('behaviour: custom formatting controls');
+
+    const executedCommands = [];
+    document.execCommand = (...args) => {
+        executedCommands.push(args);
+        return true;
+    };
+
+    check('font popup opens, filters the bilingual list and applies a font', () => {
+        const trigger = document.getElementById('fontPickerTrigger');
+        const popup = document.getElementById('fontPickerPopup');
+        const search = document.getElementById('fontPickerSearch');
+
+        trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(popup.hidden, false, 'font popup did not open');
+        assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+
+        search.value = 'Nastaliq';
+        search.dispatchEvent(new window.Event('input', { bubbles: true }));
+        const visible = [...popup.querySelectorAll('[data-font-option]')].filter((el) => !el.hidden);
+        assert.equal(visible.length, 1, `expected one result, got ${visible.length}`);
+        assert.equal(visible[0].dataset.font, 'IranNastaliq');
+
+        visible[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(popup.hidden, true, 'font popup did not close after selection');
+        assert.equal(trigger.dataset.currentFont, 'IranNastaliq');
+        assert.ok(executedCommands.some(([command, , value]) =>
+            command === 'fontName' && value.includes('IranNastaliq')));
+    });
+
+    check('manual font size accepts an arbitrary pixel value', () => {
+        const input = document.querySelector('[data-font-size]');
+        input.value = '27';
+        input.dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'Enter', bubbles: true, cancelable: true,
+        }));
+        assert.ok(executedCommands.some(([command, , value]) =>
+            command === 'fontSize' && value === '7'));
+        assert.equal(input.value, '27');
+    });
+
+    check('custom colour modal applies a preset without a native colour input', async () => {
+        const trigger = document.querySelector('[data-color-command="foreColor"]');
+        trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+        const dialog = document.getElementById('appDialog');
+        assert.ok(dialog.open, 'colour dialog did not open');
+        assert.ok(dialog.querySelector('.colour-picker__area'), 'custom colour area missing');
+        assert.equal(dialog.querySelectorAll('input[type="color"]').length, 0);
+
+        dialog.querySelector('[data-preset="#dc2626"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        dialog.querySelector('[data-action="apply"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+        assert.equal(trigger.dataset.color, '#dc2626');
+        assert.ok(executedCommands.some(([command, , value]) =>
+            command === 'foreColor' && value === '#dc2626'));
+    });
+
     group('behaviour: word count (was frozen inside a 3s debounce)');
 
     const editor = document.getElementById('editor');

@@ -7,7 +7,7 @@
  *   - /api/: never cached
  */
 
-const VERSION = 'npad-v2.0.0';
+const VERSION = 'npad-v2.1.0';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 

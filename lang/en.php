@@ -39,7 +39,14 @@ return [
 
     'toolbar' => [
         'font'          => 'Font',
+        'font_search'   => 'Search fonts…',
+        'fonts_persian' => 'Persian fonts',
+        'fonts_english' => 'English fonts',
+        'fonts_built_in' => 'Built in',
+        'fonts_device'  => 'Fonts other than Inter and Vazirmatn use an installed font when available.',
+        'no_fonts'      => 'No matching fonts',
         'size'          => 'Font size',
+        'size_unit'     => 'px',
         'bold'          => 'Bold',
         'italic'        => 'Italic',
         'underline'     => 'Underline',
@@ -100,6 +107,13 @@ return [
         'open_failed'    => 'The file could not be read.',
         'paste_blocked'  => 'Your browser blocked clipboard access. Use Ctrl+V (⌘V on Mac) instead.',
         'copy_blocked'   => 'Your browser blocked clipboard access. Use Ctrl+C (⌘C on Mac) instead.',
+        'apply'          => 'Apply',
+        'colour_hex'     => 'Hex colour',
+        'colour_presets' => 'Colour presets',
+        'colour_hue'     => 'Hue',
+        'colour_area'    => 'Saturation and brightness. Use the arrow keys to adjust.',
+        'colour_invalid' => 'Enter a valid 6-digit hex colour.',
+        'size_invalid'   => 'Enter a font size from 6 to 200 px.',
     ],
 
     'details' => [

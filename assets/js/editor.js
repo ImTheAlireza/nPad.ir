@@ -159,19 +159,51 @@ export function initEditor({ strings, onEvent }) {
        Formatting
        --------------------------------------------------------------------- */
 
+    let lastEditorRange = null;
+    let pendingFontSize = null;
+
+    function rememberEditorSelection() {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount || !editor.contains(selection.anchorNode)) return;
+        try {
+            lastEditorRange = selection.getRangeAt(0).cloneRange();
+        } catch {
+            lastEditorRange = null;
+        }
+    }
+
+    function restoreEditorSelection() {
+        if (!lastEditorRange) return false;
+        try {
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(lastEditorRange);
+            return true;
+        } catch {
+            lastEditorRange = null;
+            return false;
+        }
+    }
+
+    function finishFormatting() {
+        rememberEditorSelection();
+        scheduleSave();
+        updateCounts();
+        syncToolbarState();
+    }
+
     // document.execCommand is deprecated but remains the only broadly
     // supported way to drive contenteditable formatting without shipping a
     // full editing engine. Calls are centralised here for easy replacement.
     function exec(command, value = null) {
         editor.focus();
+        restoreEditorSelection();
         try {
             document.execCommand(command, false, value);
         } catch {
             /* command unsupported in this browser */
         }
-        scheduleSave();
-        updateCounts();
-        syncToolbarState();
+        finishFormatting();
     }
 
     function syncToolbarState() {
@@ -189,24 +221,31 @@ export function initEditor({ strings, onEvent }) {
         });
     }
 
-    // The old build only refreshed state after a click, so buttons were
-    // wrong whenever the caret moved.
+    // Keep a range whenever the caret is in the editor. Opening either custom
+    // picker moves focus into its controls, but formatting still targets this
+    // saved range after the popup/dialog closes.
     document.addEventListener('selectionchange', () => {
         const selection = document.getSelection();
         if (selection && editor.contains(selection.anchorNode)) {
+            rememberEditorSelection();
             syncToolbarState();
             updateCounts();
         }
     });
 
     if (toolbar) {
+        toolbar.addEventListener('pointerdown', (event) => {
+            if (event.target.closest('button, input')) rememberEditorSelection();
+        });
+
+        // Command buttons must not take focus from contenteditable. Picker
+        // triggers and the number field do take focus for their own keyboard
+        // interaction, relying on the saved range above.
+        toolbar.addEventListener('mousedown', (event) => {
+            if (event.target.closest('button[data-command]')) event.preventDefault();
+        });
+
         toolbar.addEventListener('click', (event) => {
-            // Only buttons need preventDefault (they can submit forms or lose
-            // selection on focus). Applying it to the <select> elements below
-            // cancels the browser's own "open the option list" action, which
-            // made the font and size dropdowns appear to close instantly on
-            // click without ever opening. Native <select>/<input> controls
-            // are handled by their own listeners further down.
             const btn = event.target.closest('button[data-command]');
             if (!btn) return;
             event.preventDefault();
@@ -214,25 +253,434 @@ export function initEditor({ strings, onEvent }) {
             if (command === 'createLink') promptForLink();
             else exec(command, value ?? null);
         });
+    }
 
-        toolbar.querySelectorAll('select[data-command]').forEach((select) => {
-            select.addEventListener('change', () => {
-                exec(select.dataset.command, select.value);
+    /* ---------------------------------------------------------------------
+       Searchable font picker
+       --------------------------------------------------------------------- */
+
+    const fontTrigger = document.getElementById('fontPickerTrigger');
+    const fontPopup = document.getElementById('fontPickerPopup');
+    const fontSearch = document.getElementById('fontPickerSearch');
+    const fontOptions = fontPopup
+        ? Array.from(fontPopup.querySelectorAll('[data-font-option]'))
+        : [];
+
+    const searchable = (value) => String(value ?? '')
+        .normalize('NFKD')
+        .toLocaleLowerCase()
+        .replace(/[يى]/g, 'ی')
+        .replace(/ك/g, 'ک')
+        .trim();
+
+    function visibleFontOptions() {
+        return fontOptions.filter((option) => !option.hidden);
+    }
+
+    function filterFonts(query = '') {
+        const needle = searchable(query);
+        let visibleCount = 0;
+
+        fontPopup?.querySelectorAll('[data-font-group]').forEach((group) => {
+            let groupCount = 0;
+            group.querySelectorAll('[data-font-option]').forEach((option) => {
+                const matches = !needle || searchable(option.textContent).includes(needle);
+                option.hidden = !matches;
+                if (matches) groupCount += 1;
             });
+            group.hidden = groupCount === 0;
+            visibleCount += groupCount;
         });
 
-        toolbar.querySelectorAll('input[type="color"][data-command]').forEach((input) => {
-            const swatch = input.parentElement.querySelector('.colorfield__swatch');
-            const paint = () => {
-                if (swatch) swatch.style.color = input.value;
-            };
-            paint();
-            input.addEventListener('input', () => {
-                paint();
-                exec(input.dataset.command, input.value);
-            });
+        const empty = fontPopup?.querySelector('[data-font-empty]');
+        if (empty) empty.hidden = visibleCount !== 0;
+    }
+
+    function positionFontPopup() {
+        if (!fontPopup || !fontTrigger || fontPopup.hidden) return;
+        const rect = fontTrigger.getBoundingClientRect();
+        const gutter = 12;
+        const gap = 6;
+        const width = fontPopup.offsetWidth || 340;
+        const height = fontPopup.offsetHeight || 480;
+        const rtl = document.documentElement.dir === 'rtl';
+
+        let left = rtl ? rect.right - width : rect.left;
+        left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter));
+
+        let top = rect.bottom + gap;
+        if (top + height > window.innerHeight - gutter && rect.top - height - gap >= gutter) {
+            top = rect.top - height - gap;
+            fontPopup.style.transformOrigin = 'bottom center';
+        } else {
+            top = Math.min(top, window.innerHeight - height - gutter);
+            fontPopup.style.transformOrigin = 'top center';
+        }
+
+        fontPopup.style.left = `${Math.round(left)}px`;
+        fontPopup.style.top = `${Math.max(gutter, Math.round(top))}px`;
+    }
+
+    function openFontPopup({ focusSearch = true } = {}) {
+        if (!fontPopup || !fontTrigger) return;
+        rememberEditorSelection();
+        fontPopup.hidden = false;
+        fontPopup.dataset.open = 'true';
+        fontTrigger.setAttribute('aria-expanded', 'true');
+        if (fontSearch) fontSearch.value = '';
+        filterFonts();
+        positionFontPopup();
+        if (focusSearch && fontSearch) fontSearch.focus();
+    }
+
+    function closeFontPopup({ returnFocus = false } = {}) {
+        if (!fontPopup || !fontTrigger || fontPopup.hidden) return;
+        fontPopup.dataset.open = 'false';
+        fontPopup.hidden = true;
+        fontTrigger.setAttribute('aria-expanded', 'false');
+        if (returnFocus) fontTrigger.focus();
+    }
+
+    function chooseFont(option) {
+        if (!option || !fontTrigger) return;
+        const font = option.dataset.font;
+        fontOptions.forEach((item) => item.setAttribute(
+            'aria-selected', item === option ? 'true' : 'false',
+        ));
+        fontTrigger.dataset.currentFont = font;
+        const value = fontTrigger.querySelector('.font-picker__value');
+        if (value) {
+            value.textContent = font;
+            value.style.fontFamily = option.style.fontFamily;
+        }
+        closeFontPopup();
+        exec('fontName', option.dataset.fontStack || font);
+    }
+
+    if (fontTrigger && fontPopup && fontSearch) {
+        fontTrigger.addEventListener('click', () => {
+            if (fontPopup.hidden) openFontPopup();
+            else closeFontPopup();
+        });
+
+        fontTrigger.addEventListener('keydown', (event) => {
+            if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
+                event.preventDefault();
+                openFontPopup({ focusSearch: event.key !== 'ArrowUp' });
+                if (event.key === 'ArrowUp') visibleFontOptions().at(-1)?.focus();
+            }
+        });
+
+        fontSearch.addEventListener('input', () => filterFonts(fontSearch.value));
+        fontSearch.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                visibleFontOptions()[0]?.focus();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeFontPopup({ returnFocus: true });
+            }
+        });
+
+        fontPopup.addEventListener('click', (event) => {
+            const option = event.target.closest('[data-font-option]');
+            if (option) chooseFont(option);
+        });
+
+        fontPopup.addEventListener('keydown', (event) => {
+            const options = visibleFontOptions();
+            const current = options.indexOf(document.activeElement);
+            if (current < 0) return;
+
+            let next = null;
+            if (event.key === 'ArrowDown') next = current + 1;
+            else if (event.key === 'ArrowUp') next = current - 1;
+            else if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = options.length - 1;
+            else if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                chooseFont(options[current]);
+                return;
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeFontPopup({ returnFocus: true });
+                return;
+            }
+
+            if (next !== null) {
+                event.preventDefault();
+                options[(next + options.length) % options.length]?.focus();
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!fontPopup.hidden
+                && !fontPopup.contains(event.target)
+                && !fontTrigger.contains(event.target)) {
+                closeFontPopup();
+            }
+        });
+
+        window.addEventListener('resize', positionFontPopup);
+        window.addEventListener('scroll', positionFontPopup, true);
+    }
+
+    /* ---------------------------------------------------------------------
+       Manual font size
+       --------------------------------------------------------------------- */
+
+    const sizeInput = toolbar?.querySelector('[data-font-size]');
+
+    function convertSizeMarkers(size) {
+        editor.querySelectorAll('font[size="7"]').forEach((font) => {
+            font.removeAttribute('size');
+            font.style.fontSize = size;
         });
     }
+
+    function applyFontSize(rawValue) {
+        const size = Number(rawValue);
+        if (!Number.isFinite(size) || size < 6 || size > 200) {
+            toast(strings.sizeInvalid, 'error');
+            sizeInput?.focus();
+            return false;
+        }
+
+        const rounded = Math.round(size * 10) / 10;
+        const cssSize = `${rounded}px`;
+        if (sizeInput) sizeInput.value = String(rounded);
+
+        // Turn any legacy HTML size=7 markup into its equivalent before using
+        // that value as a temporary marker for this arbitrary pixel size.
+        convertSizeMarkers('48px');
+        pendingFontSize = cssSize;
+
+        editor.focus();
+        restoreEditorSelection();
+        try {
+            // Force predictable <font size="7"> output. It is immediately
+            // converted to safe inline font-size styling below.
+            document.execCommand('styleWithCSS', false, false);
+            document.execCommand('fontSize', false, '7');
+        } catch {
+            /* unsupported browser */
+        }
+        convertSizeMarkers(cssSize);
+        finishFormatting();
+        return true;
+    }
+
+    if (sizeInput) {
+        sizeInput.addEventListener('focus', rememberEditorSelection);
+        sizeInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                applyFontSize(sizeInput.value);
+            }
+        });
+        sizeInput.addEventListener('change', () => applyFontSize(sizeInput.value));
+    }
+
+    /* ---------------------------------------------------------------------
+       Custom colour picker modal
+       --------------------------------------------------------------------- */
+
+    const COLOUR_PRESETS = [
+        '#0f172a', '#334155', '#64748b', '#94a3b8', '#ffffff',
+        '#7f1d1d', '#dc2626', '#f97316', '#f59e0b', '#fde047',
+        '#166534', '#16a34a', '#84cc16', '#0f766e', '#14b8a6',
+        '#0e7490', '#06b6d4', '#1d4ed8', '#3b82f6', '#6366f1',
+        '#6d28d9', '#8b5cf6', '#a21caf', '#d946ef', '#be185d',
+        '#f43f5e', '#fecdd3', '#fed7aa', '#fef3c7', '#d1fae5',
+    ];
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+    function normaliseHex(value) {
+        const match = String(value ?? '').trim().match(/^#?([\da-f]{6})$/i);
+        return match ? `#${match[1].toLowerCase()}` : null;
+    }
+
+    function hexToHsv(hex) {
+        const value = normaliseHex(hex) ?? '#000000';
+        const r = parseInt(value.slice(1, 3), 16) / 255;
+        const g = parseInt(value.slice(3, 5), 16) / 255;
+        const b = parseInt(value.slice(5, 7), 16) / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        let h = 0;
+        if (delta) {
+            if (max === r) h = 60 * (((g - b) / delta) % 6);
+            else if (max === g) h = 60 * ((b - r) / delta + 2);
+            else h = 60 * ((r - g) / delta + 4);
+        }
+        if (h < 0) h += 360;
+        return { h, s: max ? (delta / max) * 100 : 0, v: max * 100 };
+    }
+
+    function hsvToHex(h, s, v) {
+        const saturation = clamp(s, 0, 100) / 100;
+        const value = clamp(v, 0, 100) / 100;
+        const chroma = value * saturation;
+        const x = chroma * (1 - Math.abs(((h / 60) % 2) - 1));
+        const m = value - chroma;
+        let rgb;
+        if (h < 60) rgb = [chroma, x, 0];
+        else if (h < 120) rgb = [x, chroma, 0];
+        else if (h < 180) rgb = [0, chroma, x];
+        else if (h < 240) rgb = [0, x, chroma];
+        else if (h < 300) rgb = [x, 0, chroma];
+        else rgb = [chroma, 0, x];
+        return `#${rgb.map((channel) => Math.round((channel + m) * 255)
+            .toString(16).padStart(2, '0')).join('')}`;
+    }
+
+    async function openColourPicker(button) {
+        rememberEditorSelection();
+        const command = button.dataset.colorCommand;
+        const initial = normaliseHex(button.dataset.color) ?? '#000000';
+        const title = command === 'hiliteColor' ? strings.highlightColour : strings.textColour;
+        let selectedColour = initial;
+
+        const presets = COLOUR_PRESETS.map((colour) => `
+            <button type="button" class="colour-picker__preset" data-preset="${colour}"
+                    style="--preset-colour:${colour}" aria-label="${colour}"
+                    aria-pressed="${colour === initial ? 'true' : 'false'}"></button>`).join('');
+
+        const action = await showDialog({
+            title,
+            bodyHtml: `
+                <div class="colour-picker">
+                    <div class="colour-picker__area" tabindex="0"
+                         aria-label="${escapeHtml(strings.colourArea)}">
+                        <span class="colour-picker__marker" aria-hidden="true"></span>
+                    </div>
+                    <label class="colour-picker__hue-row">
+                        <span class="colour-picker__label">${escapeHtml(strings.colourHue)}</span>
+                        <input class="colour-picker__hue" type="range" min="0" max="359" step="1"
+                               aria-label="${escapeHtml(strings.colourHue)}">
+                    </label>
+                    <div class="colour-picker__custom">
+                        <span class="colour-picker__preview" aria-hidden="true"></span>
+                        <label class="field">
+                            <span class="field__label">${escapeHtml(strings.colourHex)}</span>
+                            <input class="field__input colour-picker__hex" value="${initial.toUpperCase()}"
+                                   inputmode="text" maxlength="7" autocomplete="off" spellcheck="false">
+                        </label>
+                    </div>
+                    <p class="field__error colour-picker__error" hidden>${escapeHtml(strings.colourInvalid)}</p>
+                    <span class="colour-picker__label colour-picker__presets-label">${escapeHtml(strings.colourPresets)}</span>
+                    <div class="colour-picker__presets">${presets}</div>
+                </div>`,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                { label: strings.apply, action: 'apply', variant: 'btn--primary' },
+            ],
+            onOpen: (body) => {
+                const picker = body.querySelector('.colour-picker');
+                const area = picker.querySelector('.colour-picker__area');
+                const marker = picker.querySelector('.colour-picker__marker');
+                const hue = picker.querySelector('.colour-picker__hue');
+                const hex = picker.querySelector('.colour-picker__hex');
+                const preview = picker.querySelector('.colour-picker__preview');
+                const error = picker.querySelector('.colour-picker__error');
+                const applyButton = body.closest('dialog')?.querySelector('[data-action="apply"]');
+                let state = hexToHsv(initial);
+                let dragging = false;
+
+                const render = ({ updateInput = true } = {}) => {
+                    selectedColour = hsvToHex(state.h, state.s, state.v);
+                    picker.style.setProperty('--picker-hue', `hsl(${state.h} 100% 50%)`);
+                    marker.style.left = `${state.s}%`;
+                    marker.style.top = `${100 - state.v}%`;
+                    hue.value = String(Math.round(state.h));
+                    preview.style.backgroundColor = selectedColour;
+                    area.setAttribute('aria-valuetext', selectedColour.toUpperCase());
+                    if (updateInput) hex.value = selectedColour.toUpperCase();
+                    error.hidden = true;
+                    if (applyButton) applyButton.disabled = false;
+                    picker.querySelectorAll('[data-preset]').forEach((preset) => {
+                        preset.setAttribute(
+                            'aria-pressed',
+                            preset.dataset.preset === selectedColour ? 'true' : 'false',
+                        );
+                    });
+                };
+
+                const updateArea = (event) => {
+                    const rect = area.getBoundingClientRect();
+                    if (!rect.width || !rect.height) return;
+                    state.s = clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
+                    state.v = clamp(100 - ((event.clientY - rect.top) / rect.height) * 100, 0, 100);
+                    render();
+                };
+
+                area.addEventListener('pointerdown', (event) => {
+                    dragging = true;
+                    area.setPointerCapture?.(event.pointerId);
+                    updateArea(event);
+                });
+                area.addEventListener('pointermove', (event) => {
+                    if (dragging) updateArea(event);
+                });
+                area.addEventListener('pointerup', () => { dragging = false; });
+                area.addEventListener('pointercancel', () => { dragging = false; });
+                area.addEventListener('keydown', (event) => {
+                    const amount = event.shiftKey ? 10 : 2;
+                    if (event.key === 'ArrowLeft') state.s = clamp(state.s - amount, 0, 100);
+                    else if (event.key === 'ArrowRight') state.s = clamp(state.s + amount, 0, 100);
+                    else if (event.key === 'ArrowUp') state.v = clamp(state.v + amount, 0, 100);
+                    else if (event.key === 'ArrowDown') state.v = clamp(state.v - amount, 0, 100);
+                    else return;
+                    event.preventDefault();
+                    render();
+                });
+
+                hue.addEventListener('input', () => {
+                    state.h = Number(hue.value);
+                    render();
+                });
+
+                hex.addEventListener('input', () => {
+                    const valid = normaliseHex(hex.value);
+                    if (!valid) {
+                        error.hidden = false;
+                        if (applyButton) applyButton.disabled = true;
+                        return;
+                    }
+                    state = hexToHsv(valid);
+                    render({ updateInput: false });
+                });
+                hex.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' && !normaliseHex(hex.value)) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        error.hidden = false;
+                    }
+                });
+
+                picker.querySelector('.colour-picker__presets').addEventListener('click', (event) => {
+                    const preset = event.target.closest('[data-preset]');
+                    if (!preset) return;
+                    state = hexToHsv(preset.dataset.preset);
+                    render();
+                });
+
+                render();
+            },
+        });
+
+        if (action !== 'apply') return;
+        button.dataset.color = selectedColour;
+        const swatch = button.querySelector('.colorfield__swatch');
+        if (swatch) swatch.style.backgroundColor = selectedColour;
+        exec(command, selectedColour);
+    }
+
+    toolbar?.querySelectorAll('[data-color-command]').forEach((button) => {
+        button.addEventListener('click', () => openColourPicker(button));
+    });
 
     /* ---------------------------------------------------------------------
        Links
@@ -596,6 +1044,9 @@ ${editor.innerHTML}
        --------------------------------------------------------------------- */
 
     editor.addEventListener('input', () => {
+        // When a size is chosen at a collapsed caret, the browser creates its
+        // temporary size=7 wrapper only after the first character is typed.
+        if (pendingFontSize) convertSizeMarkers(pendingFontSize);
         updateCounts();   // immediate, not debounced
         scheduleSave();
     });

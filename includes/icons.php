@@ -50,6 +50,7 @@ function npad_icon_paths(): array
         'moon'        => '<path d="M21 13a8.5 8.5 0 0 1-10-10 8.5 8.5 0 1 0 10 10z"/>',
         'sun'         => '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
         'chevron'     => '<path d="m6 9 6 6 6-6"/>',
+        'search'      => '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
         'close'       => '<path d="M18 6 6 18M6 6l12 12"/>',
         'save'        => '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
         'format'      => '<path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/>',
