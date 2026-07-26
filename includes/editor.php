@@ -66,18 +66,99 @@ $groups = [
     ],
 ];
 
-$fonts = [
-    'Inter, sans-serif'          => 'Inter',
-    'Vazirmatn, sans-serif'      => 'Vazirmatn',
-    'Georgia, serif'             => 'Georgia',
-    'Times New Roman, serif'     => 'Times New Roman',
-    'Arial, sans-serif'          => 'Arial',
-    'Verdana, sans-serif'        => 'Verdana',
-    'Tahoma, sans-serif'         => 'Tahoma',
-    'Courier New, monospace'     => 'Courier New',
+/**
+ * Font catalogue for the custom picker. Inter and Vazirmatn are bundled;
+ * the remaining faces intentionally use local system fonts, keeping notes
+ * private/offline and avoiding dozens of multi-megabyte font downloads.
+ */
+$makeFont = static function (string $name, string $fallback, bool $builtIn = false): array {
+    $generic = in_array($name, ['system-ui', 'ui-monospace', 'serif', 'sans-serif'], true);
+    $cssName = $generic ? $name : "'" . str_replace("'", "\'", $name) . "'";
+    return [
+        'name'    => $name,
+        'stack'   => $cssName . ', ' . $fallback,
+        'builtIn' => $builtIn,
+    ];
+};
+
+$fontGroups = [
+    'persian' => [
+        $makeFont('Vazirmatn', "Tahoma, Arial, sans-serif", true),
+        $makeFont('Noto Sans Arabic', "Tahoma, Arial, sans-serif"),
+        $makeFont('Noto Naskh Arabic', "Tahoma, Arial, serif"),
+        $makeFont('Noto Kufi Arabic', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Nazanin', "Tahoma, Arial, serif"),
+        $makeFont('B Mitra', "Tahoma, Arial, serif"),
+        $makeFont('B Lotus', "Tahoma, Arial, serif"),
+        $makeFont('B Yekan', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Koodak', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Titr', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Traffic', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Homa', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Roya', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Zar', "Tahoma, Arial, serif"),
+        $makeFont('B Baran', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Morvarid', "Tahoma, Arial, serif"),
+        $makeFont('B Farnaz', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Elham', "Tahoma, Arial, sans-serif"),
+        $makeFont('B Esfehan', "Tahoma, Arial, serif"),
+        $makeFont('IranNastaliq', "Tahoma, Arial, serif"),
+        $makeFont('IRANSans', "Tahoma, Arial, sans-serif"),
+        $makeFont('IRANSansX', "Tahoma, Arial, sans-serif"),
+        $makeFont('Yekan Bakh', "Tahoma, Arial, sans-serif"),
+        $makeFont('Dana', "Tahoma, Arial, sans-serif"),
+        $makeFont('Shabnam', "Tahoma, Arial, sans-serif"),
+        $makeFont('Sahel', "Tahoma, Arial, sans-serif"),
+        $makeFont('Samim', "Tahoma, Arial, sans-serif"),
+        $makeFont('Estedad', "Tahoma, Arial, sans-serif"),
+        $makeFont('Anjoman', "Tahoma, Arial, sans-serif"),
+        $makeFont('Peyda', "Tahoma, Arial, sans-serif"),
+        $makeFont('Kalameh', "Tahoma, Arial, sans-serif"),
+        $makeFont('Gandom', "Tahoma, Arial, sans-serif"),
+        $makeFont('Parastoo', "Tahoma, Arial, serif"),
+        $makeFont('Lalezar', "Tahoma, Arial, sans-serif"),
+    ],
+    'english' => [
+        $makeFont('Inter', "Arial, sans-serif", true),
+        $makeFont('system-ui', "sans-serif"),
+        $makeFont('Arial', "sans-serif"),
+        $makeFont('Helvetica', "Arial, sans-serif"),
+        $makeFont('Verdana', "Arial, sans-serif"),
+        $makeFont('Tahoma', "Arial, sans-serif"),
+        $makeFont('Trebuchet MS', "Arial, sans-serif"),
+        $makeFont('Segoe UI', "Arial, sans-serif"),
+        $makeFont('Calibri', "Arial, sans-serif"),
+        $makeFont('Candara', "Arial, sans-serif"),
+        $makeFont('Century Gothic', "Arial, sans-serif"),
+        $makeFont('Franklin Gothic Medium', "Arial, sans-serif"),
+        $makeFont('Gill Sans', "Arial, sans-serif"),
+        $makeFont('Optima', "Arial, sans-serif"),
+        $makeFont('Futura', "Arial, sans-serif"),
+        $makeFont('Avenir Next', "Arial, sans-serif"),
+        $makeFont('Georgia', "serif"),
+        $makeFont('Times New Roman', "serif"),
+        $makeFont('Garamond', "serif"),
+        $makeFont('Baskerville', "serif"),
+        $makeFont('Palatino Linotype', "serif"),
+        $makeFont('Book Antiqua', "serif"),
+        $makeFont('Cambria', "serif"),
+        $makeFont('Didot', "serif"),
+        $makeFont('Hoefler Text', "serif"),
+        $makeFont('Rockwell', "serif"),
+        $makeFont('Courier New', "monospace"),
+        $makeFont('Consolas', "monospace"),
+        $makeFont('Menlo', "monospace"),
+        $makeFont('Monaco', "monospace"),
+        $makeFont('Lucida Console', "monospace"),
+        $makeFont('ui-monospace', "monospace"),
+        $makeFont('Impact', "sans-serif"),
+        $makeFont('Copperplate', "serif"),
+        $makeFont('Brush Script MT', "cursive"),
+        $makeFont('Comic Sans MS', "cursive"),
+    ],
 ];
 
-$sizes = ['1' => '10', '2' => '13', '3' => '16', '4' => '18', '5' => '24', '6' => '32', '7' => '48'];
+$defaultFont = $lang === 'fa' ? 'Vazirmatn' : 'Inter';
 
 /**
  * Strings handed to JavaScript. Keeping them in one JSON island means the
@@ -106,6 +187,15 @@ $jsStrings = [
     'openFailed'        => t('dialog.open_failed'),
     'pasteBlocked'      => t('dialog.paste_blocked'),
     'copyBlocked'       => t('dialog.copy_blocked'),
+    'apply'             => t('dialog.apply'),
+    'colourHex'         => t('dialog.colour_hex'),
+    'colourPresets'     => t('dialog.colour_presets'),
+    'colourHue'         => t('dialog.colour_hue'),
+    'colourArea'        => t('dialog.colour_area'),
+    'colourInvalid'     => t('dialog.colour_invalid'),
+    'sizeInvalid'       => t('dialog.size_invalid'),
+    'textColour'        => t('toolbar.text_colour'),
+    'highlightColour'   => t('toolbar.highlight'),
     'detailWords'       => t('details.words'),
     'detailCharacters'  => t('details.characters'),
     'detailNoSpaces'    => t('details.no_spaces'),
@@ -119,17 +209,21 @@ $jsStrings = [
 <main class="editor-shell" id="main">
     <div class="toolbar" id="toolbar" role="toolbar" aria-label="<?= e(t('toolbar.group_format')) ?>" aria-controls="editor">
 
-        <div class="toolbar__group" role="group" aria-label="<?= e(t('toolbar.font')) ?>">
-            <select class="toolbar__select" data-command="fontName" aria-label="<?= e(t('toolbar.font')) ?>">
-                <?php foreach ($fonts as $value => $label): ?>
-                    <option value="<?= e($value) ?>"><?= e($label) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <select class="toolbar__select" data-command="fontSize" aria-label="<?= e(t('toolbar.size')) ?>">
-                <?php foreach ($sizes as $value => $label): ?>
-                    <option value="<?= e($value) ?>" <?= $value === '3' ? 'selected' : '' ?>><?= e($label) ?></option>
-                <?php endforeach; ?>
-            </select>
+        <div class="toolbar__group toolbar__group--type" role="group" aria-label="<?= e(t('toolbar.font')) ?>">
+            <button type="button" class="font-picker__trigger" id="fontPickerTrigger"
+                    aria-label="<?= e(t('toolbar.font')) ?>"
+                    aria-haspopup="listbox" aria-expanded="false" aria-controls="fontPickerPopup"
+                    data-current-font="<?= e($defaultFont) ?>">
+                <span class="font-picker__value"><?= e($defaultFont) ?></span>
+                <?= icon('chevron', ['class' => 'icon font-picker__chevron']) ?>
+            </button>
+
+            <label class="sizefield" title="<?= e(t('toolbar.size')) ?>">
+                <span class="visually-hidden"><?= e(t('toolbar.size')) ?></span>
+                <input class="sizefield__input" type="number" value="16" min="6" max="200" step="1"
+                       inputmode="numeric" data-font-size aria-label="<?= e(t('toolbar.size')) ?>">
+                <span class="sizefield__unit" aria-hidden="true"><?= e(t('toolbar.size_unit')) ?></span>
+            </label>
         </div>
 
         <?php foreach ($groups as $group): ?>
@@ -148,18 +242,16 @@ $jsStrings = [
         <?php endforeach; ?>
 
         <div class="toolbar__group" role="group" aria-label="<?= e(t('toolbar.group_colour')) ?>">
-            <label class="colorfield" title="<?= e(t('toolbar.text_colour')) ?>">
+            <button type="button" class="colorfield" data-color-command="foreColor" data-color="#0f172a"
+                    title="<?= e(t('toolbar.text_colour')) ?>" aria-label="<?= e(t('toolbar.text_colour')) ?>">
                 <span class="colorfield__icon"><?= icon('palette') ?></span>
-                <span class="colorfield__swatch" aria-hidden="true"></span>
-                <input type="color" value="#0f172a" data-command="foreColor"
-                       aria-label="<?= e(t('toolbar.text_colour')) ?>">
-            </label>
-            <label class="colorfield" title="<?= e(t('toolbar.highlight')) ?>">
+                <span class="colorfield__swatch" style="background-color: #0f172a" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="colorfield" data-color-command="hiliteColor" data-color="#fde047"
+                    title="<?= e(t('toolbar.highlight')) ?>" aria-label="<?= e(t('toolbar.highlight')) ?>">
                 <span class="colorfield__icon"><?= icon('highlight') ?></span>
-                <span class="colorfield__swatch" aria-hidden="true"></span>
-                <input type="color" value="#fde047" data-command="hiliteColor"
-                       aria-label="<?= e(t('toolbar.highlight')) ?>">
-            </label>
+                <span class="colorfield__swatch" style="background-color: #fde047" aria-hidden="true"></span>
+            </button>
         </div>
     </div>
 
@@ -183,6 +275,44 @@ $jsStrings = [
         </div>
     </div>
 </main>
+
+<div class="font-picker__popup" id="fontPickerPopup" data-open="false" hidden>
+    <div class="font-picker__search-wrap">
+        <?= icon('search', ['class' => 'icon font-picker__search-icon']) ?>
+        <input type="search" class="font-picker__search" id="fontPickerSearch"
+               placeholder="<?= e(t('toolbar.font_search')) ?>"
+               aria-label="<?= e(t('toolbar.font_search')) ?>" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="font-picker__list" id="fontPickerList" role="listbox"
+         aria-label="<?= e(t('toolbar.font')) ?>" tabindex="-1">
+        <?php foreach ($fontGroups as $groupName => $fonts): ?>
+            <section class="font-picker__group" data-font-group>
+                <h3 class="font-picker__heading">
+                    <?= e(t('toolbar.fonts_' . $groupName)) ?>
+                </h3>
+                <?php foreach ($fonts as $index => $font): ?>
+                    <?php $selected = $font['name'] === $defaultFont; ?>
+                    <button type="button" class="font-picker__option" role="option" tabindex="-1"
+                            id="fontOption-<?= e($groupName) ?>-<?= $index ?>"
+                            data-font-option data-font="<?= e($font['name']) ?>"
+                            data-font-stack="<?= e($font['stack']) ?>"
+                            aria-selected="<?= $selected ? 'true' : 'false' ?>"
+                            style="font-family: <?= e($font['stack']) ?>">
+                        <span class="font-picker__name" dir="auto"><?= e($font['name']) ?></span>
+                        <span class="font-picker__sample" aria-hidden="true">
+                            <?= $groupName === 'persian' ? 'ابجد' : 'Aa' ?>
+                        </span>
+                        <?php if ($font['builtIn']): ?>
+                            <span class="font-picker__badge"><?= e(t('toolbar.fonts_built_in')) ?></span>
+                        <?php endif; ?>
+                    </button>
+                <?php endforeach; ?>
+            </section>
+        <?php endforeach; ?>
+        <p class="font-picker__empty" data-font-empty hidden><?= e(t('toolbar.no_fonts')) ?></p>
+    </div>
+    <p class="font-picker__note"><?= e(t('toolbar.fonts_device')) ?></p>
+</div>
 
 <dialog class="dialog" id="appDialog" aria-labelledby="dialogTitle">
     <div class="dialog__header">

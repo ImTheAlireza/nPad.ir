@@ -138,6 +138,28 @@ export default async function run(check, group) {
             assert.equal(unnamed.length, 0, `${unnamed.length} unnamed`);
         });
 
+        check('custom font picker exposes a substantial bilingual catalogue', () => {
+            const trigger = document.getElementById('fontPickerTrigger');
+            const popup = document.getElementById('fontPickerPopup');
+            const options = [...popup.querySelectorAll('[data-font-option]')];
+            assert.ok(trigger, 'font picker trigger missing');
+            assert.equal(trigger.getAttribute('aria-haspopup'), 'listbox');
+            assert.ok(document.getElementById(trigger.getAttribute('aria-controls')));
+            assert.ok(popup.querySelector('input[type="search"]'), 'font search missing');
+            assert.ok(options.length >= 60, `only ${options.length} fonts`);
+            assert.equal(popup.querySelectorAll('[data-font-group]').length, 2);
+        });
+
+        check('font size is manually editable and colours use custom controls', () => {
+            const size = document.querySelector('[data-font-size]');
+            assert.equal(size?.type, 'number');
+            assert.equal(size?.min, '6');
+            assert.equal(size?.max, '200');
+            assert.equal(document.querySelectorAll('[data-color-command]').length, 2);
+            assert.equal(document.querySelectorAll('.toolbar input[type="color"]').length, 0);
+            assert.equal(document.querySelectorAll('.toolbar select[data-command]').length, 0);
+        });
+
         check('menus are keyboard/touch operable buttons', () => {
             const triggers = [...document.querySelectorAll('.menu__trigger')];
             assert.equal(triggers.length, 2, `expected 2 menus, got ${triggers.length}`);

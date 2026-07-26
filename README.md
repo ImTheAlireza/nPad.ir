@@ -110,7 +110,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-152 assertions covering:
+162 assertions covering:
 
 | Suite | What it proves |
 |---|---|

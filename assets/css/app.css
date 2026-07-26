@@ -563,22 +563,227 @@ button, input, select, textarea {
     box-shadow: inset 0 0 0 1px var(--accent-ring);
 }
 
-.toolbar__select {
+/* Custom searchable font picker. The popup sits outside the editor shell and
+   is positioned by JS, so the mobile toolbar's horizontal scroller cannot
+   clip the long list. */
+.font-picker__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    width: 150px;
     height: var(--toolbar-target);
-    max-width: 148px;
-    padding-inline: var(--space-2);
+    padding-inline: var(--space-3) var(--space-2);
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--text-body);
+    color: var(--text-strong);
     font-size: 13px;
     cursor: pointer;
     transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.toolbar__select:hover { background: var(--surface-hover); }
+.font-picker__trigger:hover,
+.font-picker__trigger[aria-expanded='true'] { background: var(--surface-hover); }
 
-/* Colour inputs: the swatch itself is the affordance. */
+.font-picker__value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.font-picker__chevron {
+    width: 14px;
+    height: 14px;
+    transition: transform var(--transition);
+}
+
+.font-picker__trigger[aria-expanded='true'] .font-picker__chevron { transform: rotate(180deg); }
+
+.font-picker__popup {
+    position: fixed;
+    z-index: 110;
+    display: flex;
+    flex-direction: column;
+    width: min(340px, calc(100vw - 24px));
+    max-height: min(520px, calc(100vh - 24px));
+    padding: var(--space-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+    color: var(--text-body);
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+    transform-origin: top center;
+    transition: opacity var(--transition-pop), transform var(--transition-pop);
+}
+
+.font-picker__popup[hidden] { display: none; }
+
+.font-picker__popup[data-open='true'] {
+    opacity: 1;
+    transform: none;
+}
+
+.font-picker__search-wrap {
+    position: relative;
+    flex: none;
+}
+
+.font-picker__search-icon {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: var(--space-3);
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    transform: translateY(-50%);
+}
+
+.font-picker__search {
+    width: 100%;
+    height: 40px;
+    padding-inline: 36px var(--space-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunken);
+    color: var(--text-strong);
+    font-size: 14px;
+}
+
+.font-picker__search::-webkit-search-cancel-button { cursor: pointer; }
+
+.font-picker__list {
+    min-height: 80px;
+    margin-top: var(--space-2);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+
+.font-picker__group + .font-picker__group { margin-top: var(--space-2); }
+
+.font-picker__heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: var(--space-2) var(--space-2) var(--space-1);
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+html[lang='fa'] .font-picker__heading { font-family: var(--font-fa); letter-spacing: 0; }
+
+.font-picker__option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: 42px;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-strong);
+    text-align: start;
+    cursor: pointer;
+    transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.font-picker__option:hover,
+.font-picker__option:focus-visible { background: var(--surface-hover); }
+
+.font-picker__option[aria-selected='true'] {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+
+.font-picker__name {
+    overflow: hidden;
+    font-size: 15px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.font-picker__sample { color: var(--text-muted); font-size: 15px; }
+
+.font-picker__badge {
+    padding: 2px 6px;
+    border-radius: var(--radius-full);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1.5;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
+
+.font-picker__empty {
+    padding: var(--space-5) var(--space-3);
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+.font-picker__note {
+    flex: none;
+    margin: var(--space-2) var(--space-1) 0;
+    padding: var(--space-2);
+    border-top: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+/* A real number field replaces execCommand's seven fixed HTML sizes. */
+.sizefield {
+    display: inline-flex;
+    align-items: center;
+    height: var(--toolbar-target);
+    padding-inline: var(--space-2);
+    border-inline-start: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    cursor: text;
+    transition: background var(--transition-fast);
+}
+
+.sizefield:hover,
+.sizefield:focus-within { background: var(--surface-hover); }
+
+.sizefield__input {
+    width: 42px;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text-strong);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+}
+
+.sizefield__unit {
+    margin-inline-start: 3px;
+    color: var(--text-muted);
+    font-size: 11px;
+    user-select: none;
+}
+
+/* Colour buttons open the custom picker modal; the small underline always
+   shows the colour that will be applied. */
 .colorfield {
     position: relative;
     display: inline-flex;
@@ -586,14 +791,16 @@ button, input, select, textarea {
     justify-content: center;
     width: var(--toolbar-target);
     height: var(--toolbar-target);
+    padding: 0;
+    border: 0;
     border-radius: var(--radius-sm);
+    background: transparent;
     cursor: pointer;
     transition: background var(--transition-fast), transform var(--transition-fast);
 }
 
 .colorfield:hover { background: var(--surface-hover); }
 .colorfield:active { transform: scale(0.92); }
-
 
 .colorfield__icon {
     display: grid;
@@ -606,20 +813,11 @@ button, input, select, textarea {
 .colorfield__swatch {
     position: absolute;
     inset-inline: 7px;
-    bottom: 6px;
-    height: 3px;
+    bottom: 5px;
+    height: 4px;
+    border: 1px solid rgba(15, 23, 42, 0.18);
     border-radius: 2px;
-    background: currentColor;
     pointer-events: none;
-}
-
-.colorfield input[type='color'] {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
 }
 
 @media (max-width: 640px) {
@@ -808,7 +1006,11 @@ button, input, select, textarea {
 .dialog__close:active { transform: scale(0.9); }
 
 .dialog__body {
+    max-height: calc(100vh - 170px);
+    max-height: calc(100dvh - 170px);
     padding: var(--space-3) var(--space-5) var(--space-4);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     font-size: 14px;
 }
 
@@ -851,6 +1053,155 @@ button, input, select, textarea {
     margin-top: var(--space-1);
     color: var(--danger);
     font-size: 13px;
+}
+
+/* Custom HSV colour picker used for both text and highlight colour. */
+.colour-picker { --picker-hue: hsl(0 100% 50%); }
+
+.colour-picker__area {
+    position: relative;
+    width: 100%;
+    height: 180px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background-color: var(--picker-hue);
+    background-image:
+        linear-gradient(to bottom, transparent, #000),
+        linear-gradient(to right, #fff, transparent);
+    cursor: crosshair;
+    touch-action: none;
+    user-select: none;
+}
+
+.colour-picker__marker {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 1px 4px rgba(0, 0, 0, 0.45);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.colour-picker__hue-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+}
+
+.colour-picker__label {
+    color: var(--text-body);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.colour-picker__hue {
+    width: 100%;
+    height: 18px;
+    margin: 0;
+    border-radius: var(--radius-full);
+    background: linear-gradient(to right,
+        #f00 0%, #ff0 16.66%, #0f0 33.33%, #0ff 50%, #00f 66.66%, #f0f 83.33%, #f00 100%);
+    cursor: pointer;
+    direction: ltr;
+    appearance: none;
+}
+
+.colour-picker__hue::-webkit-slider-runnable-track {
+    height: 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    background: transparent;
+}
+
+.colour-picker__hue::-moz-range-track {
+    height: 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    background: transparent;
+}
+
+.colour-picker__hue::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -4px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+    appearance: none;
+}
+
+.colour-picker__hue::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+}
+
+.colour-picker__custom {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    align-items: end;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+}
+
+.colour-picker__preview {
+    width: 44px;
+    height: 40px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background-color: #000;
+}
+
+.colour-picker__custom .field { margin: 0; }
+
+.colour-picker__hex {
+    direction: ltr;
+    font-family: var(--font-mono);
+    text-align: left;
+    text-transform: uppercase;
+}
+
+.colour-picker__presets-label {
+    display: block;
+    margin-top: var(--space-4);
+}
+
+.colour-picker__presets {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 7px;
+    margin-top: var(--space-2);
+}
+
+.colour-picker__preset {
+    position: relative;
+    aspect-ratio: 1;
+    min-width: 0;
+    padding: 0;
+    border: 1px solid rgba(15, 23, 42, 0.30);
+    border-radius: var(--radius-sm);
+    background-color: var(--preset-colour);
+    cursor: pointer;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.colour-picker__preset:hover { transform: translateY(-2px); }
+
+.colour-picker__preset[aria-pressed='true'] {
+    box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 4px var(--accent);
+}
+
+@media (max-width: 440px) {
+    .colour-picker__area { height: 150px; }
+    .colour-picker__presets { grid-template-columns: repeat(8, 1fr); }
 }
 
 .stats {
