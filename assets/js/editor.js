@@ -201,7 +201,13 @@ export function initEditor({ strings, onEvent }) {
 
     if (toolbar) {
         toolbar.addEventListener('click', (event) => {
-            const btn = event.target.closest('[data-command]');
+            // Only buttons need preventDefault (they can submit forms or lose
+            // selection on focus). Applying it to the <select> elements below
+            // cancels the browser's own "open the option list" action, which
+            // made the font and size dropdowns appear to close instantly on
+            // click without ever opening. Native <select>/<input> controls
+            // are handled by their own listeners further down.
+            const btn = event.target.closest('button[data-command]');
             if (!btn) return;
             event.preventDefault();
             const { command, value } = btn.dataset;

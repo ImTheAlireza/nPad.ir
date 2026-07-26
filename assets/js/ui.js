@@ -253,9 +253,8 @@ export function toast(message, variant = 'info') {
     region.appendChild(el);
 
     window.setTimeout(() => {
-        el.style.transition = 'opacity 200ms';
-        el.style.opacity = '0';
-        window.setTimeout(() => el.remove(), 220);
+        el.classList.add('toast--leaving');
+        window.setTimeout(() => el.remove(), 200);
     }, 4200);
 }
 
