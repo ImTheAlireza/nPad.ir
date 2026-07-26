@@ -124,6 +124,30 @@ export default function run(check, group) {
         assert.ok(!/font-src[^;]*https:/.test(csp), 'CSP still allows external fonts');
     });
 
+    check('non-versioned ES modules are not cached immutable', () => {
+        const ht = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+
+        // app.js is loaded with ?v=<mtime>, but the modules it imports
+        // ("./editor.js" etc.) are resolved bare by the browser. If those are
+        // served immutable, a deploy never reaches returning visitors.
+        const cssJsRule = ht.match(/<FilesMatch "\\\.\(css\|js\)\$">([\s\S]*?)<\/FilesMatch>/);
+        assert.ok(cssJsRule, 'no Cache-Control rule for css/js');
+        assert.ok(!/immutable/.test(cssJsRule[1]),
+            'css/js served immutable, but module imports carry no version');
+        assert.ok(/must-revalidate|max-age=0/.test(cssJsRule[1]),
+            'css/js must revalidate');
+    });
+
+    check('app.js imports resolve to real files', () => {
+        const app = fs.readFileSync(path.join(ROOT, 'assets/js/app.js'), 'utf8');
+        const imports = [...app.matchAll(/from\s+'(\.\/[^']+)'/g)].map((m) => m[1]);
+        assert.ok(imports.length >= 4, `only ${imports.length} imports found`);
+        const missing = imports.filter(
+            (i) => !fs.existsSync(path.join(ROOT, 'assets/js', i.replace('./', ''))),
+        );
+        assert.deepEqual(missing, [], `unresolvable imports: ${missing.join(', ')}`);
+    });
+
     check('source directories are blocked at the server', () => {
         const ht = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
         assert.ok(/\^\(includes\|lang\|tests\)\//.test(ht),
