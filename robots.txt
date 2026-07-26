@@ -1,21 +1,8 @@
 User-agent: *
 Allow: /
-Allow: /blog/
-Allow: /fa/
-Disallow: /dashboard.php
-Disallow: /track.php
-Disallow: /export.php
 Disallow: /admin/
+Disallow: /api/
+Disallow: /includes/
+Disallow: /lang/
 
-# Crawl-delay for polite crawlers
-Crawl-delay: 1
-
-# Sitemap location
 Sitemap: https://npad.ir/sitemap.xml
-
-# Block bad bots (optional)
-User-agent: AhrefsBot
-Crawl-delay: 10
-
-User-agent: SemrushBot
-Crawl-delay: 10

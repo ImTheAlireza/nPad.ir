@@ -1,0 +1,228 @@
+<?php
+/**
+ * English interface copy.
+ *
+ * All user-facing text lives here so markup stays structural and the two
+ * languages can never drift apart in the template.
+ */
+
+declare(strict_types=1);
+
+return [
+    'meta' => [
+        'title'       => 'NPad — Free Online Notepad with Auto-Save',
+        'description' => 'A free online notepad that works in your browser. Rich text formatting, automatic saving, dark mode, and full offline support. No sign-up required.',
+        'og_title'    => 'NPad — Free Online Notepad',
+        'og_desc'     => 'Write, format and save notes directly in your browser. Free, private and offline-capable.',
+    ],
+
+    'skip_link'   => 'Skip to editor',
+    'lang_label'  => 'Language',
+    'switch_to'   => 'فارسی',
+
+    'menu' => [
+        'file'        => 'File',
+        'edit'        => 'Edit',
+        'new'         => 'New',
+        'open'        => 'Open…',
+        'save'        => 'Download .txt',
+        'save_html'   => 'Download .html',
+        'print'       => 'Print',
+        'details'     => 'Document details',
+        'clear'       => 'Clear saved data',
+        'copy'        => 'Copy',
+        'cut'         => 'Cut',
+        'paste'       => 'Paste',
+        'paste_plain' => 'Paste as plain text',
+        'select_all'  => 'Select all',
+    ],
+
+    'toolbar' => [
+        'font'          => 'Font',
+        'size'          => 'Font size',
+        'bold'          => 'Bold',
+        'italic'        => 'Italic',
+        'underline'     => 'Underline',
+        'strike'        => 'Strikethrough',
+        'subscript'     => 'Subscript',
+        'superscript'   => 'Superscript',
+        'bullet_list'   => 'Bulleted list',
+        'ordered_list'  => 'Numbered list',
+        'align_left'    => 'Align left',
+        'align_center'  => 'Align centre',
+        'align_right'   => 'Align right',
+        'align_justify' => 'Justify',
+        'text_colour'   => 'Text colour',
+        'highlight'     => 'Highlight colour',
+        'undo'          => 'Undo',
+        'redo'          => 'Redo',
+        'indent'        => 'Increase indent',
+        'outdent'       => 'Decrease indent',
+        'link'          => 'Insert link',
+        'clear_format'  => 'Clear formatting',
+        'group_history' => 'History',
+        'group_format'  => 'Text formatting',
+        'group_lists'   => 'Lists and indentation',
+        'group_align'   => 'Alignment',
+        'group_colour'  => 'Colour',
+        'group_insert'  => 'Insert',
+    ],
+
+    'editor' => [
+        'label'       => 'Note editor',
+        'placeholder' => 'Start typing…',
+    ],
+
+    'status' => [
+        'words'      => 'Words',
+        'characters' => 'Characters',
+        'selected'   => 'Selected',
+        'saved'      => 'All changes saved',
+        'saving'     => 'Saving…',
+        'unsaved'    => 'Unsaved changes',
+        'offline'    => 'Offline — changes are saved on this device',
+    ],
+
+    'dialog' => [
+        'confirm'        => 'Confirm',
+        'cancel'         => 'Cancel',
+        'close'          => 'Close',
+        'ok'             => 'OK',
+        'new_title'      => 'Start a new note?',
+        'new_body'       => 'The current note will be cleared. This cannot be undone.',
+        'clear_title'    => 'Clear saved data?',
+        'clear_body'     => 'This permanently removes the note stored in this browser.',
+        'details_title'  => 'Document details',
+        'link_title'     => 'Insert link',
+        'link_label'     => 'Address (URL)',
+        'link_invalid'   => 'Enter a valid http:// or https:// address.',
+        'open_too_large' => 'That file is larger than 5 MB and was not opened.',
+        'open_failed'    => 'The file could not be read.',
+        'paste_blocked'  => 'Your browser blocked clipboard access. Use Ctrl+V (⌘V on Mac) instead.',
+        'copy_blocked'   => 'Your browser blocked clipboard access. Use Ctrl+C (⌘C on Mac) instead.',
+    ],
+
+    'details' => [
+        'words'      => 'Words',
+        'characters' => 'Characters',
+        'no_spaces'  => 'Characters (no spaces)',
+        'paragraphs' => 'Paragraphs',
+        'reading'    => 'Reading time',
+        'minutes'    => 'min',
+        'saved_at'   => 'Last saved',
+        'never'      => 'Not yet saved',
+    ],
+
+    'theme' => [
+        'label' => 'Dark mode',
+        'dark'  => 'Switch to dark mode',
+        'light' => 'Switch to light mode',
+    ],
+
+    'hero' => [
+        'title' => 'A free online notepad that respects your privacy',
+        'lede'  => 'NPad is a rich text editor that runs entirely in your browser. Format text, build lists and insert links — everything saves automatically to this device. No account, no downloads, no tracking of what you write.',
+        'cta'   => 'Start writing',
+    ],
+
+    'why' => [
+        'title' => 'Why NPad?',
+        'body'  => 'Most online notepads either strip out formatting or ask you to sign up first. NPad does neither. It keeps the formatting tools of a full editor while storing every note locally, so your writing stays on your machine and remains available even without a connection.',
+    ],
+
+    'features' => [
+        'title' => 'Features',
+        'items' => [
+            ['icon' => 'save',    'title' => 'Automatic saving',   'desc' => 'Every change is written to local storage as you type, and flushed immediately if you close the tab.'],
+            ['icon' => 'format',  'title' => 'Rich text editing',  'desc' => 'Bold, italic, underline, strikethrough, subscript, superscript, lists, alignment, colours and links.'],
+            ['icon' => 'moon',    'title' => 'Light and dark themes', 'desc' => 'Follows your system preference by default, and remembers your choice with no flash on load.'],
+            ['icon' => 'lock',    'title' => 'Private by design',  'desc' => 'Note content never leaves your browser. There is no account system and no server-side copy of your text.'],
+            ['icon' => 'bolt',    'title' => 'No sign-up',         'desc' => 'Open the page and type. Nothing to install, nothing to register, no email address requested.'],
+            ['icon' => 'offline', 'title' => 'Works offline',      'desc' => 'A service worker caches the app, so NPad keeps working when your connection drops.'],
+        ],
+    ],
+
+    'audience' => [
+        'title' => 'Built for everyday writing',
+        'items' => [
+            ['icon' => 'student', 'title' => 'Students',      'desc' => 'Lecture notes, study guides, and quick research capture between classes.'],
+            ['icon' => 'work',    'title' => 'Professionals', 'desc' => 'Meeting notes, email drafts, and a scratchpad that survives a browser restart.'],
+            ['icon' => 'pen',     'title' => 'Writers',       'desc' => 'Drafts, outlines and ideas, with formatting that carries into your final document.'],
+        ],
+    ],
+
+    'shortcuts' => [
+        'title' => 'Keyboard shortcuts',
+        'items' => [
+            ['keys' => 'Ctrl + B', 'desc' => 'Bold'],
+            ['keys' => 'Ctrl + I', 'desc' => 'Italic'],
+            ['keys' => 'Ctrl + U', 'desc' => 'Underline'],
+            ['keys' => 'Ctrl + K', 'desc' => 'Insert link'],
+            ['keys' => 'Ctrl + S', 'desc' => 'Download as .txt'],
+            ['keys' => 'Ctrl + P', 'desc' => 'Print'],
+            ['keys' => 'Ctrl + Z', 'desc' => 'Undo'],
+            ['keys' => 'Ctrl + Shift + Z', 'desc' => 'Redo'],
+        ],
+        'note' => 'On macOS use ⌘ in place of Ctrl.',
+    ],
+
+    'faq' => [
+        'title' => 'Frequently asked questions',
+        'items' => [
+            ['q' => 'Is NPad free?',                       'a' => 'Yes — every feature is free, with no adverts, no paid tier and no usage limits.'],
+            ['q' => 'Where are my notes stored?',          'a' => 'In your browser\'s IndexedDB storage, on the device you are using. The text you write is never uploaded to our servers.'],
+            ['q' => 'Do you collect any data at all?',     'a' => 'We record anonymous usage events — page views and which features are used — with the last part of the IP address removed. Your note content is never included. See the privacy page for detail.'],
+            ['q' => 'Can I use my notes on another device?', 'a' => 'Notes are stored per browser, so they do not sync automatically. Use Download .txt or .html to move a note between devices.'],
+            ['q' => 'Does NPad work offline?',             'a' => 'Yes. After your first visit the app is cached by a service worker, so it loads and saves normally without a connection.'],
+            ['q' => 'Is there a size limit?',              'a' => 'Only your browser\'s storage quota, which is typically well beyond what a text note will use. Files you open are limited to 5 MB.'],
+        ],
+    ],
+
+    'cta' => [
+        'title' => 'Ready when you are',
+        'body'  => 'Scroll back up and start typing — your note saves itself.',
+        'button' => 'Go to the editor',
+    ],
+
+    'footer' => [
+        'tagline' => 'A free, private online notepad.',
+        'home'    => 'Home',
+        'privacy' => 'Privacy',
+        'contact' => 'Contact',
+        'rights'  => 'All rights reserved.',
+    ],
+
+    'privacy' => [
+        'title'   => 'Privacy',
+        'updated' => 'Last updated',
+        'intro'   => 'This page explains exactly what NPad stores and what it sends to our servers. It is deliberately short, because NPad collects very little.',
+        'sections' => [
+            [
+                'heading' => 'Your notes stay on your device',
+                'body'    => 'Everything you type is stored in your browser using IndexedDB. Note content is never transmitted to our servers, and we have no way to read it. Clearing your browser data deletes it permanently.',
+            ],
+            [
+                'heading' => 'Anonymous usage statistics',
+                'body'    => 'To understand which features people use, NPad records events such as a page view, a download, or the theme being switched. Each record stores the event name, a timestamp, your browser\'s user agent string, and a truncated IP address with the final octet replaced by zero (for example 203.0.113.0). This cannot identify you individually, and note content is never part of it.',
+            ],
+            [
+                'heading' => 'No third-party tracking',
+                'body'    => 'There are no advertising networks, no analytics SDKs, no social media pixels and no external fonts or scripts. The page loads only from npad.ir.',
+            ],
+            [
+                'heading' => 'Cookies',
+                'body'    => 'The public site sets no cookies. A single session cookie is used on the private admin dashboard, which visitors never reach.',
+            ],
+            [
+                'heading' => 'Contact',
+                'body'    => 'Questions about this policy can be sent to the address in the footer.',
+            ],
+        ],
+    ],
+
+    'error' => [
+        '404_title' => 'Page not found',
+        '404_body'  => 'That page does not exist. It may have been moved or removed.',
+        'back'      => 'Back to the notepad',
+    ],
+];
