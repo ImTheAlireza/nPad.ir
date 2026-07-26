@@ -116,6 +116,8 @@
     --toolbar-target: 40px;   /* pointer-coarse bumps this to 44px */
 
     --transition: 160ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-pop: 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 [data-theme='dark'] {
@@ -173,6 +175,7 @@ body {
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color var(--transition-pop), color var(--transition);
     overflow-x: hidden;
 }
 
@@ -214,6 +217,13 @@ button, input, select, textarea {
     stroke-linejoin: round;
     pointer-events: none;
 }
+
+@keyframes icon-pop-in {
+    from { opacity: 0; transform: scale(0.5) rotate(-45deg); }
+    to { opacity: 1; transform: none; }
+}
+
+.icon--pop { animation: icon-pop-in var(--transition-pop); }
 
 /* --------------------------------------------------------------------------
    4. Accessibility primitives
@@ -297,6 +307,7 @@ button, input, select, textarea {
     border-radius: var(--radius-lg);
     background: var(--surface-raised);
     box-shadow: var(--shadow-sm);
+    transition: background var(--transition), border-color var(--transition);
 }
 
 .appbar__group {
@@ -356,13 +367,18 @@ button, input, select, textarea {
     color: var(--text-body);
     font-weight: 500;
     cursor: pointer;
-    transition: background var(--transition), color var(--transition);
+    transition: background var(--transition), color var(--transition), transform var(--transition-fast);
 }
 
 .menu__trigger:hover,
 .iconbtn:hover {
     background: var(--surface-hover);
     color: var(--text-strong);
+}
+
+.menu__trigger:active,
+.iconbtn:active {
+    transform: scale(0.94);
 }
 
 .menu__trigger[aria-expanded='true'] {
@@ -375,16 +391,29 @@ button, input, select, textarea {
     inset-inline-start: 0;
     top: calc(100% + var(--space-1));
     z-index: 70;
-    display: none;
     min-width: 232px;
     padding: var(--space-1);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     background: var(--surface-raised);
     box-shadow: var(--shadow-lg);
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+    transform-origin: top;
+    pointer-events: none;
+    transition: opacity var(--transition-fast), transform var(--transition-pop),
+        visibility 0s linear var(--transition-fast);
 }
 
-.menu__panel[data-open='true'] { display: block; }
+.menu__panel[data-open='true'] {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    transition: opacity var(--transition-fast), transform var(--transition-pop),
+        visibility 0s linear;
+}
 
 .menu__item {
     display: flex;
@@ -400,6 +429,7 @@ button, input, select, textarea {
     text-align: start;
     text-decoration: none;
     cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .menu__item:hover,
@@ -478,6 +508,7 @@ button, input, select, textarea {
     background: var(--surface-raised);
     box-shadow: var(--shadow-md);
     overflow: hidden;
+    transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
 }
 
 .toolbar {
@@ -511,14 +542,19 @@ button, input, select, textarea {
     background: transparent;
     color: var(--text-body);
     cursor: pointer;
-    transition: background var(--transition), color var(--transition);
+    transition: background var(--transition), color var(--transition), transform var(--transition-fast),
+        box-shadow var(--transition);
 }
 
-.toolbar__btn .icon { width: 17px; height: 17px; }
+.toolbar__btn .icon { width: 17px; height: 17px; transition: transform var(--transition-fast); }
 
 .toolbar__btn:hover {
     background: var(--surface-hover);
     color: var(--text-strong);
+}
+
+.toolbar__btn:active {
+    transform: scale(0.92);
 }
 
 .toolbar__btn[aria-pressed='true'] {
@@ -537,6 +573,7 @@ button, input, select, textarea {
     color: var(--text-body);
     font-size: 13px;
     cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .toolbar__select:hover { background: var(--surface-hover); }
@@ -551,9 +588,12 @@ button, input, select, textarea {
     height: var(--toolbar-target);
     border-radius: var(--radius-sm);
     cursor: pointer;
+    transition: background var(--transition-fast), transform var(--transition-fast);
 }
 
 .colorfield:hover { background: var(--surface-hover); }
+.colorfield:active { transform: scale(0.92); }
+
 
 .colorfield__icon {
     display: grid;
@@ -611,6 +651,7 @@ button, input, select, textarea {
     line-height: 1.7;
     outline: none;
     overflow-wrap: break-word;
+    transition: background var(--transition), color var(--transition);
 }
 
 .editor:focus-visible {
@@ -698,11 +739,37 @@ button, input, select, textarea {
     background: var(--surface-raised);
     color: var(--text-body);
     box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+    transition: opacity var(--transition-pop), transform var(--transition-pop),
+        overlay 220ms allow-discrete, display 220ms allow-discrete;
+}
+
+.dialog[open] {
+    opacity: 1;
+    transform: none;
+}
+
+@starting-style {
+    .dialog[open] {
+        opacity: 0;
+        transform: scale(0.96) translateY(8px);
+    }
 }
 
 .dialog::backdrop {
     background: rgba(8, 12, 22, 0.55);
     backdrop-filter: blur(2px);
+    opacity: 0;
+    transition: opacity var(--transition-pop), overlay 220ms allow-discrete, display 220ms allow-discrete;
+}
+
+.dialog[open]::backdrop {
+    opacity: 1;
+}
+
+@starting-style {
+    .dialog[open]::backdrop { opacity: 0; }
 }
 
 .dialog__header {
@@ -730,12 +797,15 @@ button, input, select, textarea {
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
 }
 
 .dialog__close:hover {
     background: var(--surface-hover);
     color: var(--text-strong);
 }
+
+.dialog__close:active { transform: scale(0.9); }
 
 .dialog__body {
     padding: var(--space-3) var(--space-5) var(--space-4);
@@ -811,8 +881,11 @@ button, input, select, textarea {
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
-    transition: background var(--transition), border-color var(--transition);
+    transition: background var(--transition), border-color var(--transition), transform var(--transition-fast),
+        box-shadow var(--transition);
 }
+
+.btn:active { transform: scale(0.97); }
 
 .btn--primary {
     background: var(--accent);
@@ -864,14 +937,20 @@ button, input, select, textarea {
     color: var(--text-body);
     box-shadow: var(--shadow-lg);
     font-size: 14px;
-    animation: toast-in 180ms ease-out;
+    animation: toast-in var(--transition-pop);
+    transition: opacity var(--transition), transform var(--transition);
 }
 
 .toast--error { border-inline-start: 3px solid var(--danger); }
 .toast--success { border-inline-start: 3px solid var(--success); }
 
+.toast--leaving {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+}
+
 @keyframes toast-in {
-    from { opacity: 0; transform: translateY(8px); }
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
     to { opacity: 1; transform: none; }
 }
 

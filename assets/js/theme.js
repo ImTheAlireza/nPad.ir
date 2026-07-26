@@ -16,7 +16,7 @@ export function currentTheme() {
     return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 }
 
-function apply(theme) {
+function apply(theme, animate = false) {
     document.documentElement.dataset.theme = theme;
 
     // Keep the browser UI (address bar, form controls) in step.
@@ -29,7 +29,14 @@ function apply(theme) {
         const label = isDark ? btn.dataset.labelLight : btn.dataset.labelDark;
         if (label) btn.setAttribute('aria-label', label);
         btn.querySelectorAll('[data-icon]').forEach((icon) => {
-            icon.hidden = icon.dataset.icon !== (isDark ? 'sun' : 'moon');
+            const shouldShow = icon.dataset.icon === (isDark ? 'sun' : 'moon');
+            icon.hidden = !shouldShow;
+            if (shouldShow && animate) {
+                icon.classList.remove('icon--pop');
+                // Force reflow so the animation restarts on repeated toggles.
+                void icon.offsetWidth;
+                icon.classList.add('icon--pop');
+            }
         });
     });
 }
@@ -40,7 +47,7 @@ export function initTheme({ onChange } = {}) {
     document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const next = currentTheme() === 'dark' ? 'light' : 'dark';
-            apply(next);
+            apply(next, true);
             try {
                 localStorage.setItem(STORAGE_KEY, next);
             } catch {
