@@ -6,6 +6,12 @@
 
 declare(strict_types=1);
 
+// Not a standalone endpoint: refuse direct requests.
+if (!defined('NPAD_ROOT')) {
+    http_response_code(404);
+    exit;
+}
+
 $year     = date('Y');
 $homePath = $lang === 'fa' ? '/fa/' : '/';
 $privacy  = $lang === 'fa' ? '/fa/privacy.php' : '/privacy.php';

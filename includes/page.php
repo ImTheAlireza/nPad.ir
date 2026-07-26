@@ -11,6 +11,13 @@
 
 declare(strict_types=1);
 
+// Not a standalone endpoint. This runs before bootstrap.php defines
+// NPAD_ROOT, so it keys off $lang being supplied by the calling entry point.
+if (!isset($lang)) {
+    http_response_code(404);
+    exit;
+}
+
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/icons.php';
 

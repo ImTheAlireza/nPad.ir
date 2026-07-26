@@ -11,6 +11,12 @@
 
 declare(strict_types=1);
 
+// Not a standalone endpoint: refuse direct requests.
+if (!defined('NPAD_ROOT')) {
+    http_response_code(404);
+    exit;
+}
+
 $groups = [
     [
         'label' => t('toolbar.group_history'),

@@ -1,61 +1,33 @@
-# NPad - Git Ignore File
-# CRITICAL: Never commit sensitive data to version control
+# NPad
 
-# Configuration files with credentials
+# Credentials — never commit
 config.php
+.env
+.env.*
 
-# Error logs
-error.log
+# Logs
 *.log
+error_log
 
-# Backup files
-*.backup
+# Dependencies (test tooling only; the site itself ships no JS deps)
+node_modules/
+package-lock.json
+
+# Test output
+tests/rendered/
+
+# Backups / dumps
 *.bak
 *.old
-
-# Database dumps
+*.backup
 *.sql
 *.sqlite
 
-# OS generated files
+# OS / editor
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 desktop.ini
-
-# IDE/Editor files
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
-.project
-.settings/
-
-# Temporary files
-tmp/
-temp/
-cache/
-*.tmp
-
-# Environment files
-.env
-.env.local
-.env.production
-
-# Composer (if you use it)
-/vendor/
-composer.lock
-
-# Node modules (if you add any JS tooling)
-node_modules/
-package-lock.json
-yarn.lock
-
-# Build artifacts
-dist/
-build/

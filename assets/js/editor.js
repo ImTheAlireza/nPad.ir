@@ -58,8 +58,44 @@ export function initEditor({ strings, onEvent }) {
         return trimmed ? trimmed.split(/\s+/).length : 0;
     };
 
+    /**
+     * Plain-text view of the document.
+     *
+     * Deliberately not innerText: that property is defined in terms of
+     * rendered layout, so reading it on every keystroke forces a reflow, and
+     * it returns undefined in non-rendering contexts. Walking the tree is
+     * cheaper, deterministic, and testable.
+     */
+    function editorText() {
+        const BLOCKS = new Set([
+            'P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+            'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL',
+        ]);
+
+        let out = '';
+
+        (function walk(node) {
+            for (const child of node.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    out += child.nodeValue;
+                } else if (child.nodeType === Node.ELEMENT_NODE) {
+                    if (child.tagName === 'BR') {
+                        out += '\n';
+                        continue;
+                    }
+                    const isBlock = BLOCKS.has(child.tagName);
+                    if (isBlock && out && !out.endsWith('\n')) out += '\n';
+                    walk(child);
+                    if (isBlock && out && !out.endsWith('\n')) out += '\n';
+                }
+            }
+        })(editor);
+
+        return out;
+    }
+
     function updateCounts() {
-        const text = editor.innerText || '';
+        const text = editorText();
         const words = countWords(text);
         const chars = text.replace(/\n+$/, '').length;
 
@@ -367,7 +403,7 @@ export function initEditor({ strings, onEvent }) {
     const stamp = () => new Date().toISOString().slice(0, 10);
 
     function saveAsText() {
-        download(`npad-${stamp()}.txt`, editor.innerText, 'text/plain;charset=utf-8');
+        download(`npad-${stamp()}.txt`, editorText(), 'text/plain;charset=utf-8');
         track('download_txt');
     }
 
@@ -391,7 +427,7 @@ ${editor.innerHTML}
     }
 
     async function showDetails() {
-        const text = editor.innerText || '';
+        const text = editorText();
         const words = countWords(text);
         const chars = text.replace(/\n+$/, '').length;
         const noSpaces = text.replace(/\s/g, '').length;
