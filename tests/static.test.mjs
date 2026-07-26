@@ -124,6 +124,12 @@ export default function run(check, group) {
         assert.ok(!/font-src[^;]*https:/.test(csp), 'CSP still allows external fonts');
     });
 
+    check('source directories are blocked at the server', () => {
+        const ht = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        assert.ok(/\^\(includes\|lang\|tests\)\//.test(ht),
+            'includes/, lang/ and tests/ are reachable over HTTP');
+    });
+
     check('index.html is gone', () => {
         assert.ok(!fs.existsSync(path.join(ROOT, 'index.html')), 'duplicate homepage still present');
     });

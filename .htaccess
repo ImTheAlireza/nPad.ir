@@ -28,6 +28,13 @@ ErrorDocument 404 /404.php
     Require all denied
 </FilesMatch>
 
+# Source directories are never requested directly. The partials also guard
+# themselves in PHP, but blocking at the server is the cheaper first line.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(includes|lang|tests)/ - [F,L]
+</IfModule>
+
 # ------------------------------------------------------------------------------
 # HTTPS + canonical host
 # ------------------------------------------------------------------------------
