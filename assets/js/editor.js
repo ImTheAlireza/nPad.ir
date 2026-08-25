@@ -31,11 +31,22 @@ import {
     createTagRecord,
 } from './storage.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
+import {
+    htmlToMarkdown,
+    markdownToHtml,
+    noteToJson,
+    parseNoteJson,
+    htmlToRtf,
+    rtfToHtml,
+    htmlToDocx,
+    docxToHtml,
+    pdfToHtml,
+} from './formats.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const WORDS_PER_MINUTE = 200;
 
 /** Commands whose active state we reflect in the toolbar. */
@@ -687,6 +698,8 @@ export function initEditor({ strings, onEvent }) {
         folderId,
         tags,
         pinned = false,
+        createdAt = null,
+        updatedAt = null,
     } = {}) {
         if (dirty) await persist();
         const initialFolder = folderId !== undefined
@@ -701,6 +714,8 @@ export function initEditor({ strings, onEvent }) {
             pinned,
             folderId: initialFolder,
             tags: initialTags,
+            createdAt,
+            updatedAt,
         });
         notes.push(note);
         await saveNote(note);
@@ -1815,31 +1830,126 @@ export function initEditor({ strings, onEvent }) {
         await createNewNote();
     }
 
+    async function importNotes(imported, fallbackTitle) {
+        const prepared = [];
+        let organizationChanged = false;
+        for (const item of imported) {
+            let folderId = null;
+            const folderName = item.folder?.name?.trim().slice(0, 80);
+            if (folderName) {
+                let folder = organization.folders.find((candidate) =>
+                    candidate.name.toLocaleLowerCase() === folderName.toLocaleLowerCase());
+                if (!folder) {
+                    folder = createFolderRecord(folderName);
+                    organization.folders.push(folder);
+                    organizationChanged = true;
+                }
+                folderId = folder.id;
+            }
+
+            const tagIds = [];
+            for (const importedTag of item.tags || []) {
+                const tagName = importedTag.name.trim().slice(0, 40);
+                if (!tagName) continue;
+                let tag = organization.tags.find((candidate) =>
+                    candidate.name.toLocaleLowerCase() === tagName.toLocaleLowerCase());
+                if (!tag) {
+                    tag = createTagRecord(tagName, importedTag.color);
+                    organization.tags.push(tag);
+                    organizationChanged = true;
+                }
+                tagIds.push(tag.id);
+            }
+            prepared.push({
+                title: item.title.trim().slice(0, 120) || fallbackTitle,
+                html: sanitizeHtml(item.html),
+                pinned: !!item.pinned,
+                folderId,
+                tags: [...new Set(tagIds)],
+                createdAt: item.createdAt,
+                updatedAt: item.updatedAt,
+            });
+        }
+
+        if (organizationChanged) {
+            await saveOrganization(organization);
+            renderOrganization();
+        }
+        for (const note of prepared) {
+            await createNewNote({ ...note, focusTitle: false, report: false });
+        }
+    }
+
+    function importErrorMessage(error, extension) {
+        const reason = String(error?.message || '');
+        if (extension === 'pdf') {
+            if (/encrypted/i.test(reason)) return strings.openPdfEncrypted;
+            if (/no extractable/i.test(reason)) return strings.openPdfNoText;
+            return strings.openPdfUnsupported;
+        }
+        if (/notreadable|could not be read/i.test(reason)) return strings.openFailed;
+        return strings.openUnsupported;
+    }
+
     function openFile() {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.txt,.html,.htm,text/plain,text/html';
+        input.accept = [
+            '.txt', '.html', '.htm', '.md', '.markdown', '.json', '.docx', '.pdf', '.rtf',
+            'text/plain', 'text/html', 'text/markdown', 'application/json',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/pdf', 'application/rtf', 'text/rtf',
+        ].join(',');
 
-        input.addEventListener('change', () => {
+        input.addEventListener('change', async () => {
             const file = input.files && input.files[0];
             if (!file) return;
-
             if (file.size > MAX_FILE_BYTES) {
                 toast(strings.openTooLarge, 'error');
                 return;
             }
 
-            const reader = new FileReader();
-            reader.onerror = () => toast(strings.openFailed, 'error');
-            reader.onload = () => {
-                const content = String(reader.result ?? '');
-                const isHtml = /\.html?$/i.test(file.name) || /^\s*<(!doctype|html|div|p|span)/i.test(content);
-                const html = isHtml ? sanitizeHtml(content) : textToHtml(content);
-                const title = file.name.replace(/\.[^.]+$/, '') || strings.noteUntitled;
-                void createNewNote({ title, html, focusTitle: false, report: false })
-                    .then(() => track('open_file'));
-            };
-            reader.readAsText(file);
+            const title = file.name.replace(/\.[^.]+$/, '').slice(0, 120) || strings.noteUntitled;
+            let extension = file.name.split('.').pop()?.toLowerCase() || '';
+            if (!file.name.includes('.')) {
+                extension = ({
+                    'text/plain': 'txt',
+                    'text/html': 'html',
+                    'text/markdown': 'md',
+                    'application/json': 'json',
+                    'application/pdf': 'pdf',
+                    'application/rtf': 'rtf',
+                    'text/rtf': 'rtf',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+                })[file.type] || '';
+            }
+
+            try {
+                let imported;
+                if (extension === 'txt') {
+                    imported = [{ title, html: textToHtml(await file.text()) }];
+                } else if (extension === 'html' || extension === 'htm') {
+                    imported = [{ title, html: sanitizeHtml(await file.text()) }];
+                } else if (extension === 'md' || extension === 'markdown') {
+                    imported = [{ title, html: markdownToHtml(await file.text()) }];
+                } else if (extension === 'json') {
+                    imported = parseNoteJson(await file.text());
+                    if (!imported.length) throw new Error('No notes in JSON');
+                } else if (extension === 'rtf') {
+                    imported = [{ title, html: rtfToHtml(await file.text()) }];
+                } else if (extension === 'docx') {
+                    imported = [{ title, html: await docxToHtml(await file.arrayBuffer()) }];
+                } else if (extension === 'pdf') {
+                    imported = [{ title, html: await pdfToHtml(await file.arrayBuffer()) }];
+                } else {
+                    toast(strings.openUnsupportedType, 'error');
+                    return;
+                }
+                await importNotes(imported, title);
+                track('open_file');
+            } catch (error) {
+                toast(importErrorMessage(error, extension), 'error');
+            }
         });
 
         input.click();
@@ -1859,22 +1969,75 @@ export function initEditor({ strings, onEvent }) {
     }
 
     const stamp = () => new Date().toISOString().slice(0, 10);
+    const exportBaseName = () => {
+        const title = (noteTitleInput?.value || '').trim()
+            .replace(/[\\/:*?"<>|]/g, '-')
+            .slice(0, 80);
+        return title || `npad-${stamp()}`;
+    };
+    const currentExportNote = () => ({
+        ...(activeNote() || {}),
+        title: noteTitleInput?.value.trim() || strings.noteUntitled,
+        html: cleanHtml(),
+    });
 
     function saveAsText() {
-        download(`npad-${stamp()}.txt`, editorText(), 'text/plain;charset=utf-8');
+        download(`${exportBaseName()}.txt`, editorText(), 'text/plain;charset=utf-8');
         track('download_txt');
     }
 
     function saveAsHtml() {
         const doc = `<!DOCTYPE html>
-<html lang="${document.documentElement.lang || 'en'}" dir="${document.documentElement.dir || 'ltr'}">
+<html lang="${document.documentElement.lang || 'en'}" dir="${currentDir()}">
 <meta charset="utf-8">
 <title>NPad note — ${stamp()}</title>
 <style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}</style>
 ${cleanHtml()}
 `;
-        download(`npad-${stamp()}.html`, doc, 'text/html;charset=utf-8');
+        download(`${exportBaseName()}.html`, doc, 'text/html;charset=utf-8');
         track('download_html');
+    }
+
+    function saveAsMarkdown() {
+        download(`${exportBaseName()}.md`, htmlToMarkdown(cleanHtml()), 'text/markdown;charset=utf-8');
+        track('download_markdown');
+    }
+
+    function saveAsJson() {
+        download(`${exportBaseName()}.json`, noteToJson(currentExportNote(), organization), 'application/json;charset=utf-8');
+        track('download_json');
+    }
+
+    function saveAsDocx() {
+        download(
+            `${exportBaseName()}.docx`,
+            htmlToDocx(cleanHtml(), { direction: currentDir() }),
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        );
+        track('download_docx');
+    }
+
+    function saveAsRtf() {
+        download(
+            `${exportBaseName()}.rtf`,
+            htmlToRtf(cleanHtml(), { direction: currentDir() }),
+            'application/rtf;charset=utf-8',
+        );
+        track('download_rtf');
+    }
+
+    async function saveAsPdf() {
+        const action = await showDialog({
+            title: strings.pdfExportTitle,
+            bodyHtml: `<p>${escapeHtml(strings.pdfExportBody)}</p>`,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                { label: strings.pdfExportContinue, action: 'print-pdf', variant: 'btn--primary' },
+            ],
+        });
+        if (action !== 'print-pdf') return;
+        window.print();
+        track('download_pdf');
     }
 
     // Print the live document: @media print hides the chrome and keeps the
@@ -2492,6 +2655,11 @@ ${cleanHtml()}
         open: openFile,
         save: saveAsText,
         'save-html': saveAsHtml,
+        'save-markdown': saveAsMarkdown,
+        'save-json': saveAsJson,
+        'save-docx': saveAsDocx,
+        'save-pdf': saveAsPdf,
+        'save-rtf': saveAsRtf,
         print: printFile,
         details: showDetails,
         backups: showBackupRecovery,

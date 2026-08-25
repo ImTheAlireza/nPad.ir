@@ -153,6 +153,34 @@ export default async function run(check, group) {
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
+    let fileAccept = '';
+    const nativeInputClick = window.HTMLInputElement.prototype.click;
+    window.HTMLInputElement.prototype.click = function () {
+        if (this.type === 'file') fileAccept = this.accept;
+        else nativeInputClick.call(this);
+    };
+    document.querySelector('[data-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    window.HTMLInputElement.prototype.click = nativeInputClick;
+    check('Open accepts every supported local document format', () => {
+        ['.txt', '.html', '.md', '.json', '.docx', '.pdf', '.rtf'].forEach((extension) => {
+            assert.ok(fileAccept.includes(extension), `${extension} missing from ${fileAccept}`);
+        });
+    });
+
+    document.querySelector('[data-action="save-pdf"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    check('PDF export explains the browser Save as PDF flow', () => {
+        const dialog = document.getElementById('appDialog');
+        assert.equal(dialog.open, true);
+        assert.ok(dialog.textContent.includes(strings.pdfExportBody));
+        assert.ok(dialog.querySelector('[data-action="print-pdf"]'));
+    });
+    document.querySelector('#appDialog [data-action="cancel"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
     group('behaviour: theme toggle');
 
     check('toggling flips data-theme and persists', () => {

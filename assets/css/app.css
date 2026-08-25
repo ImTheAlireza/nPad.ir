@@ -396,6 +396,10 @@ button, input, select, textarea {
     top: calc(100% + var(--space-1));
     z-index: 70;
     min-width: 232px;
+    max-height: calc(100vh - 64px);
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: var(--space-1);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);

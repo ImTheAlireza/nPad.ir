@@ -1,8 +1,9 @@
 # NPad
 
 A free, private online notepad. Keep several rich-text notes open in document
-tabs, organize them with folders and color-coded tags, and recover content from
-automatic local backups. Everything works offline and needs no account.
+tabs, organize them with folders and color-coded tags, recover content from
+automatic local backups, and move documents through TXT, HTML, Markdown, JSON,
+DOCX, PDF, or RTF. Everything works offline and needs no account.
 
 Live: <https://npad.ir>
 
@@ -38,6 +39,7 @@ Live: <https://npad.ir>
 │     ├─ app.js           Entry point
 │     ├─ editor.js        Document tabs, note UI, editing, autosave, shortcuts
 │     ├─ storage.js       Notes, organization, timestamped backups + migration
+│     ├─ formats.js       Local Markdown, JSON, DOCX, PDF and RTF codecs
 │     ├─ sanitize.js      HTML allow-list sanitiser
 │     ├─ ui.js            Menus, dialogs, toasts
 │     ├─ theme.js         Light/dark
@@ -122,6 +124,27 @@ rewrite, `ErrorDocument 404`, trailing-slash redirect). For local analytics,
 create a `config.php` — see the example above (or use a SQLite-backed
 variant for machines without MySQL).
 
+## Document import and export
+
+The File menu imports and exports **TXT, HTML, Markdown, NPad JSON, DOCX, PDF,
+and RTF**. Processing stays in the browser: imported active HTML passes through
+the same allow-list sanitizer as pasted content, and no document is uploaded.
+NPad JSON carries the current note's title, rich content, pinned state, folder,
+color-coded tags, and timestamps. Imported JSON note arrays create separate
+notes.
+
+DOCX support uses a self-contained Open XML ZIP reader/writer, including common
+paragraph and inline styles. RTF preserves Unicode plus bold, italic, underline,
+and strikeout. Archive decompression and imported files are bounded (25 MB per
+file) to prevent unexpectedly large documents from exhausting browser memory.
+
+PDF export intentionally opens the browser print dialog: choosing **Save as
+PDF** there preserves the browser's installed fonts, formatting, Unicode, and
+right-to-left layout. PDF import extracts text from ordinary unencrypted text
+PDFs, including Flate-compressed streams and embedded Unicode font maps. It is
+not OCR; scanned/image-only, encrypted, damaged, and unsupported PDFs report a
+localized error instead of silently creating an empty note.
+
 ## Tests
 
 ```bash
@@ -129,7 +152,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-221 assertions covering:
+233 assertions covering:
 
 | Suite | What it proves |
 |---|---|
@@ -137,6 +160,7 @@ npm test
 | `contrast` | Every token pair meets WCAG AA (4.5:1 text, 3:1 controls) in both themes |
 | `lang` | `en.php` and `fa.php` expose identical key structures |
 | `sanitize` | 22 XSS vectors neutralised; formatting preserved |
+| `formats` | Markdown/JSON/RTF round trips, valid DOCX ZIPs, compressed Open XML, PDF stream and Unicode-map extraction |
 | `storage` | Legacy migration, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
 | `behaviour` | Document tabs, folder/tag flows, automatic backups and restore-as-copy recovery work; autosave and editor tools remain functional |
@@ -156,6 +180,11 @@ from `lang/*.php`.
 Chart.js is vendored. The previous build called three geo-IP APIs to guess a
 language while its own CSP set `connect-src 'self'`, so those calls could
 never succeed — they only burned timeouts.
+
+**Formats stay local.** The Markdown, JSON, DOCX, PDF, and RTF codecs ship as
+first-party JavaScript with no CDN or conversion service. PDF export uses the
+browser's print engine rather than a Latin-only PDF generator, preserving
+Persian fonts and RTL layout.
 
 **Light theme authored first.** Cards and FAQ items used
 `rgba(255,255,255,0.03)` on both themes, which computed to 1.01:1 on the light

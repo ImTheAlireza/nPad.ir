@@ -394,10 +394,25 @@ export function createNoteRecord({
     pinned = false,
     folderId = null,
     tags = [],
+    createdAt = null,
+    updatedAt = null,
 } = {}) {
     const now = Date.now();
+    const validTime = (value, fallback) => {
+        const number = Number(value);
+        return Number.isFinite(number) && number > 0 ? number : fallback;
+    };
+    const importedUpdatedAt = validTime(updatedAt, now);
+    const importedCreatedAt = validTime(createdAt, importedUpdatedAt);
     return normaliseNote({
-        id: newId(), title, html, pinned, folderId, tags, createdAt: now, updatedAt: now,
+        id: newId(),
+        title,
+        html,
+        pinned,
+        folderId,
+        tags,
+        createdAt: importedCreatedAt,
+        updatedAt: importedUpdatedAt,
     });
 }
 

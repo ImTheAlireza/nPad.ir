@@ -211,6 +211,10 @@ export default async function run(check, group) {
             assert.ok(document.querySelector('[data-action="manage-note-tags"]')?.getAttribute('aria-label'));
             const backupDialog = document.getElementById('backupDialog');
             assert.ok(document.querySelector('[data-action="backups"]'), 'recovery menu item missing');
+            ['save', 'save-html', 'save-markdown', 'save-json', 'save-docx', 'save-pdf', 'save-rtf']
+                .forEach((action) => {
+                    assert.ok(document.querySelector(`[data-action="${action}"]`), `${action} export missing`);
+                });
             assert.ok(backupDialog?.getAttribute('aria-labelledby'), 'recovery screen is not named');
             assert.ok(backupDialog?.querySelector('[data-backup-action="close"]')?.getAttribute('aria-label'));
             assert.ok(document.getElementById('backupList'), 'recovery list missing');

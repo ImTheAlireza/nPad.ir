@@ -196,6 +196,14 @@ export default function run(check, group) {
         assert.deepEqual(missing, [], `precached but absent: ${missing.join(', ')}`);
     });
 
+    check('release versions agree across PHP, npm and the service worker', () => {
+        const packageVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+        const php = fs.readFileSync(path.join(ROOT, 'includes/bootstrap.php'), 'utf8');
+        const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+        assert.equal(php.match(/NPAD_VERSION', '([^']+)'/)?.[1], packageVersion);
+        assert.equal(sw.match(/npad-v([^']+)'/)?.[1], packageVersion);
+    });
+
     check('robots.txt does not advertise missing paths', () => {
         const robots = fs.readFileSync(path.join(ROOT, 'robots.txt'), 'utf8');
         assert.ok(!/\/blog\//.test(robots), 'references non-existent /blog/');
