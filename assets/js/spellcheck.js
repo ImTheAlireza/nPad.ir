@@ -434,6 +434,10 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     }
 
     function refresh() {
+        // A different note may contain identical text but no existing marks;
+        // force the next pass instead of skipping on the last-text cache.
+        lastText = null;
+        hideTip();
         if (enabled) scheduleRemark(0);
     }
 

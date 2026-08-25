@@ -10,7 +10,16 @@
  *  - open dialog enforces a size limit and handles read errors
  */
 
-import { loadDocument, saveDocument, clearDocument, saveDocumentSync } from './storage.js';
+import {
+    listNotes,
+    createNoteRecord,
+    saveNote,
+    saveNoteSync,
+    deleteNote,
+    clearNotes,
+    getActiveNoteId,
+    setActiveNoteId,
+} from './storage.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
@@ -46,6 +55,15 @@ export function initEditor({ strings, onEvent }) {
     const stateEl = document.getElementById('saveState');
     const statusbar = document.getElementById('statusbar');
 
+    /* Multi-note workspace. */
+    const workspace = document.getElementById('notesWorkspace');
+    const notesSidebar = document.getElementById('notesSidebar');
+    const notesList = document.getElementById('notesList');
+    const notesSearch = document.getElementById('notesSearch');
+    const notesEmpty = document.getElementById('notesEmpty');
+    const noteTitleInput = document.getElementById('noteTitle');
+    const notesBackdrop = document.querySelector('[data-notes-backdrop]');
+
     /* Find & replace bar (guarded: the markup ships with the editor page). */
     const findBar = document.getElementById('findBar');
     const findInput = findBar && findBar.querySelector('[data-find-input]');
@@ -61,6 +79,9 @@ export function initEditor({ strings, onEvent }) {
     let saveTimer = null;
     let dirty = false;
     let lastSavedAt = 0;
+    let notes = [];
+    let activeNoteId = null;
+    let sidebarOpen = false;
 
     /* Custom spell checker (self-contained module). */
     const spell = initSpellcheck({ editor, strings, onEvent: track });
@@ -152,16 +173,49 @@ export function initEditor({ strings, onEvent }) {
         stateEl.textContent = strings[state] ?? '';
     }
 
+    function activeNote() {
+        return notes.find((note) => note.id === activeNoteId) || null;
+    }
+
+    function displayTitle(note) {
+        return String(note?.title || '').trim() || strings.noteUntitled || 'Untitled note';
+    }
+
+    function snapshotActiveNote() {
+        const current = activeNote();
+        if (!current) return null;
+        const now = Date.now();
+        const snapshot = {
+            ...current,
+            title: noteTitleInput ? noteTitleInput.value.trim() : current.title,
+            html: cleanHtml(),
+            updatedAt: now,
+        };
+        notes = notes.map((note) => note.id === snapshot.id ? snapshot : note);
+        return snapshot;
+    }
+
     async function persist() {
-        const html = cleanHtml();
-        setSaveState('saving');
-        const ok = await saveDocument(html);
-        dirty = !ok;
-        lastSavedAt = ok ? Date.now() : lastSavedAt;
-        setSaveState(ok ? 'saved' : 'unsaved');
+        window.clearTimeout(saveTimer);
+        const snapshot = snapshotActiveNote();
+        if (!snapshot) return false;
+        const savingId = snapshot.id;
+        if (activeNoteId === savingId) setSaveState('saving');
+        renderNotes();
+
+        const ok = await saveNote(snapshot);
+        if (activeNoteId === savingId) {
+            const changedWhileSaving = (noteTitleInput?.value.trim() || '') !== snapshot.title
+                || cleanHtml() !== snapshot.html;
+            dirty = !ok || changedWhileSaving;
+            lastSavedAt = ok ? snapshot.updatedAt : lastSavedAt;
+            setSaveState(ok && !changedWhileSaving ? 'saved' : 'unsaved');
+        }
+        return ok;
     }
 
     function scheduleSave() {
+        if (!activeNoteId) return;
         dirty = true;
         setSaveState('unsaved');
         window.clearTimeout(saveTimer);
@@ -173,15 +227,264 @@ export function initEditor({ strings, onEvent }) {
     function flush() {
         if (!dirty) return;
         window.clearTimeout(saveTimer);
-        const html = cleanHtml();
-        saveDocumentSync(html);
-        void saveDocument(html);
+        const snapshot = snapshotActiveNote();
+        if (!snapshot) return;
+        saveNoteSync(snapshot);
+        void saveNote(snapshot);
         dirty = false;
     }
 
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') flush();
+    });
+
+    /* ---------------------------------------------------------------------
+       Multiple notes
+       --------------------------------------------------------------------- */
+
+    const noteItemTemplate = document.getElementById('noteItemTemplate');
+
+    function notePreview(note) {
+        // A template parses markup in an inert fragment, so even a migrated
+        // legacy note cannot load resources while its plain-text preview is built.
+        const template = document.createElement('template');
+        template.innerHTML = note.html || '';
+        return (template.content.textContent || '').replace(/\s+/g, ' ').trim()
+            || strings.noteEmptyPreview || 'Empty note';
+    }
+
+    function noteTime(note) {
+        const date = new Date(note.updatedAt || Date.now());
+        const now = new Date();
+        const sameDay = date.toDateString() === now.toDateString();
+        return sameDay
+            ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+
+    function sortedNotes() {
+        return [...notes].sort((a, b) =>
+            Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
+    }
+
+    function renderNotes() {
+        if (!notesList || !noteItemTemplate) return;
+        const query = (notesSearch?.value || '').trim().toLocaleLowerCase();
+        const visible = sortedNotes().filter((note) => {
+            if (!query) return true;
+            return `${displayTitle(note)} ${notePreview(note)}`.toLocaleLowerCase().includes(query);
+        });
+
+        const fragment = document.createDocumentFragment();
+        for (const note of visible) {
+            const item = noteItemTemplate.content.firstElementChild.cloneNode(true);
+            item.dataset.noteId = note.id;
+            item.classList.toggle('note-item--active', note.id === activeNoteId);
+            item.classList.toggle('note-item--pinned', note.pinned);
+
+            const open = item.querySelector('[data-note-action="open"]');
+            open.dataset.noteId = note.id;
+            open.setAttribute('aria-current', note.id === activeNoteId ? 'true' : 'false');
+            item.querySelector('.note-item__title').textContent = displayTitle(note);
+            item.querySelector('.note-item__preview').textContent = notePreview(note);
+            item.querySelector('.note-item__time').textContent = noteTime(note);
+
+            item.querySelectorAll('[data-note-action]').forEach((button) => {
+                button.dataset.noteId = note.id;
+            });
+            const pin = item.querySelector('[data-note-action="pin"]');
+            pin.setAttribute('aria-pressed', String(note.pinned));
+            pin.setAttribute('aria-label', note.pinned ? strings.noteUnpin : strings.notePin);
+            pin.title = note.pinned ? strings.noteUnpin : strings.notePin;
+            fragment.appendChild(item);
+        }
+
+        notesList.replaceChildren(fragment);
+        if (notesEmpty) notesEmpty.hidden = visible.length !== 0;
+    }
+
+    function setSidebarOpen(open, { remember = true } = {}) {
+        sidebarOpen = !!open;
+        if (workspace) workspace.dataset.notesOpen = String(sidebarOpen);
+        if (notesSidebar) {
+            notesSidebar.toggleAttribute('inert', !sidebarOpen);
+            notesSidebar.setAttribute('aria-hidden', String(!sidebarOpen));
+        }
+        document.querySelectorAll('[data-action="toggle-notes"]').forEach((button) => {
+            button.setAttribute('aria-expanded', String(sidebarOpen));
+            const label = sidebarOpen ? strings.noteHide : strings.noteShow;
+            if (label) {
+                button.setAttribute('aria-label', label);
+                button.title = label;
+            }
+        });
+        if (notesBackdrop) notesBackdrop.hidden = !sidebarOpen;
+        if (remember) {
+            try { localStorage.setItem('npad.notesSidebar', sidebarOpen ? '1' : '0'); } catch { /* ignore */ }
+        }
+    }
+
+    function closeSidebarOnMobile() {
+        if (window.matchMedia?.('(max-width: 840px)').matches) setSidebarOpen(false);
+    }
+
+    function showNote(note, { focusEditor = false } = {}) {
+        activeNoteId = note.id;
+        setActiveNoteId(note.id);
+        editor.innerHTML = sanitizeHtml(note.html || '');
+        if (noteTitleInput) noteTitleInput.value = displayTitle(note);
+        lastSavedAt = note.updatedAt || 0;
+        dirty = false;
+        lastEditorRange = null;
+        pendingFontSize = null;
+        setSaveState('saved');
+        updateCounts();
+        renderNotes();
+        spell.refresh();
+        if (focusEditor) editor.focus();
+    }
+
+    async function switchNote(id) {
+        if (!id || id === activeNoteId) {
+            closeSidebarOnMobile();
+            return;
+        }
+        if (dirty) await persist();
+        const note = notes.find((item) => item.id === id);
+        if (!note) return;
+        showNote(note, { focusEditor: true });
+        closeSidebarOnMobile();
+    }
+
+    async function createNewNote({
+        title = strings.noteUntitled,
+        html = '',
+        focusTitle = true,
+        report = true,
+    } = {}) {
+        if (dirty) await persist();
+        const note = createNoteRecord({ title: title || strings.noteUntitled, html });
+        notes.push(note);
+        await saveNote(note);
+        showNote(note);
+        renderNotes();
+        if (focusTitle && noteTitleInput) {
+            noteTitleInput.focus();
+            noteTitleInput.select();
+        } else {
+            editor.focus();
+        }
+        if (report) track('new_file');
+        return note;
+    }
+
+    async function renameNote(id) {
+        if (dirty && id === activeNoteId) await persist();
+        const note = notes.find((item) => item.id === id);
+        if (!note) return;
+        const action = await showDialog({
+            title: strings.noteRenameTitle,
+            bodyHtml: `
+                <label class="field">
+                    <span class="field__label">${escapeHtml(strings.noteRenameLabel)}</span>
+                    <input class="field__input" id="renameNoteInput" maxlength="120"
+                           autocomplete="off" autofocus>
+                </label>`,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                { label: strings.noteRename, action: 'rename', variant: 'btn--primary' },
+            ],
+            onOpen: (body) => {
+                const input = body.querySelector('#renameNoteInput');
+                input.value = displayTitle(note);
+                input.select();
+            },
+        });
+        if (action !== 'rename') return;
+        const value = document.getElementById('renameNoteInput')?.value.trim();
+        if (!value) return;
+        const updated = { ...note, title: value, updatedAt: Date.now() };
+        notes = notes.map((item) => item.id === id ? updated : item);
+        if (id === activeNoteId && noteTitleInput) noteTitleInput.value = value;
+        await saveNote(updated);
+        renderNotes();
+    }
+
+    async function duplicateNote(id) {
+        if (dirty && id === activeNoteId) await persist();
+        const source = notes.find((item) => item.id === id);
+        if (!source) return;
+        const copy = createNoteRecord({
+            title: `${displayTitle(source)} ${strings.noteCopySuffix}`.trim(),
+            html: source.html,
+        });
+        notes.push(copy);
+        await saveNote(copy);
+        showNote(copy, { focusEditor: true });
+        closeSidebarOnMobile();
+    }
+
+    async function toggleNotePin(id) {
+        if (dirty && id === activeNoteId) await persist();
+        const note = notes.find((item) => item.id === id);
+        if (!note) return;
+        const updated = { ...note, pinned: !note.pinned };
+        notes = notes.map((item) => item.id === id ? updated : item);
+        await saveNote(updated);
+        renderNotes();
+    }
+
+    async function removeNote(id) {
+        if (dirty && id === activeNoteId) await persist();
+        const note = notes.find((item) => item.id === id);
+        if (!note) return;
+        const confirmed = await confirmDialog({
+            title: strings.noteDeleteTitle,
+            message: (strings.noteDeleteBody || '').replace('{title}', displayTitle(note)),
+            confirmLabel: strings.noteDelete,
+            cancelLabel: strings.cancel,
+            danger: true,
+        });
+        if (!confirmed) return;
+
+        await deleteNote(id);
+        notes = notes.filter((item) => item.id !== id);
+        if (id === activeNoteId) {
+            const next = sortedNotes()[0];
+            if (next) showNote(next);
+            else await createNewNote({ focusTitle: false });
+        }
+        renderNotes();
+    }
+
+    if (notesSearch) notesSearch.addEventListener('input', renderNotes);
+    if (notesList) {
+        notesList.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-note-action]');
+            if (!button) return;
+            const { noteAction, noteId } = button.dataset;
+            if (noteAction === 'open') void switchNote(noteId);
+            else if (noteAction === 'pin') void toggleNotePin(noteId);
+            else if (noteAction === 'rename') void renameNote(noteId);
+            else if (noteAction === 'duplicate') void duplicateNote(noteId);
+            else if (noteAction === 'delete') void removeNote(noteId);
+        });
+    }
+    notesBackdrop?.addEventListener('click', () => setSidebarOpen(false));
+    noteTitleInput?.addEventListener('input', () => {
+        const note = activeNote();
+        if (!note) return;
+        note.title = noteTitleInput.value;
+        note.updatedAt = Date.now();
+        renderNotes();
+        scheduleSave();
+    });
+    noteTitleInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            editor.focus();
+        }
     });
 
     /* ---------------------------------------------------------------------
@@ -823,21 +1126,7 @@ export function initEditor({ strings, onEvent }) {
        --------------------------------------------------------------------- */
 
     async function newFile() {
-        const ok = await confirmDialog({
-            title: strings.newTitle,
-            message: strings.newBody,
-            confirmLabel: strings.confirm,
-            cancelLabel: strings.cancel,
-            danger: true,
-        });
-        if (!ok) return;
-        editor.innerHTML = '';
-        await clearDocument();
-        dirty = false;
-        setSaveState('saved');
-        updateCounts();
-        editor.focus();
-        track('new_file');
+        await createNewNote();
     }
 
     function openFile() {
@@ -859,10 +1148,10 @@ export function initEditor({ strings, onEvent }) {
             reader.onload = () => {
                 const content = String(reader.result ?? '');
                 const isHtml = /\.html?$/i.test(file.name) || /^\s*<(!doctype|html|div|p|span)/i.test(content);
-                editor.innerHTML = isHtml ? sanitizeHtml(content) : textToHtml(content);
-                updateCounts();
-                scheduleSave();
-                track('open_file');
+                const html = isHtml ? sanitizeHtml(content) : textToHtml(content);
+                const title = file.name.replace(/\.[^.]+$/, '') || strings.noteUntitled;
+                void createNewNote({ title, html, focusTitle: false, report: false })
+                    .then(() => track('open_file'));
             };
             reader.readAsText(file);
         });
@@ -950,11 +1239,12 @@ ${cleanHtml()}
             danger: true,
         });
         if (!ok) return;
-        editor.innerHTML = '';
-        await clearDocument();
+        window.clearTimeout(saveTimer);
+        await clearNotes();
+        notes = [];
+        activeNoteId = null;
         dirty = false;
-        setSaveState('saved');
-        updateCounts();
+        await createNewNote({ focusTitle: false, report: false });
         track('clear_data');
     }
 
@@ -1373,6 +1663,7 @@ ${cleanHtml()}
         },
         find: () => openFind(false),
         'find-replace': () => openFind(true),
+        'toggle-notes': () => setSidebarOpen(!sidebarOpen),
         'toggle-focus': () => applyFocusMode(!document.body.classList.contains('focus-mode')),
         'dir-ltr': () => {
             applyDir('ltr');
@@ -1435,6 +1726,12 @@ ${cleanHtml()}
             closeFind();
             return;
         }
+        if (sidebarOpen && window.matchMedia?.('(max-width: 840px)').matches) {
+            event.preventDefault();
+            setSidebarOpen(false);
+            document.querySelector('.document-header [data-action="toggle-notes"]')?.focus();
+            return;
+        }
         if (document.body.classList.contains('focus-mode')) {
             event.preventDefault();
             applyFocusMode(false);
@@ -1454,13 +1751,14 @@ ${cleanHtml()}
     });
 
     (async () => {
-        const record = await loadDocument();
-        if (record && record.html) {
-            editor.innerHTML = sanitizeHtml(record.html);
-            lastSavedAt = record.updatedAt || 0;
+        notes = await listNotes();
+        if (!notes.length) {
+            await createNewNote({ focusTitle: false, report: false });
+        } else {
+            const rememberedId = getActiveNoteId();
+            const initial = notes.find((note) => note.id === rememberedId) || sortedNotes()[0];
+            showNote(initial);
         }
-        updateCounts();
-        setSaveState('saved');
         syncToolbarState();
 
         // Restore view options (silent: booting into focus mode is not an event).
@@ -1469,8 +1767,15 @@ ${cleanHtml()}
             const savedDir = localStorage.getItem('npad.editorDir');
             if (savedDir === 'ltr' || savedDir === 'rtl') applyDir(savedDir);
             else syncDirButtons(currentDir());
+
+            const sidebarPreference = localStorage.getItem('npad.notesSidebar');
+            const wideLayout = window.matchMedia?.('(min-width: 841px)').matches ?? true;
+            const preferredOpen = sidebarPreference === null || sidebarPreference === '1';
+            setSidebarOpen(wideLayout && preferredOpen, { remember: false });
             spell.refresh();
-        } catch { /* private mode */ }
+        } catch {
+            setSidebarOpen(true, { remember: false });
+        }
     })();
 
     window.addEventListener('online', () => setSaveState(dirty ? 'unsaved' : 'saved'));

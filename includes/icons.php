@@ -72,6 +72,9 @@ function npad_icon_paths(): array
         'find-replace' => '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m19 19-3-3"/><path d="M18 3v5"/><path d="m15.5 6 2.5-2.5L20.5 6"/>',
         'spellcheck'  => '<path d="M4 7h12"/><path d="M4 12h12"/><path d="M4 17h8"/><path d="m14 15 3 3 5-5"/>',
         'globe'       => '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
+        'plus'        => '<path d="M12 5v14M5 12h14"/>',
+        'pin'         => '<path d="M12 17v5"/><path d="m5 17 3-4V6L6 4V2h12v2l-2 2v7l3 4z"/>',
+        'sidebar'     => '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
     ];
 }
 

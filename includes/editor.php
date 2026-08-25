@@ -211,6 +211,19 @@ $jsStrings = [
     'spellAdd'          => t('spell.add'),
     'spellIgnore'       => t('spell.ignore'),
     'spellNoSuggestions' => t('spell.no_suggestions'),
+    'noteUntitled'      => t('notes.untitled'),
+    'noteEmptyPreview'  => t('notes.empty_preview'),
+    'noteShow'          => t('notes.show'),
+    'noteHide'          => t('notes.hide'),
+    'notePin'           => t('notes.pin'),
+    'noteUnpin'         => t('notes.unpin'),
+    'noteRename'        => t('notes.rename'),
+    'noteRenameTitle'   => t('notes.rename_title'),
+    'noteRenameLabel'   => t('notes.rename_label'),
+    'noteCopySuffix'    => t('notes.copy_suffix'),
+    'noteDelete'        => t('notes.delete'),
+    'noteDeleteTitle'   => t('notes.delete_title'),
+    'noteDeleteBody'    => t('notes.delete_body'),
     'detailWords'       => t('details.words'),
     'detailCharacters'  => t('details.characters'),
     'detailNoSpaces'    => t('details.no_spaces'),
@@ -221,8 +234,83 @@ $jsStrings = [
     'never'             => t('details.never'),
 ];
 ?>
-<main class="editor-shell" id="main">
-    <div class="toolbar" id="toolbar" role="toolbar" aria-label="<?= e(t('toolbar.group_format')) ?>" aria-controls="editor">
+<div class="notes-workspace" id="notesWorkspace" data-notes-open="false">
+    <aside class="notes-sidebar" id="notesSidebar" aria-label="<?= e(t('notes.title')) ?>" inert>
+        <div class="notes-sidebar__header">
+            <h2 class="notes-sidebar__title"><?= e(t('notes.title')) ?></h2>
+            <div class="notes-sidebar__header-actions">
+                <button type="button" class="notes-sidebar__iconbtn" data-action="new"
+                        title="<?= e(t('notes.new')) ?>" aria-label="<?= e(t('notes.new')) ?>">
+                    <?= icon('plus') ?>
+                </button>
+                <button type="button" class="notes-sidebar__iconbtn notes-sidebar__close" data-action="toggle-notes"
+                        aria-expanded="false" aria-controls="notesSidebar"
+                        title="<?= e(t('notes.hide')) ?>" aria-label="<?= e(t('notes.hide')) ?>">
+                    <?= icon('close') ?>
+                </button>
+            </div>
+        </div>
+
+        <label class="notes-search">
+            <?= icon('search', ['class' => 'icon notes-search__icon']) ?>
+            <span class="visually-hidden"><?= e(t('notes.search_label')) ?></span>
+            <input type="search" class="notes-search__input" id="notesSearch"
+                   placeholder="<?= e(t('notes.search')) ?>" autocomplete="off" spellcheck="false">
+        </label>
+
+        <div class="notes-list" id="notesList"></div>
+        <p class="notes-empty" id="notesEmpty" hidden><?= e(t('notes.empty')) ?></p>
+
+        <template id="noteItemTemplate">
+            <article class="note-item">
+                <button type="button" class="note-item__open" data-note-action="open">
+                    <span class="note-item__topline">
+                        <span class="note-item__title" dir="auto"></span>
+                        <span class="note-item__time"></span>
+                    </span>
+                    <span class="note-item__preview" dir="auto"></span>
+                </button>
+                <div class="note-item__actions">
+                    <button type="button" class="note-item__action" data-note-action="pin"
+                            title="<?= e(t('notes.pin')) ?>" aria-label="<?= e(t('notes.pin')) ?>" aria-pressed="false">
+                        <?= icon('pin') ?>
+                    </button>
+                    <button type="button" class="note-item__action" data-note-action="rename"
+                            title="<?= e(t('notes.rename')) ?>" aria-label="<?= e(t('notes.rename')) ?>">
+                        <?= icon('pen') ?>
+                    </button>
+                    <button type="button" class="note-item__action" data-note-action="duplicate"
+                            title="<?= e(t('notes.duplicate')) ?>" aria-label="<?= e(t('notes.duplicate')) ?>">
+                        <?= icon('copy') ?>
+                    </button>
+                    <button type="button" class="note-item__action note-item__action--danger" data-note-action="delete"
+                            title="<?= e(t('notes.delete')) ?>" aria-label="<?= e(t('notes.delete')) ?>">
+                        <?= icon('trash') ?>
+                    </button>
+                </div>
+            </article>
+        </template>
+    </aside>
+
+    <button type="button" class="notes-backdrop" data-notes-backdrop hidden
+            aria-label="<?= e(t('notes.hide')) ?>"></button>
+
+    <main class="editor-shell" id="main">
+        <div class="document-header">
+            <button type="button" class="document-header__notes" data-action="toggle-notes"
+                    aria-expanded="false" aria-controls="notesSidebar"
+                    title="<?= e(t('notes.show')) ?>" aria-label="<?= e(t('notes.show')) ?>">
+                <?= icon('sidebar') ?>
+            </button>
+            <label class="document-title">
+                <span class="visually-hidden"><?= e(t('notes.title_label')) ?></span>
+                <input type="text" class="document-title__input" id="noteTitle" maxlength="120"
+                       aria-label="<?= e(t('notes.title_label')) ?>" autocomplete="off" spellcheck="false"
+                       placeholder="<?= e(t('notes.untitled')) ?>">
+            </label>
+        </div>
+
+        <div class="toolbar" id="toolbar" role="toolbar" aria-label="<?= e(t('toolbar.group_format')) ?>" aria-controls="editor">
 
         <div class="toolbar__group toolbar__group--type" role="group" aria-label="<?= e(t('toolbar.font')) ?>">
             <button type="button" class="font-picker__trigger" id="fontPickerTrigger"
@@ -335,8 +423,9 @@ $jsStrings = [
             <span class="statusbar__dot" aria-hidden="true"></span>
             <span id="saveState"><?= e(t('status.saved')) ?></span>
         </div>
-    </div>
-</main>
+        </div>
+    </main>
+</div>
 
 <button type="button" class="focus-exit" data-action="toggle-focus" hidden
         title="<?= e(t('toolbar.focus_exit')) ?>" aria-label="<?= e(t('toolbar.focus_exit')) ?>">

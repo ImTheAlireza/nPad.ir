@@ -187,6 +187,21 @@ export default async function run(check, group) {
             assert.ok(ed.hasAttribute('contenteditable'));
         });
 
+        check('multi-note workspace is accessible and ready for enhancement', () => {
+            const sidebar = document.getElementById('notesSidebar');
+            const title = document.getElementById('noteTitle');
+            const search = document.getElementById('notesSearch');
+            const template = document.getElementById('noteItemTemplate');
+            assert.ok(sidebar?.getAttribute('aria-label'), 'sidebar is not named');
+            assert.ok(title?.getAttribute('aria-label'), 'note title is not named');
+            assert.equal(search?.type, 'search');
+            assert.ok(template?.content.querySelector('[data-note-action="open"]'));
+            ['pin', 'rename', 'duplicate', 'delete'].forEach((action) => {
+                const button = template.content.querySelector(`[data-note-action="${action}"]`);
+                assert.ok(button?.getAttribute('aria-label'), `${action} is not named`);
+            });
+        });
+
         check('status region is live', () => {
             assert.equal(document.getElementById('statusCounts')?.getAttribute('aria-live'), 'polite');
         });

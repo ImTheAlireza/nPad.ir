@@ -117,6 +117,10 @@ export default async function run(check, group) {
         initEditor({ strings, onEvent: (e) => tracked.push(e) });
     });
 
+    // Multi-note storage boots asynchronously. Let the initial note finish
+    // loading before UI tests begin editing it.
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
     group('behaviour: menus (the old build was hover-only)');
 
     const trigger = document.getElementById('fileMenuTrigger');
@@ -247,6 +251,106 @@ export default async function run(check, group) {
         editor.textContent = '';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         assert.ok(/\b0\b/.test(counts.textContent), counts.textContent);
+    });
+
+    group('behaviour: multiple notes');
+
+    const notesList = document.getElementById('notesList');
+    const notesSearch = document.getElementById('notesSearch');
+    const noteTitle = document.getElementById('noteTitle');
+    const noteItems = () => [...notesList.querySelectorAll('.note-item')];
+    const noteByTitle = (title) => noteItems().find((item) =>
+        item.querySelector('.note-item__title').textContent === title);
+    const settle = () => new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    check('responsive sidebar exposes named create, search and note controls', () => {
+        assert.ok(document.getElementById('notesSidebar'), 'notes sidebar missing');
+        assert.ok(notesSearch.getAttribute('placeholder'), 'notes search has no placeholder');
+        assert.ok(document.querySelector('[data-action="new"]'), 'new-note control missing');
+        assert.equal(noteItems().length, 1, 'initial note was not created');
+    });
+
+    noteTitle.value = 'Original';
+    noteTitle.dispatchEvent(new window.Event('input', { bubbles: true }));
+    editor.textContent = 'Original note body';
+    editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+    document.querySelector('.notes-sidebar [data-action="new"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('New creates and selects a separate note without clearing the first', () => {
+        assert.equal(noteItems().length, 2);
+        assert.equal(noteTitle.value, strings.noteUntitled);
+        assert.equal(noteItems().filter((item) => item.classList.contains('note-item--active')).length, 1);
+    });
+
+    noteTitle.value = 'Project';
+    noteTitle.dispatchEvent(new window.Event('input', { bubbles: true }));
+    editor.textContent = 'Project draft';
+    editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+    noteByTitle('Project').querySelector('[data-note-action="duplicate"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('duplicate copies content and activates the copy', () => {
+        assert.equal(noteItems().length, 3);
+        assert.equal(noteTitle.value, `Project ${strings.noteCopySuffix}`);
+        assert.equal(editor.textContent, 'Project draft');
+    });
+
+    const copyTitle = noteTitle.value;
+    noteByTitle(copyTitle).querySelector('[data-note-action="pin"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('pin toggles state and sorts the pinned note first', () => {
+        const first = noteItems()[0];
+        assert.equal(first.querySelector('.note-item__title').textContent, copyTitle);
+        assert.equal(first.querySelector('[data-note-action="pin"]').getAttribute('aria-pressed'), 'true');
+    });
+
+    notesSearch.value = 'Original';
+    notesSearch.dispatchEvent(new window.Event('input', { bubbles: true }));
+    check('sidebar search filters by title and note content', () => {
+        assert.equal(noteItems().length, 1);
+        assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Original');
+    });
+    notesSearch.value = '';
+    notesSearch.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    noteByTitle('Original').querySelector('[data-note-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('switching notes restores the saved title and content', () => {
+        assert.equal(noteTitle.value, 'Original');
+        assert.equal(editor.textContent, 'Original note body');
+    });
+
+    noteByTitle('Original').querySelector('[data-note-action="rename"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const renameInput = document.getElementById('renameNoteInput');
+    renameInput.value = 'Renamed original';
+    document.querySelector('#appDialog [data-action="rename"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('rename updates both the title field and sidebar', () => {
+        assert.equal(noteTitle.value, 'Renamed original');
+        assert.ok(noteByTitle('Renamed original'));
+    });
+
+    const project = noteByTitle('Project');
+    project.querySelector('[data-note-action="delete"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('delete removes only the chosen note', () => {
+        assert.equal(noteItems().length, 2);
+        assert.ok(!noteByTitle('Project'));
+        assert.ok(noteByTitle('Renamed original'));
+        assert.ok(noteByTitle(copyTitle));
     });
 
     group('behaviour: find & replace');
@@ -550,7 +654,7 @@ export default async function run(check, group) {
         editor.textContent = 'work in progress';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         window.dispatchEvent(new window.Event('pagehide'));
-        const raw = window.localStorage.getItem('npad:document');
+        const raw = window.localStorage.getItem('npad:pending-note');
         assert.ok(raw, 'nothing flushed on pagehide — this is the data-loss bug');
         assert.ok(JSON.parse(raw).html.includes('work in progress'), 'flushed content wrong');
     });
@@ -559,9 +663,10 @@ export default async function run(check, group) {
         editor.textContent = 'autosave works';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         await new Promise((resolve) => window.setTimeout(resolve, 950));
-        const raw = window.localStorage.getItem('npad:document');
+        const raw = window.localStorage.getItem('npad:notes');
         assert.ok(raw, 'autosave did not persist');
-        const html = JSON.parse(raw).html;
+        const stored = JSON.parse(raw).notes;
+        const html = stored.find((note) => note.id === window.localStorage.getItem('npad:active-note'))?.html || '';
         assert.ok(html.includes('autosave works'), 'autosave content wrong');
         assert.ok(!html.includes('spell-err'), 'spell marks leaked into storage');
     });

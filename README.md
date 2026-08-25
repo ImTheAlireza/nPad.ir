@@ -1,7 +1,7 @@
 # NPad
 
-A free, private online notepad. Rich text editing in the browser, saved
-locally, works offline, no account.
+A free, private online notepad. Create and organize multiple rich-text notes
+in the browser; everything is saved locally, works offline, and needs no account.
 
 Live: <https://npad.ir>
 
@@ -22,7 +22,7 @@ Live: <https://npad.ir>
 │  ├─ page.php            Shared controller for both locales
 │  ├─ head.php            <head> incl. pre-paint theme script
 │  ├─ appbar.php          Menus, language switch, theme toggle
-│  ├─ editor.php          Toolbar, editing surface, status bar, dialog
+│  ├─ editor.php          Notes sidebar, toolbar, editing surface, dialogs
 │  ├─ content.php         Marketing content + JSON-LD
 │  ├─ footer.php          Footer
 │  └─ icons.php           Inline SVG icon set
@@ -35,8 +35,8 @@ Live: <https://npad.ir>
 │  ├─ css/app.css         Design tokens + all styling
 │  └─ js/
 │     ├─ app.js           Entry point
-│     ├─ editor.js        Editing, counting, saving, files, shortcuts
-│     ├─ storage.js       IndexedDB with localStorage fallback
+│     ├─ editor.js        Multi-note UI, editing, autosave, files, shortcuts
+│     ├─ storage.js       Multi-note IndexedDB, migration + recovery fallback
 │     ├─ sanitize.js      HTML allow-list sanitiser
 │     ├─ ui.js            Menus, dialogs, toasts
 │     ├─ theme.js         Light/dark
@@ -128,7 +128,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-162 assertions covering:
+195 assertions covering:
 
 | Suite | What it proves |
 |---|---|
@@ -136,8 +136,9 @@ npm test
 | `contrast` | Every token pair meets WCAG AA (4.5:1 text, 3:1 controls) in both themes |
 | `lang` | `en.php` and `fa.php` expose identical key structures |
 | `sanitize` | 22 XSS vectors neutralised; formatting preserved |
+| `storage` | Legacy single-note migration, multiple records, active-note state, synchronous recovery and selective deletion |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
-| `behaviour` | Modules boot in jsdom; menus open by click/keyboard; theme persists; word count updates synchronously; `pagehide` flush actually writes |
+| `behaviour` | Modules boot in jsdom; multi-note create/search/switch/pin/rename/duplicate/delete flows work; menus, themes, autosave and editor tools remain functional |
 
 ## Notable decisions
 
