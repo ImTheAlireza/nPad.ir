@@ -8,13 +8,16 @@
  */
 
 const DB_NAME = 'npad';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE = 'documents';
+const META_STORE = 'metadata';
 const LEGACY_ID = 'current';
 const LEGACY_KEY = 'npad:document';
 const FALLBACK_KEY = 'npad:notes';
 const PENDING_KEY = 'npad:pending-note';
 const ACTIVE_KEY = 'npad:active-note';
+const ORGANIZATION_KEY = 'npad:organization';
+const ORGANIZATION_ID = 'organization';
 
 /** @type {Promise<IDBDatabase|null>|null} */
 let connection = null;
@@ -40,6 +43,9 @@ function openDatabase() {
             const db = request.result;
             if (!db.objectStoreNames.contains(STORE)) {
                 db.createObjectStore(STORE, { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains(META_STORE)) {
+                db.createObjectStore(META_STORE, { keyPath: 'key' });
             }
             if (event.oldVersion < 2 && db.objectStoreNames.contains('editorContent')) {
                 try { db.deleteObjectStore('editorContent'); } catch { /* already absent */ }
@@ -71,7 +77,36 @@ function normaliseNote(record = {}) {
         title: String(record.title || ''),
         html: String(record.html ?? record.content ?? ''),
         pinned: !!record.pinned,
+        folderId: record.folderId ? String(record.folderId) : null,
+        tags: [...new Set(Array.isArray(record.tags) ? record.tags.map(String).filter(Boolean) : [])],
         createdAt: Number(record.createdAt) || Number(record.updatedAt) || now,
+        updatedAt: Number(record.updatedAt) || now,
+    };
+}
+
+function normaliseColour(value) {
+    return /^#[\da-f]{6}$/i.test(String(value || '')) ? String(value).toLowerCase() : '#0e7490';
+}
+
+function normaliseOrganization(record = {}) {
+    const now = Date.now();
+    const folders = Array.isArray(record.folders) ? record.folders : [];
+    const tags = Array.isArray(record.tags) ? record.tags : [];
+    return {
+        key: ORGANIZATION_ID,
+        folders: folders.map((folder) => ({
+            id: String(folder.id || newId()),
+            name: String(folder.name || '').trim(),
+            createdAt: Number(folder.createdAt) || now,
+            updatedAt: Number(folder.updatedAt) || now,
+        })).filter((folder) => folder.name),
+        tags: tags.map((tag) => ({
+            id: String(tag.id || newId()),
+            name: String(tag.name || '').trim(),
+            color: normaliseColour(tag.color),
+            createdAt: Number(tag.createdAt) || now,
+            updatedAt: Number(tag.updatedAt) || now,
+        })).filter((tag) => tag.name),
         updatedAt: Number(record.updatedAt) || now,
     };
 }
@@ -171,6 +206,37 @@ function putIntoDatabase(db, notes) {
     });
 }
 
+function readMetadata(db, key) {
+    return new Promise((resolve) => {
+        let tx;
+        try {
+            tx = db.transaction(META_STORE, 'readonly');
+        } catch {
+            resolve(null);
+            return;
+        }
+        const request = tx.objectStore(META_STORE).get(key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => resolve(null);
+    });
+}
+
+function writeMetadata(db, record) {
+    return new Promise((resolve) => {
+        let tx;
+        try {
+            tx = db.transaction(META_STORE, 'readwrite');
+            tx.objectStore(META_STORE).put(record);
+        } catch {
+            resolve(false);
+            return;
+        }
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+        tx.onabort = () => resolve(false);
+    });
+}
+
 /** Load every note, merging any synchronous recovery/legacy records. */
 export async function listNotes() {
     const fallback = readFallbackNotes();
@@ -193,9 +259,17 @@ export async function listNotes() {
 }
 
 /** Create an in-memory note record. Call saveNote() to persist it. */
-export function createNoteRecord({ title = '', html = '', pinned = false } = {}) {
+export function createNoteRecord({
+    title = '',
+    html = '',
+    pinned = false,
+    folderId = null,
+    tags = [],
+} = {}) {
     const now = Date.now();
-    return normaliseNote({ id: newId(), title, html, pinned, createdAt: now, updatedAt: now });
+    return normaliseNote({
+        id: newId(), title, html, pinned, folderId, tags, createdAt: now, updatedAt: now,
+    });
 }
 
 /** Insert or update one complete note. */
@@ -275,6 +349,54 @@ export function saveNoteSync(record) {
     } catch {
         return false;
     }
+}
+
+/** Load folder and tag metadata. The tiny local copy is also a sync backup. */
+export async function loadOrganization() {
+    const fallbackRaw = parse(ORGANIZATION_KEY);
+    const fallback = fallbackRaw ? normaliseOrganization(fallbackRaw) : null;
+    const db = await openDatabase();
+    if (!db) return fallback || normaliseOrganization({ updatedAt: 0 });
+
+    const storedRaw = await readMetadata(db, ORGANIZATION_ID);
+    const stored = storedRaw ? normaliseOrganization(storedRaw) : null;
+    const organization = !stored || (fallback && fallback.updatedAt > stored.updatedAt)
+        ? (fallback || stored)
+        : stored;
+    const result = organization || normaliseOrganization({ updatedAt: 0 });
+    if (!stored || (fallback && fallback.updatedAt > stored.updatedAt)) {
+        await writeMetadata(db, result);
+    }
+    return result;
+}
+
+export async function saveOrganization(record) {
+    const organization = normaliseOrganization({ ...record, updatedAt: Date.now() });
+    let fallbackOk = false;
+    try {
+        localStorage.setItem(ORGANIZATION_KEY, JSON.stringify(organization));
+        fallbackOk = true;
+    } catch { /* storage disabled */ }
+
+    const db = await openDatabase();
+    if (!db) return fallbackOk;
+    return (await writeMetadata(db, organization)) || fallbackOk;
+}
+
+export function createFolderRecord(name) {
+    const now = Date.now();
+    return { id: newId(), name: String(name || '').trim(), createdAt: now, updatedAt: now };
+}
+
+export function createTagRecord(name, color) {
+    const now = Date.now();
+    return {
+        id: newId(),
+        name: String(name || '').trim(),
+        color: normaliseColour(color),
+        createdAt: now,
+        updatedAt: now,
+    };
 }
 
 export function getActiveNoteId() {

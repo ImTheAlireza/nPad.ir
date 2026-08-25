@@ -224,6 +224,25 @@ $jsStrings = [
     'noteDelete'        => t('notes.delete'),
     'noteDeleteTitle'   => t('notes.delete_title'),
     'noteDeleteBody'    => t('notes.delete_body'),
+    'noFolder'          => t('notes.no_folder'),
+    'addFolderTitle'    => t('notes.add_folder_title'),
+    'renameFolderTitle' => t('notes.rename_folder_title'),
+    'folderName'        => t('notes.folder_name'),
+    'createFolder'      => t('notes.create_folder'),
+    'deleteFolderTitle' => t('notes.delete_folder_title'),
+    'deleteFolderBody'  => t('notes.delete_folder_body'),
+    'addTagTitle'       => t('notes.add_tag_title'),
+    'editTagTitle'      => t('notes.edit_tag_title'),
+    'saveTag'           => t('notes.save_tag'),
+    'tagName'           => t('notes.tag_name'),
+    'tagColor'          => t('notes.tag_color'),
+    'createTag'         => t('notes.create_tag'),
+    'deleteTagTitle'    => t('notes.delete_tag_title'),
+    'deleteTagBody'     => t('notes.delete_tag_body'),
+    'manageTags'        => t('notes.manage_tags'),
+    'noTags'            => t('notes.no_tags'),
+    'removeTag'         => t('notes.remove_tag'),
+    'organizationDuplicate' => t('notes.duplicate_name'),
     'detailWords'       => t('details.words'),
     'detailCharacters'  => t('details.characters'),
     'detailNoSpaces'    => t('details.no_spaces'),
@@ -251,6 +270,91 @@ $jsStrings = [
             </div>
         </div>
 
+        <nav class="notes-organizer" aria-label="<?= e(t('notes.organize')) ?>">
+            <div class="organization-quickfilters">
+                <button type="button" class="organization-filter" data-filter-type="all" aria-pressed="true">
+                    <?= icon('file') ?>
+                    <span class="organization-filter__name"><?= e(t('notes.all')) ?></span>
+                    <span class="organization-filter__count" data-filter-count="all">0</span>
+                </button>
+                <button type="button" class="organization-filter" data-filter-type="pinned" aria-pressed="false">
+                    <?= icon('pin') ?>
+                    <span class="organization-filter__name"><?= e(t('notes.pinned')) ?></span>
+                    <span class="organization-filter__count" data-filter-count="pinned">0</span>
+                </button>
+                <button type="button" class="organization-filter" data-filter-type="unfiled" aria-pressed="false">
+                    <?= icon('folder') ?>
+                    <span class="organization-filter__name"><?= e(t('notes.unfiled')) ?></span>
+                    <span class="organization-filter__count" data-filter-count="unfiled">0</span>
+                </button>
+            </div>
+
+            <section class="organization-section">
+                <div class="organization-section__header">
+                    <h3><?= e(t('notes.folders')) ?></h3>
+                    <button type="button" class="organization-section__add" data-organization-action="add-folder"
+                            title="<?= e(t('notes.add_folder')) ?>" aria-label="<?= e(t('notes.add_folder')) ?>">
+                        <?= icon('plus') ?>
+                    </button>
+                </div>
+                <div id="foldersList"></div>
+            </section>
+
+            <section class="organization-section">
+                <div class="organization-section__header">
+                    <h3><?= e(t('notes.tags')) ?></h3>
+                    <button type="button" class="organization-section__add" data-organization-action="add-tag"
+                            title="<?= e(t('notes.add_tag')) ?>" aria-label="<?= e(t('notes.add_tag')) ?>">
+                        <?= icon('plus') ?>
+                    </button>
+                </div>
+                <div id="tagsList"></div>
+            </section>
+        </nav>
+
+        <template id="folderItemTemplate">
+            <div class="organization-row">
+                <button type="button" class="organization-filter" data-filter-type="folder" aria-pressed="false">
+                    <?= icon('folder') ?>
+                    <span class="organization-filter__name"></span>
+                    <span class="organization-filter__count"></span>
+                </button>
+                <div class="organization-row__actions">
+                    <button type="button" class="organization-row__action" data-organization-action="rename-folder"
+                            title="<?= e(t('notes.rename')) ?>" aria-label="<?= e(t('notes.rename')) ?>">
+                        <?= icon('pen') ?>
+                    </button>
+                    <button type="button" class="organization-row__action organization-row__action--danger"
+                            data-organization-action="delete-folder"
+                            title="<?= e(t('notes.delete')) ?>" aria-label="<?= e(t('notes.delete')) ?>">
+                        <?= icon('trash') ?>
+                    </button>
+                </div>
+            </div>
+        </template>
+
+        <template id="tagFilterTemplate">
+            <div class="organization-row">
+                <button type="button" class="organization-filter organization-filter--tag"
+                        data-filter-type="tag" aria-pressed="false">
+                    <span class="organization-filter__dot" aria-hidden="true"></span>
+                    <span class="organization-filter__name"></span>
+                    <span class="organization-filter__count"></span>
+                </button>
+                <div class="organization-row__actions">
+                    <button type="button" class="organization-row__action" data-organization-action="edit-tag"
+                            title="<?= e(t('notes.rename')) ?>" aria-label="<?= e(t('notes.rename')) ?>">
+                        <?= icon('pen') ?>
+                    </button>
+                    <button type="button" class="organization-row__action organization-row__action--danger"
+                            data-organization-action="delete-tag"
+                            title="<?= e(t('notes.delete')) ?>" aria-label="<?= e(t('notes.delete')) ?>">
+                        <?= icon('trash') ?>
+                    </button>
+                </div>
+            </div>
+        </template>
+
         <label class="notes-search">
             <?= icon('search', ['class' => 'icon notes-search__icon']) ?>
             <span class="visually-hidden"><?= e(t('notes.search_label')) ?></span>
@@ -269,6 +373,7 @@ $jsStrings = [
                         <span class="note-item__time"></span>
                     </span>
                     <span class="note-item__preview" dir="auto"></span>
+                    <span class="note-item__metadata"></span>
                 </button>
                 <div class="note-item__actions">
                     <button type="button" class="note-item__action" data-note-action="pin"
@@ -308,6 +413,22 @@ $jsStrings = [
                        aria-label="<?= e(t('notes.title_label')) ?>" autocomplete="off" spellcheck="false"
                        placeholder="<?= e(t('notes.untitled')) ?>">
             </label>
+            <div class="document-organization">
+                <label class="document-folder">
+                    <?= icon('folder') ?>
+                    <span class="visually-hidden"><?= e(t('notes.folder_label')) ?></span>
+                    <select class="document-folder__select" id="noteFolder"
+                            aria-label="<?= e(t('notes.folder_label')) ?>">
+                        <option value=""><?= e(t('notes.no_folder')) ?></option>
+                    </select>
+                </label>
+                <div class="document-tags" id="currentNoteTags"></div>
+                <button type="button" class="document-tags__manage" data-action="manage-note-tags"
+                        title="<?= e(t('notes.manage_tags')) ?>" aria-label="<?= e(t('notes.manage_tags')) ?>">
+                    <?= icon('tag') ?>
+                    <span><?= e(t('notes.tags')) ?></span>
+                </button>
+            </div>
         </div>
 
         <div class="toolbar" id="toolbar" role="toolbar" aria-label="<?= e(t('toolbar.group_format')) ?>" aria-controls="editor">

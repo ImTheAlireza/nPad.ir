@@ -19,6 +19,10 @@ import {
     clearNotes,
     getActiveNoteId,
     setActiveNoteId,
+    loadOrganization,
+    saveOrganization,
+    createFolderRecord,
+    createTagRecord,
 } from './storage.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
@@ -62,6 +66,12 @@ export function initEditor({ strings, onEvent }) {
     const notesSearch = document.getElementById('notesSearch');
     const notesEmpty = document.getElementById('notesEmpty');
     const noteTitleInput = document.getElementById('noteTitle');
+    const noteFolderSelect = document.getElementById('noteFolder');
+    const currentTagsEl = document.getElementById('currentNoteTags');
+    const foldersList = document.getElementById('foldersList');
+    const tagsList = document.getElementById('tagsList');
+    const folderItemTemplate = document.getElementById('folderItemTemplate');
+    const tagFilterTemplate = document.getElementById('tagFilterTemplate');
     const notesBackdrop = document.querySelector('[data-notes-backdrop]');
 
     /* Find & replace bar (guarded: the markup ships with the editor page). */
@@ -80,8 +90,10 @@ export function initEditor({ strings, onEvent }) {
     let dirty = false;
     let lastSavedAt = 0;
     let notes = [];
+    let organization = { folders: [], tags: [], updatedAt: 0 };
     let activeNoteId = null;
     let sidebarOpen = false;
+    let noteFilter = { type: 'all', id: null };
 
     /* Custom spell checker (self-contained module). */
     const spell = initSpellcheck({ editor, strings, onEvent: track });
@@ -268,12 +280,46 @@ export function initEditor({ strings, onEvent }) {
             Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
     }
 
+    function folderById(id) {
+        return organization.folders.find((folder) => folder.id === id) || null;
+    }
+
+    function tagById(id) {
+        return organization.tags.find((tag) => tag.id === id) || null;
+    }
+
+    function makeTagChip(tag, { removable = false } = {}) {
+        const chip = document.createElement(removable ? 'button' : 'span');
+        if (removable) chip.type = 'button';
+        chip.className = 'tag-chip';
+        chip.style.setProperty('--tag-color', tag.color);
+        chip.textContent = tag.name;
+        if (removable) {
+            chip.dataset.removeTag = tag.id;
+            chip.title = strings.removeTag;
+            chip.setAttribute('aria-label', `${strings.removeTag}: ${tag.name}`);
+        }
+        return chip;
+    }
+
+    function matchesNoteFilter(note) {
+        if (noteFilter.type === 'pinned') return note.pinned;
+        if (noteFilter.type === 'unfiled') return !note.folderId;
+        if (noteFilter.type === 'folder') return note.folderId === noteFilter.id;
+        if (noteFilter.type === 'tag') return note.tags.includes(noteFilter.id);
+        return true;
+    }
+
     function renderNotes() {
         if (!notesList || !noteItemTemplate) return;
         const query = (notesSearch?.value || '').trim().toLocaleLowerCase();
         const visible = sortedNotes().filter((note) => {
+            if (!matchesNoteFilter(note)) return false;
             if (!query) return true;
-            return `${displayTitle(note)} ${notePreview(note)}`.toLocaleLowerCase().includes(query);
+            const folderName = folderById(note.folderId)?.name || '';
+            const tagNames = note.tags.map((id) => tagById(id)?.name || '').join(' ');
+            return `${displayTitle(note)} ${notePreview(note)} ${folderName} ${tagNames}`
+                .toLocaleLowerCase().includes(query);
         });
 
         const fragment = document.createDocumentFragment();
@@ -289,6 +335,18 @@ export function initEditor({ strings, onEvent }) {
             item.querySelector('.note-item__title').textContent = displayTitle(note);
             item.querySelector('.note-item__preview').textContent = notePreview(note);
             item.querySelector('.note-item__time').textContent = noteTime(note);
+            const metadata = item.querySelector('.note-item__metadata');
+            const folder = folderById(note.folderId);
+            if (folder) {
+                const folderLabel = document.createElement('span');
+                folderLabel.className = 'note-item__folder';
+                folderLabel.textContent = folder.name;
+                metadata.appendChild(folderLabel);
+            }
+            for (const tagId of note.tags.slice(0, 3)) {
+                const tag = tagById(tagId);
+                if (tag) metadata.appendChild(makeTagChip(tag));
+            }
 
             item.querySelectorAll('[data-note-action]').forEach((button) => {
                 button.dataset.noteId = note.id;
@@ -302,6 +360,100 @@ export function initEditor({ strings, onEvent }) {
 
         notesList.replaceChildren(fragment);
         if (notesEmpty) notesEmpty.hidden = visible.length !== 0;
+    }
+
+    function syncFilterButtons() {
+        document.querySelectorAll('[data-filter-type]').forEach((button) => {
+            const active = button.dataset.filterType === noteFilter.type
+                && (button.dataset.filterId || null) === noteFilter.id;
+            button.setAttribute('aria-pressed', String(active));
+            button.classList.toggle('organization-filter--active', active);
+        });
+    }
+
+    function renderOrganization() {
+        const allCount = document.querySelector('[data-filter-count="all"]');
+        const pinnedCount = document.querySelector('[data-filter-count="pinned"]');
+        const unfiledCount = document.querySelector('[data-filter-count="unfiled"]');
+        if (allCount) allCount.textContent = String(notes.length);
+        if (pinnedCount) pinnedCount.textContent = String(notes.filter((note) => note.pinned).length);
+        if (unfiledCount) unfiledCount.textContent = String(notes.filter((note) => !note.folderId).length);
+
+        if (foldersList && folderItemTemplate) {
+            const fragment = document.createDocumentFragment();
+            const folders = [...organization.folders]
+                .sort((a, b) => a.name.localeCompare(b.name, document.documentElement.lang));
+            for (const folder of folders) {
+                const item = folderItemTemplate.content.firstElementChild.cloneNode(true);
+                item.dataset.organizationId = folder.id;
+                const filter = item.querySelector('[data-filter-type="folder"]');
+                filter.dataset.filterId = folder.id;
+                filter.querySelector('.organization-filter__name').textContent = folder.name;
+                filter.querySelector('.organization-filter__count').textContent = String(
+                    notes.filter((note) => note.folderId === folder.id).length,
+                );
+                item.querySelectorAll('[data-organization-action]').forEach((button) => {
+                    button.dataset.organizationId = folder.id;
+                });
+                fragment.appendChild(item);
+            }
+            foldersList.replaceChildren(fragment);
+        }
+
+        if (tagsList && tagFilterTemplate) {
+            const fragment = document.createDocumentFragment();
+            const tags = [...organization.tags]
+                .sort((a, b) => a.name.localeCompare(b.name, document.documentElement.lang));
+            for (const tag of tags) {
+                const item = tagFilterTemplate.content.firstElementChild.cloneNode(true);
+                item.dataset.organizationId = tag.id;
+                const filter = item.querySelector('[data-filter-type="tag"]');
+                filter.dataset.filterId = tag.id;
+                filter.style.setProperty('--tag-color', tag.color);
+                filter.querySelector('.organization-filter__name').textContent = tag.name;
+                filter.querySelector('.organization-filter__count').textContent = String(
+                    notes.filter((note) => note.tags.includes(tag.id)).length,
+                );
+                item.querySelectorAll('[data-organization-action]').forEach((button) => {
+                    button.dataset.organizationId = tag.id;
+                });
+                fragment.appendChild(item);
+            }
+            tagsList.replaceChildren(fragment);
+        }
+
+        if (noteFolderSelect) {
+            const selected = activeNote()?.folderId || '';
+            const first = document.createElement('option');
+            first.value = '';
+            first.textContent = strings.noFolder;
+            const options = [first];
+            for (const folder of organization.folders) {
+                const option = document.createElement('option');
+                option.value = folder.id;
+                option.textContent = folder.name;
+                options.push(option);
+            }
+            noteFolderSelect.replaceChildren(...options);
+            noteFolderSelect.value = selected;
+        }
+
+        if (currentTagsEl) {
+            const fragment = document.createDocumentFragment();
+            for (const tagId of activeNote()?.tags || []) {
+                const tag = tagById(tagId);
+                if (tag) fragment.appendChild(makeTagChip(tag, { removable: true }));
+            }
+            currentTagsEl.replaceChildren(fragment);
+        }
+
+        syncFilterButtons();
+    }
+
+    function setNoteFilter(type, id = null) {
+        noteFilter = { type, id };
+        syncFilterButtons();
+        renderNotes();
     }
 
     function setSidebarOpen(open, { remember = true } = {}) {
@@ -340,6 +492,7 @@ export function initEditor({ strings, onEvent }) {
         pendingFontSize = null;
         setSaveState('saved');
         updateCounts();
+        renderOrganization();
         renderNotes();
         spell.refresh();
         if (focusEditor) editor.focus();
@@ -362,9 +515,22 @@ export function initEditor({ strings, onEvent }) {
         html = '',
         focusTitle = true,
         report = true,
+        folderId,
+        tags,
     } = {}) {
         if (dirty) await persist();
-        const note = createNoteRecord({ title: title || strings.noteUntitled, html });
+        const initialFolder = folderId !== undefined
+            ? folderId
+            : (noteFilter.type === 'folder' ? noteFilter.id : null);
+        const initialTags = tags !== undefined
+            ? tags
+            : (noteFilter.type === 'tag' ? [noteFilter.id] : []);
+        const note = createNoteRecord({
+            title: title || strings.noteUntitled,
+            html,
+            folderId: initialFolder,
+            tags: initialTags,
+        });
         notes.push(note);
         await saveNote(note);
         showNote(note);
@@ -418,6 +584,8 @@ export function initEditor({ strings, onEvent }) {
         const copy = createNoteRecord({
             title: `${displayTitle(source)} ${strings.noteCopySuffix}`.trim(),
             html: source.html,
+            folderId: source.folderId,
+            tags: source.tags,
         });
         notes.push(copy);
         await saveNote(copy);
@@ -432,6 +600,7 @@ export function initEditor({ strings, onEvent }) {
         const updated = { ...note, pinned: !note.pinned };
         notes = notes.map((item) => item.id === id ? updated : item);
         await saveNote(updated);
+        renderOrganization();
         renderNotes();
     }
 
@@ -455,6 +624,230 @@ export function initEditor({ strings, onEvent }) {
             if (next) showNote(next);
             else await createNewNote({ focusTitle: false });
         }
+        renderOrganization();
+        renderNotes();
+    }
+
+    const TAG_COLOURS = [
+        '#2563eb', '#7c3aed', '#db2777', '#dc2626',
+        '#ea580c', '#ca8a04', '#16a34a', '#0d9488',
+    ];
+
+    function organizationNameExists(collection, name, exceptId = null) {
+        const normalised = name.trim().toLocaleLowerCase();
+        return collection.some((item) => item.id !== exceptId
+            && item.name.toLocaleLowerCase() === normalised);
+    }
+
+    async function promptFolder(folder = null) {
+        const action = await showDialog({
+            title: folder ? strings.renameFolderTitle : strings.addFolderTitle,
+            bodyHtml: `
+                <label class="field">
+                    <span class="field__label">${escapeHtml(strings.folderName)}</span>
+                    <input class="field__input" id="folderNameInput" maxlength="80"
+                           autocomplete="off" autofocus>
+                </label>`,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                {
+                    label: folder ? strings.noteRename : strings.createFolder,
+                    action: 'save-folder',
+                    variant: 'btn--primary',
+                },
+            ],
+            onOpen: (body) => {
+                if (folder) body.querySelector('#folderNameInput').value = folder.name;
+            },
+        });
+        if (action !== 'save-folder') return;
+        const name = document.getElementById('folderNameInput')?.value.trim();
+        if (!name) return;
+        if (organizationNameExists(organization.folders, name, folder?.id)) {
+            toast(strings.organizationDuplicate, 'error');
+            return;
+        }
+        if (folder) {
+            organization.folders = organization.folders.map((item) => item.id === folder.id
+                ? { ...item, name, updatedAt: Date.now() }
+                : item);
+        } else {
+            organization.folders.push(createFolderRecord(name));
+        }
+        await saveOrganization(organization);
+        renderOrganization();
+        renderNotes();
+    }
+
+    async function promptTag(tag = null) {
+        let selectedColor = tag?.color || TAG_COLOURS[0];
+        const swatches = TAG_COLOURS.map((color) => `
+            <button type="button" class="tag-colour" data-tag-color="${color}"
+                    style="--tag-color:${color}" aria-label="${color}"
+                    aria-pressed="${color === selectedColor ? 'true' : 'false'}"></button>`).join('');
+        const action = await showDialog({
+            title: tag ? strings.editTagTitle : strings.addTagTitle,
+            bodyHtml: `
+                <label class="field">
+                    <span class="field__label">${escapeHtml(strings.tagName)}</span>
+                    <input class="field__input" id="tagNameInput" maxlength="40"
+                           autocomplete="off" autofocus>
+                </label>
+                <fieldset class="tag-colours">
+                    <legend class="field__label">${escapeHtml(strings.tagColor)}</legend>
+                    <div class="tag-colours__list">${swatches}</div>
+                </fieldset>`,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                {
+                    label: tag ? strings.saveTag : strings.createTag,
+                    action: 'save-tag',
+                    variant: 'btn--primary',
+                },
+            ],
+            onOpen: (body) => {
+                if (tag) body.querySelector('#tagNameInput').value = tag.name;
+                body.querySelector('.tag-colours__list').addEventListener('click', (event) => {
+                    const swatch = event.target.closest('[data-tag-color]');
+                    if (!swatch) return;
+                    selectedColor = swatch.dataset.tagColor;
+                    body.querySelectorAll('[data-tag-color]').forEach((item) => {
+                        item.setAttribute('aria-pressed', String(item === swatch));
+                    });
+                });
+            },
+        });
+        if (action !== 'save-tag') return;
+        const name = document.getElementById('tagNameInput')?.value.trim();
+        if (!name) return;
+        if (organizationNameExists(organization.tags, name, tag?.id)) {
+            toast(strings.organizationDuplicate, 'error');
+            return;
+        }
+        if (tag) {
+            organization.tags = organization.tags.map((item) => item.id === tag.id
+                ? { ...item, name, color: selectedColor, updatedAt: Date.now() }
+                : item);
+        } else {
+            organization.tags.push(createTagRecord(name, selectedColor));
+        }
+        await saveOrganization(organization);
+        renderOrganization();
+        renderNotes();
+    }
+
+    async function deleteFolderRecord(id) {
+        const folder = folderById(id);
+        if (!folder) return;
+        const confirmed = await confirmDialog({
+            title: strings.deleteFolderTitle,
+            message: (strings.deleteFolderBody || '').replace('{name}', folder.name),
+            confirmLabel: strings.noteDelete,
+            cancelLabel: strings.cancel,
+            danger: true,
+        });
+        if (!confirmed) return;
+        if (dirty) await persist();
+        organization.folders = organization.folders.filter((item) => item.id !== id);
+        const changed = [];
+        notes = notes.map((note) => {
+            if (note.folderId !== id) return note;
+            const updated = { ...note, folderId: null, updatedAt: Date.now() };
+            changed.push(updated);
+            return updated;
+        });
+        await Promise.all([saveOrganization(organization), ...changed.map(saveNote)]);
+        if (noteFilter.type === 'folder' && noteFilter.id === id) noteFilter = { type: 'all', id: null };
+        renderOrganization();
+        renderNotes();
+    }
+
+    async function deleteTagRecord(id) {
+        const tag = tagById(id);
+        if (!tag) return;
+        const confirmed = await confirmDialog({
+            title: strings.deleteTagTitle,
+            message: (strings.deleteTagBody || '').replace('{name}', tag.name),
+            confirmLabel: strings.noteDelete,
+            cancelLabel: strings.cancel,
+            danger: true,
+        });
+        if (!confirmed) return;
+        if (dirty) await persist();
+        organization.tags = organization.tags.filter((item) => item.id !== id);
+        const changed = [];
+        notes = notes.map((note) => {
+            if (!note.tags.includes(id)) return note;
+            const updated = {
+                ...note,
+                tags: note.tags.filter((tagId) => tagId !== id),
+                updatedAt: Date.now(),
+            };
+            changed.push(updated);
+            return updated;
+        });
+        await Promise.all([saveOrganization(organization), ...changed.map(saveNote)]);
+        if (noteFilter.type === 'tag' && noteFilter.id === id) noteFilter = { type: 'all', id: null };
+        renderOrganization();
+        renderNotes();
+    }
+
+    async function manageCurrentTags() {
+        if (dirty) await persist();
+        const note = activeNote();
+        if (!note) return;
+        const selected = new Set(note.tags);
+        const action = await showDialog({
+            title: strings.manageTags,
+            bodyHtml: `<div class="tag-checklist" id="tagChecklist"></div>`,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                { label: strings.apply, action: 'apply-tags', variant: 'btn--primary' },
+            ],
+            onOpen: (body) => {
+                const list = body.querySelector('#tagChecklist');
+                if (!organization.tags.length) {
+                    const empty = document.createElement('p');
+                    empty.className = 'tag-checklist__empty';
+                    empty.textContent = strings.noTags;
+                    list.appendChild(empty);
+                    return;
+                }
+                for (const tag of organization.tags) {
+                    const label = document.createElement('label');
+                    label.className = 'tag-checklist__item';
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.value = tag.id;
+                    input.checked = selected.has(tag.id);
+                    const chip = makeTagChip(tag);
+                    label.append(input, chip);
+                    list.appendChild(label);
+                }
+            },
+        });
+        if (action !== 'apply-tags') return;
+        const tags = [...document.querySelectorAll('#tagChecklist input:checked')]
+            .map((input) => input.value);
+        const updated = { ...note, tags, updatedAt: Date.now() };
+        notes = notes.map((item) => item.id === note.id ? updated : item);
+        await saveNote(updated);
+        renderOrganization();
+        renderNotes();
+    }
+
+    async function removeCurrentTag(id) {
+        if (dirty) await persist();
+        const note = activeNote();
+        if (!note || !note.tags.includes(id)) return;
+        const updated = {
+            ...note,
+            tags: note.tags.filter((tagId) => tagId !== id),
+            updatedAt: Date.now(),
+        };
+        notes = notes.map((item) => item.id === note.id ? updated : item);
+        await saveNote(updated);
+        renderOrganization();
         renderNotes();
     }
 
@@ -471,6 +864,35 @@ export function initEditor({ strings, onEvent }) {
             else if (noteAction === 'delete') void removeNote(noteId);
         });
     }
+    notesSidebar?.addEventListener('click', (event) => {
+        const filter = event.target.closest('[data-filter-type]');
+        if (filter) {
+            setNoteFilter(filter.dataset.filterType, filter.dataset.filterId || null);
+            return;
+        }
+        const action = event.target.closest('[data-organization-action]');
+        if (!action) return;
+        const id = action.dataset.organizationId;
+        if (action.dataset.organizationAction === 'add-folder') void promptFolder();
+        else if (action.dataset.organizationAction === 'rename-folder') void promptFolder(folderById(id));
+        else if (action.dataset.organizationAction === 'delete-folder') void deleteFolderRecord(id);
+        else if (action.dataset.organizationAction === 'add-tag') void promptTag();
+        else if (action.dataset.organizationAction === 'edit-tag') void promptTag(tagById(id));
+        else if (action.dataset.organizationAction === 'delete-tag') void deleteTagRecord(id);
+    });
+    noteFolderSelect?.addEventListener('change', () => {
+        const note = activeNote();
+        if (!note) return;
+        note.folderId = noteFolderSelect.value || null;
+        note.updatedAt = Date.now();
+        renderOrganization();
+        renderNotes();
+        scheduleSave();
+    });
+    currentTagsEl?.addEventListener('click', (event) => {
+        const chip = event.target.closest('[data-remove-tag]');
+        if (chip) void removeCurrentTag(chip.dataset.removeTag);
+    });
     notesBackdrop?.addEventListener('click', () => setSidebarOpen(false));
     noteTitleInput?.addEventListener('input', () => {
         const note = activeNote();
@@ -1663,6 +2085,7 @@ ${cleanHtml()}
         },
         find: () => openFind(false),
         'find-replace': () => openFind(true),
+        'manage-note-tags': manageCurrentTags,
         'toggle-notes': () => setSidebarOpen(!sidebarOpen),
         'toggle-focus': () => applyFocusMode(!document.body.classList.contains('focus-mode')),
         'dir-ltr': () => {
@@ -1751,7 +2174,23 @@ ${cleanHtml()}
     });
 
     (async () => {
-        notes = await listNotes();
+        [notes, organization] = await Promise.all([listNotes(), loadOrganization()]);
+
+        // Repair references if organization metadata was independently
+        // cleared or recovered from an older backup.
+        const folderIds = new Set(organization.folders.map((folder) => folder.id));
+        const tagIds = new Set(organization.tags.map((tag) => tag.id));
+        const repaired = [];
+        notes = notes.map((note) => {
+            const folderId = note.folderId && folderIds.has(note.folderId) ? note.folderId : null;
+            const tags = note.tags.filter((id) => tagIds.has(id));
+            if (folderId === note.folderId && tags.length === note.tags.length) return note;
+            const updated = { ...note, folderId, tags, updatedAt: Date.now() };
+            repaired.push(updated);
+            return updated;
+        });
+        if (repaired.length) await Promise.all(repaired.map(saveNote));
+
         if (!notes.length) {
             await createNewNote({ focusTitle: false, report: false });
         } else {

@@ -196,6 +196,13 @@ export default async function run(check, group) {
             assert.ok(title?.getAttribute('aria-label'), 'note title is not named');
             assert.equal(search?.type, 'search');
             assert.ok(template?.content.querySelector('[data-note-action="open"]'));
+            assert.ok(document.getElementById('foldersList'), 'folder list missing');
+            assert.ok(document.getElementById('tagsList'), 'tag list missing');
+            assert.ok(document.getElementById('noteFolder')?.getAttribute('aria-label'));
+            assert.ok(document.querySelector('[data-action="manage-note-tags"]')?.getAttribute('aria-label'));
+            ['all', 'pinned', 'unfiled'].forEach((filter) => {
+                assert.ok(document.querySelector(`[data-filter-type="${filter}"]`), `${filter} filter missing`);
+            });
             ['pin', 'rename', 'duplicate', 'delete'].forEach((action) => {
                 const button = template.content.querySelector(`[data-note-action="${action}"]`);
                 assert.ok(button?.getAttribute('aria-label'), `${action} is not named`);

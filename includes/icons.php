@@ -75,6 +75,7 @@ function npad_icon_paths(): array
         'plus'        => '<path d="M12 5v14M5 12h14"/>',
         'pin'         => '<path d="M12 17v5"/><path d="m5 17 3-4V6L6 4V2h12v2l-2 2v7l3 4z"/>',
         'sidebar'     => '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+        'tag'         => '<path d="M20 13 13 20l-9-9V4h7z"/><circle cx="8.5" cy="8.5" r="1.5"/>',
     ];
 }
 

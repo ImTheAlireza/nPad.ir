@@ -353,6 +353,130 @@ export default async function run(check, group) {
         assert.ok(noteByTitle(copyTitle));
     });
 
+    group('behaviour: folders and tags');
+
+    document.querySelector('[data-organization-action="add-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('folderNameInput').value = 'Work';
+    document.querySelector('#appDialog [data-action="save-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('folders can be created and appear in the note folder selector', () => {
+        const folderRow = document.querySelector('#foldersList .organization-row');
+        assert.equal(folderRow.querySelector('.organization-filter__name').textContent, 'Work');
+        assert.ok([...document.getElementById('noteFolder').options]
+            .some((option) => option.textContent === 'Work'));
+    });
+
+    const folderSelect = document.getElementById('noteFolder');
+    folderSelect.selectedIndex = 1;
+    folderSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    check('the active note can be assigned to a folder', () => {
+        assert.equal(noteByTitle('Renamed original').querySelector('.note-item__folder').textContent, 'Work');
+        assert.equal(document.querySelector('#foldersList .organization-filter__count').textContent, '1');
+    });
+
+    document.querySelector('#foldersList [data-organization-action="rename-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('folderNameInput').value = 'Projects';
+    document.querySelector('#appDialog [data-action="save-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('folders can be renamed without losing their notes', () => {
+        assert.equal(document.querySelector('#foldersList .organization-filter__name').textContent, 'Projects');
+        assert.equal(folderSelect.selectedOptions[0].textContent, 'Projects');
+    });
+
+    document.querySelector('[data-organization-action="add-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('tagNameInput').value = 'Important';
+    document.querySelector('[data-tag-color="#dc2626"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    document.querySelector('#appDialog [data-action="save-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('color-coded tags can be created', () => {
+        const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
+        assert.equal(tagFilter.querySelector('.organization-filter__name').textContent, 'Important');
+        assert.equal(tagFilter.style.getPropertyValue('--tag-color'), '#dc2626');
+    });
+
+    document.querySelector('#tagsList [data-organization-action="edit-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('tagNameInput').value = 'Priority';
+    document.querySelector('[data-tag-color="#7c3aed"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    document.querySelector('#appDialog [data-action="save-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('tags can be renamed and recolored', () => {
+        const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
+        assert.equal(tagFilter.querySelector('.organization-filter__name').textContent, 'Priority');
+        assert.equal(tagFilter.style.getPropertyValue('--tag-color'), '#7c3aed');
+    });
+
+    document.querySelector('[data-action="manage-note-tags"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const tagCheckbox = document.querySelector('#tagChecklist input');
+    tagCheckbox.checked = true;
+    document.querySelector('#appDialog [data-action="apply-tags"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('tags can be assigned and are shown on the note card and document', () => {
+        assert.equal(document.querySelector('#currentNoteTags .tag-chip').textContent, 'Priority');
+        assert.equal(noteByTitle('Renamed original').querySelector('.tag-chip').textContent, 'Priority');
+        assert.equal(document.querySelector('#tagsList .organization-filter__count').textContent, '1');
+    });
+
+    document.querySelector('#foldersList [data-filter-type="folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    check('folder filters show only notes in that folder', () => {
+        assert.equal(noteItems().length, 1);
+        assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
+    });
+    document.querySelector('[data-filter-type="all"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    document.querySelector('#tagsList [data-filter-type="tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    check('tag filters show only notes with that tag', () => {
+        assert.equal(noteItems().length, 1);
+        assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
+    });
+    document.querySelector('[data-filter-type="all"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+    document.querySelector('#foldersList [data-organization-action="delete-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('deleting a folder moves its notes to Unfiled', () => {
+        assert.equal(document.querySelectorAll('#foldersList .organization-row').length, 0);
+        assert.equal(folderSelect.value, '');
+        assert.ok(noteByTitle('Renamed original'));
+    });
+
+    document.querySelector('#tagsList [data-organization-action="delete-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('deleting a tag removes it from notes without deleting notes', () => {
+        assert.equal(document.querySelectorAll('#tagsList .organization-row').length, 0);
+        assert.equal(document.querySelectorAll('#currentNoteTags .tag-chip').length, 0);
+        assert.ok(noteByTitle('Renamed original'));
+    });
+
     group('behaviour: find & replace');
 
     // The custom spell checker re-wraps words on input; switch it off first

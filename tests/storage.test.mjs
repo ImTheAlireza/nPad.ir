@@ -58,6 +58,28 @@ export default async function run(check, group) {
         assert.equal(storage.getActiveNoteId(), second.id);
     });
 
+    const folder = storage.createFolderRecord('Work');
+    const tag = storage.createTagRecord('Urgent', '#dc2626');
+    await storage.saveOrganization({ folders: [folder], tags: [tag] });
+    const savedOrganization = await storage.loadOrganization();
+
+    check('folder and color-coded tag metadata persist', () => {
+        assert.equal(savedOrganization.folders[0].name, 'Work');
+        assert.equal(savedOrganization.tags[0].name, 'Urgent');
+        assert.equal(savedOrganization.tags[0].color, '#dc2626');
+    });
+
+    second.folderId = folder.id;
+    second.tags = [tag.id];
+    second.updatedAt = Date.now();
+    await storage.saveNote(second);
+    notes = await storage.listNotes();
+    check('notes retain folder and tag relationships', () => {
+        const categorized = notes.find((note) => note.id === second.id);
+        assert.equal(categorized.folderId, folder.id);
+        assert.deepEqual(categorized.tags, [tag.id]);
+    });
+
     const recovered = { ...second, html: '<p>Recovered at pagehide</p>', updatedAt: Date.now() + 1000 };
     storage.saveNoteSync(recovered);
     notes = await storage.listNotes();
