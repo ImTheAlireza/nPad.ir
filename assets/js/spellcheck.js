@@ -71,6 +71,7 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     let lastText = null;
     let remarkTimer = null;
     let hoverTimer = null;
+    let hideTimer = null;
     let hoverEl = null;
     let tip = null;
 
@@ -194,11 +195,17 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         const caret = saveCaret();
         unwrapMarks();
 
+        // Snapshot the text nodes first. Replacing a node while the walker
+        // is mid-iteration detaches its current node, so in real browsers
+        // the walker stops and every later paragraph is skipped (jsdom
+        // behaves differently, which is why this only showed up live).
+        const textNodes = [];
         const walker = document.createTreeWalker(editor, SHOW_TEXT);
         let node;
         while ((node = walker.nextNode())) {
-            if (node.nodeValue) wrapNode(node);
+            if (node.nodeValue) textNodes.push(node);
         }
+        for (const textNode of textNodes) wrapNode(textNode);
 
         restoreCaret(caret);
     }
@@ -240,6 +247,11 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         tip.className = 'spell-tip';
         tip.setAttribute('role', 'tooltip');
         tip.hidden = true;
+        // Keeping the pointer on the tooltip (or the word) keeps it open.
+        tip.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+        tip.addEventListener('mouseleave', () => {
+            hideTimer = setTimeout(hideTip, 250);
+        });
         document.body.appendChild(tip);
         return tip;
     }
@@ -247,6 +259,7 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     function hideTip() {
         if (tip) tip.hidden = true;
         clearTimeout(hoverTimer);
+        clearTimeout(hideTimer);
         hoverEl = null;
     }
 
@@ -389,10 +402,13 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
 
     editor.addEventListener('mouseover', (event) => {
         const el = event.target.closest ? event.target.closest('.spell-err') : null;
-        if (!el || el === hoverEl) return;
-        hoverEl = el;
+        if (!el) return;
+        if (el === hoverEl) return;
         clearTimeout(hoverTimer);
-        const delay = parseInt(editor.dataset.spellDelay || '3000', 10);
+        // Moving to a different flagged word closes any open tooltip.
+        if (tip && !tip.hidden) hideTip();
+        hoverEl = el;
+        const delay = parseInt(editor.dataset.spellDelay || '1000', 10);
         hoverTimer = setTimeout(() => showTip(el), Math.max(0, delay));
     });
 
@@ -401,8 +417,13 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         const to = event.relatedTarget;
         if (el && to && el.contains(to)) return;
         clearTimeout(hoverTimer);
-        hoverEl = null;
-        hideTip();
+        // If a tooltip is open, give the mouse a grace period to reach it
+        // instead of hiding the instant the pointer leaves the word.
+        if (tip && !tip.hidden) {
+            hideTimer = setTimeout(hideTip, 200);
+        } else {
+            hoverEl = null;
+        }
     });
 
     const hideOnOutside = (event) => {

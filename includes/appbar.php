@@ -39,6 +39,9 @@ $editItems = [
     ['action' => 'paste',       'icon' => 'clipboard',  'label' => t('menu.paste'),       'shortcut' => 'Ctrl+V'],
     ['action' => 'paste-plain', 'icon' => 'text',       'label' => t('menu.paste_plain')],
     ['separator' => true],
+    ['action' => 'find',        'icon' => 'search',     'label' => t('menu.find'),        'shortcut' => 'Ctrl+F'],
+    ['action' => 'find-replace','icon' => 'find-replace','label' => t('menu.find_replace'), 'shortcut' => 'Ctrl+H'],
+    ['separator' => true],
     ['action' => 'select-all',  'icon' => 'select-all', 'label' => t('menu.select_all'),  'shortcut' => 'Ctrl+A'],
 ];
 

@@ -1563,6 +1563,10 @@ kbd {
 
 .findbar[hidden] { display: none; }
 
+/* .findbar__row sets display:flex below, which would otherwise override the
+   hidden attribute; this restores the browser default for hidden rows. */
+.findbar__row[hidden] { display: none; }
+
 .findbar__row {
     display: flex;
     align-items: center;

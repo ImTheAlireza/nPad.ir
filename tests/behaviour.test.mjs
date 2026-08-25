@@ -269,6 +269,20 @@ export default async function run(check, group) {
         assert.ok(tracked.includes('find_used'), 'find_used not tracked');
     });
 
+    check('find shows no replace row; find & replace shows it', () => {
+        const findBtn = document.querySelector('[data-action="find"]');
+        const findReplaceBtn = document.querySelector('[data-action="find-replace"]');
+        const row = document.getElementById('findReplaceRow');
+        assert.ok(findBtn && findReplaceBtn, 'toolbar find buttons missing');
+
+        findBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(row.hidden, true, 'replace row visible in plain find');
+
+        findReplaceBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(row.hidden, false, 'replace row hidden in find & replace');
+        assert.equal(findBar.hidden, false, 'find bar did not open');
+    });
+
     check('matches span text nodes and count is shown', () => {
         // Three "hello" occurrences, one split across <b> markup.
         editor.innerHTML = '<p>Hello world, hello again.</p><p>H<b>ello</b> there.</p>';
@@ -358,13 +372,16 @@ export default async function run(check, group) {
             spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         }
         editor.dataset.spellDebounce = '10';
-        editor.innerHTML = '<p>hellow wrld and correct</p>';
+        // Two paragraphs: the walker must not stop after the first replaced
+        // node (the live-DOM bug that only showed up in real browsers).
+        editor.innerHTML = '<p>hellow wrld and correct</p><p>secon para</p>';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         await new Promise((resolve) => window.setTimeout(resolve, 60));
         const marks = editor.querySelectorAll('.spell-err');
-        assert.equal(marks.length, 2, `expected 2 marks, got ${marks.length}`);
+        assert.equal(marks.length, 3, `expected 3 marks, got ${marks.length}`);
         assert.equal(marks[0].textContent, 'hellow');
         assert.equal(marks[1].textContent, 'wrld');
+        assert.equal(marks[2].textContent, 'secon');
     });
 
     check('toggle disables the checker, clears marks and persists', () => {
@@ -395,6 +412,11 @@ export default async function run(check, group) {
         const items = tip.querySelectorAll('.spell-tip__item');
         assert.ok(items.length >= 1, 'no suggestions offered');
         assert.equal(items[0].textContent, 'hello');
+
+        // Moving the pointer off the word must not close the tooltip
+        // immediately — the user needs time to reach the suggestions.
+        mark.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: tip }));
+        assert.ok(!tip.hidden, 'tooltip closed on pointer leaving the word');
 
         items[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.ok(editor.textContent.includes('hello world'), editor.textContent);
