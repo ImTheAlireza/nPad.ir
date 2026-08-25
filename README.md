@@ -103,6 +103,22 @@ CREATE TABLE analytics (
 `php_value` directives belong in `.user.ini`, **not** `.htaccess` — under
 PHP-FPM the latter returns HTTP 500 for the whole site.
 
+## Local development
+
+No system PHP needed — the site runs through PHP 8.2 compiled to WebAssembly
+(the same runtime the test suite uses):
+
+```bash
+npm install
+npm run dev       # serves the real site on http://0.0.0.0:8787
+```
+
+`dev-server.mjs` mirrors the repository into the php-wasm filesystem,
+watches for file changes, and emulates the `.htaccess` rules (sitemap
+rewrite, `ErrorDocument 404`, trailing-slash redirect). For local analytics,
+create a `config.php` — see the example above (or use a SQLite-backed
+variant for machines without MySQL).
+
 ## Tests
 
 ```bash
