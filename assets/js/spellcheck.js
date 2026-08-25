@@ -186,12 +186,49 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
        Re-mark pass
        ------------------------------------------------------------------ */
 
+    /**
+     * Capture a control that currently owns keyboard focus. Rebuilding the
+     * spell-mark DOM and restoring an editor Range makes Chromium focus the
+     * contenteditable, even when the user has already moved into Find, a
+     * dialog field, or the font search. Keep both focus and the control's
+     * caret so a delayed spell pass can never interrupt typing elsewhere.
+     */
+    function captureExternalFocus() {
+        const element = document.activeElement;
+        if (!element || element === document.body || editor.contains(element)) return null;
+
+        const state = { element };
+        if (typeof element.selectionStart === 'number') {
+            state.start = element.selectionStart;
+            state.end = element.selectionEnd;
+            state.direction = element.selectionDirection;
+        }
+        return state;
+    }
+
+    function restoreExternalFocus(state) {
+        if (!state || !state.element.isConnected) return;
+        try {
+            state.element.focus({ preventScroll: true });
+        } catch {
+            state.element.focus();
+        }
+        if (typeof state.start === 'number' && typeof state.element.setSelectionRange === 'function') {
+            try {
+                state.element.setSelectionRange(state.start, state.end, state.direction || 'none');
+            } catch {
+                /* Some input types do not expose a selectable text range. */
+            }
+        }
+    }
+
     function remark() {
         if (!enabled) return;
         const text = editor.textContent || '';
         if (text === lastText) return;
         lastText = text;
 
+        const focusedControl = captureExternalFocus();
         const caret = saveCaret();
         unwrapMarks();
 
@@ -208,6 +245,7 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         for (const textNode of textNodes) wrapNode(textNode);
 
         restoreCaret(caret);
+        restoreExternalFocus(focusedControl);
     }
 
     function scheduleRemark(delay) {
@@ -241,16 +279,37 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
        Tooltip
        ------------------------------------------------------------------ */
 
+    const HIDE_GRACE = 500;
+
+    function cancelHide() {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+    }
+
+    function scheduleHide() {
+        cancelHide();
+        hideTimer = setTimeout(hideTip, HIDE_GRACE);
+    }
+
     function ensureTip() {
         if (tip) return tip;
         tip = document.createElement('div');
         tip.className = 'spell-tip';
         tip.setAttribute('role', 'tooltip');
         tip.hidden = true;
-        // Keeping the pointer on the tooltip (or the word) keeps it open.
-        tip.addEventListener('mouseenter', () => clearTimeout(hideTimer));
-        tip.addEventListener('mouseleave', () => {
-            hideTimer = setTimeout(hideTip, 250);
+
+        // The word and this detached, body-level popup form one hover region.
+        // In particular, entering the popup must cancel the word's leave
+        // timer; otherwise it disappears just as a suggestion is reached.
+        tip.addEventListener('mouseenter', cancelHide);
+        tip.addEventListener('mouseleave', (event) => {
+            if (hoverEl && event.relatedTarget && hoverEl.contains(event.relatedTarget)) return;
+            scheduleHide();
+        });
+        tip.addEventListener('focusin', cancelHide);
+        tip.addEventListener('focusout', (event) => {
+            if (event.relatedTarget && tip.contains(event.relatedTarget)) return;
+            scheduleHide();
         });
         document.body.appendChild(tip);
         return tip;
@@ -259,7 +318,7 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     function hideTip() {
         if (tip) tip.hidden = true;
         clearTimeout(hoverTimer);
-        clearTimeout(hideTimer);
+        cancelHide();
         hoverEl = null;
     }
 
@@ -274,11 +333,14 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         const vw = window.innerWidth || document.documentElement.clientWidth;
         const vh = window.innerHeight || document.documentElement.clientHeight;
 
-        let left = Math.min(Math.max(rect.left, 8), Math.max(8, vw - width - 8));
+        const left = Math.min(Math.max(rect.left, 8), Math.max(8, vw - width - 8));
         let top = rect.bottom + 8;
+        let placement = 'below';
         if (top + height > vh - 8 && rect.top - height - 8 > 0) {
             top = rect.top - height - 8;
+            placement = 'above';
         }
+        tipEl.dataset.placement = placement;
         tipEl.style.left = `${left}px`;
         tipEl.style.top = `${top}px`;
     }
@@ -403,25 +465,33 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     editor.addEventListener('mouseover', (event) => {
         const el = event.target.closest ? event.target.closest('.spell-err') : null;
         if (!el) return;
+        cancelHide();
         if (el === hoverEl) return;
         clearTimeout(hoverTimer);
         // Moving to a different flagged word closes any open tooltip.
         if (tip && !tip.hidden) hideTip();
         hoverEl = el;
         const delay = parseInt(editor.dataset.spellDelay || '1000', 10);
-        hoverTimer = setTimeout(() => showTip(el), Math.max(0, delay));
+        hoverTimer = setTimeout(() => {
+            if (el.isConnected && hoverEl === el) showTip(el);
+        }, Math.max(0, delay));
     });
 
     editor.addEventListener('mouseout', (event) => {
         const el = event.target.closest ? event.target.closest('.spell-err') : null;
+        if (!el) return;
         const to = event.relatedTarget;
-        if (el && to && el.contains(to)) return;
+        if (to && (el.contains(to) || (tip && tip.contains(to)))) {
+            cancelHide();
+            return;
+        }
         clearTimeout(hoverTimer);
-        // If a tooltip is open, give the mouse a grace period to reach it
-        // instead of hiding the instant the pointer leaves the word.
-        if (tip && !tip.hidden) {
-            hideTimer = setTimeout(hideTip, 200);
-        } else {
+        // Keep the open popup available while the pointer crosses the small
+        // visual gap between it and the word. Its transparent CSS bridge and
+        // mouseenter listener cancel this fallback timer on arrival.
+        if (tip && !tip.hidden && hoverEl === el) {
+            scheduleHide();
+        } else if (hoverEl === el) {
             hoverEl = null;
         }
     });

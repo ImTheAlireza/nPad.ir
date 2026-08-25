@@ -1637,6 +1637,13 @@ kbd {
     color: var(--text-onaccent);
 }
 
+/* Paint the active result without moving the browser Selection (and therefore
+   keyboard focus) out of the Find/Replace fields. */
+.editor::highlight(npad-find-current) {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+}
+
 /* Focus mode: hide chrome, let the text own the viewport. The find bar
    stays available — it is hidden by default and only appears when opened. */
 body.focus-mode .appbar,
@@ -1745,6 +1752,22 @@ body.focus-mode .focus-exit { display: inline-flex; }
 }
 
 .spell-tip[hidden] { display: none; }
+
+/* Transparent hover bridge over the visual 8px gap. Without it, a slow or
+   diagonal pointer move briefly leaves both the flagged word and the popup,
+   causing the correction choices to close before they can be clicked. */
+.spell-tip::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: -9px;
+    height: 9px;
+}
+
+.spell-tip[data-placement="above"]::before {
+    top: auto;
+    bottom: -9px;
+}
 
 .spell-tip__list {
     display: flex;

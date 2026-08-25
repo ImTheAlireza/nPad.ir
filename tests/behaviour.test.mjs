@@ -263,6 +263,24 @@ export default async function run(check, group) {
     const pressKey = (target, opts) =>
         target.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...opts }));
 
+    // jsdom keeps focus where it is when Selection.addRange() points into a
+    // contenteditable; Chromium focuses that contenteditable. Emulate the
+    // browser behaviour so focus-retention regressions are testable here.
+    const withChromiumRangeFocus = (fn) => {
+        const proto = Object.getPrototypeOf(window.getSelection());
+        const original = proto.addRange;
+        proto.addRange = function (range) {
+            const result = original.call(this, range);
+            if (editor.contains(range.startContainer)) editor.focus();
+            return result;
+        };
+        try {
+            return fn();
+        } finally {
+            proto.addRange = original;
+        }
+    };
+
     check('Ctrl+F opens the find bar and reports the event', () => {
         pressKey(document, { key: 'f', ctrlKey: true });
         assert.equal(findBar.hidden, false, 'find bar did not open');
@@ -291,6 +309,18 @@ export default async function run(check, group) {
         assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
     });
 
+    check('typing a query keeps focus and the caret in the Find field', () => {
+        findInput.focus();
+        findInput.setSelectionRange(findInput.value.length, findInput.value.length);
+
+        withChromiumRangeFocus(() => {
+            findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        });
+
+        assert.equal(document.activeElement, findInput, 'focus jumped into the editor');
+        assert.equal(findInput.selectionStart, findInput.value.length, 'input caret moved');
+    });
+
     check('Enter and Shift+Enter step through matches', () => {
         pressKey(findInput, { key: 'Enter' });
         assert.match(findCount.textContent, /2 of 3/, findCount.textContent);
@@ -309,10 +339,13 @@ export default async function run(check, group) {
             pressKey(findInput, { key: 'Enter', shiftKey: true });
         }
         replaceInput.value = 'hi';
-        const replaceBtn = [...findBar.querySelectorAll('[data-find-action]')]
-            .find((b) => b.dataset.findAction === 'replace');
-        replaceBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        replaceInput.focus();
+        replaceInput.setSelectionRange(2, 2);
+        withChromiumRangeFocus(() => pressKey(replaceInput, { key: 'Enter' }));
+
         assert.ok(editor.innerHTML.includes('hi world'), editor.innerHTML.slice(0, 80));
+        assert.equal(document.activeElement, replaceInput, 'focus left the replacement field');
+        assert.equal(replaceInput.selectionStart, 2, 'replacement caret moved');
     });
 
     check('replace all replaces every occurrence', () => {
@@ -396,16 +429,62 @@ export default async function run(check, group) {
         assert.equal(window.localStorage.getItem('npad.spellcheck'), '1');
     });
 
-    check('hovering a flag for the delay opens a clickable suggestion tooltip', async () => {
+    check('a delayed spell pass cannot steal focus from another field', () => {
+        editor.innerHTML = '<p>uniquefocuss misspelingg</p>';
+        const text = editor.querySelector('p').firstChild;
+        const range = document.createRange();
+        range.setStart(text, text.length);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        const field = document.createElement('input');
+        field.value = 'typing';
+        document.body.appendChild(field);
+        field.focus();
+        field.setSelectionRange(6, 6);
+
+        // Run the normally delayed pass synchronously and emulate Chromium's
+        // contenteditable focus side effect when the editor caret is restored.
+        const nativeSetTimeout = global.setTimeout;
+        global.setTimeout = (callback) => {
+            callback();
+            return 1;
+        };
+        try {
+            withChromiumRangeFocus(() => {
+                editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+            });
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
+
+        assert.equal(document.activeElement, field, 'spell marking focused the editor');
+        assert.equal(field.selectionStart, 6, 'field caret was not restored');
+        field.remove();
+    });
+
+    check('hovering a flag opens a correction popup that stays reachable', () => {
         editor.dataset.spellDelay = '10';
         editor.innerHTML = '<p>hellow world</p>';
-        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
-        await new Promise((resolve) => window.setTimeout(resolve, 60));
 
-        const mark = editor.querySelector('.spell-err');
-        assert.ok(mark, 'no flag to hover');
-        mark.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
-        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        // Execute the two UI delays immediately so every assertion remains
+        // inside the synchronous test runner.
+        const nativeSetTimeout = global.setTimeout;
+        global.setTimeout = (callback) => {
+            callback();
+            return 1;
+        };
+        let mark;
+        try {
+            editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+            mark = editor.querySelector('.spell-err');
+            assert.ok(mark, 'no flag to hover');
+            mark.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
 
         const tip = document.querySelector('.spell-tip');
         assert.ok(tip && !tip.hidden, 'tooltip did not appear');
@@ -413,10 +492,20 @@ export default async function run(check, group) {
         assert.ok(items.length >= 1, 'no suggestions offered');
         assert.equal(items[0].textContent, 'hello');
 
-        // Moving the pointer off the word must not close the tooltip
-        // immediately — the user needs time to reach the suggestions.
-        mark.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: tip }));
+        // Moving directly from the word into the popup is still inside the
+        // combined hover region and must not even schedule a close.
+        let hideWasScheduled = false;
+        global.setTimeout = (callback, delay, ...args) => {
+            hideWasScheduled = true;
+            return nativeSetTimeout(callback, delay, ...args);
+        };
+        try {
+            mark.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: tip }));
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
         assert.ok(!tip.hidden, 'tooltip closed on pointer leaving the word');
+        assert.equal(hideWasScheduled, false, 'tooltip scheduled a close while pointer entered it');
 
         items[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.ok(editor.textContent.includes('hello world'), editor.textContent);

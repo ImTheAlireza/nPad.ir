@@ -1023,7 +1023,46 @@ ${cleanHtml()}
     let findMatches = [];
     let findIndex = -1;
 
+    const FIND_HIGHLIGHT = 'npad-find-current';
+    const highlightRegistry = window.CSS && window.CSS.highlights;
+    const HighlightCtor = window.Highlight;
+    const supportsFindHighlight = !!(highlightRegistry && HighlightCtor);
+
     const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    /** Preserve both an external control's focus and its text caret. */
+    function captureFindFocus() {
+        const element = document.activeElement;
+        if (!element || element === document.body || editor.contains(element)) return null;
+
+        const state = { element };
+        if (typeof element.selectionStart === 'number') {
+            state.start = element.selectionStart;
+            state.end = element.selectionEnd;
+            state.direction = element.selectionDirection;
+        }
+        return state;
+    }
+
+    function restoreFindFocus(state) {
+        if (!state || !state.element.isConnected) return;
+        try {
+            state.element.focus({ preventScroll: true });
+        } catch {
+            state.element.focus();
+        }
+        if (typeof state.start === 'number' && typeof state.element.setSelectionRange === 'function') {
+            try {
+                state.element.setSelectionRange(state.start, state.end, state.direction || 'none');
+            } catch {
+                /* Some input types do not expose a selectable text range. */
+            }
+        }
+    }
+
+    function clearFindHighlight() {
+        if (supportsFindHighlight) highlightRegistry.delete(FIND_HIGHLIGHT);
+    }
 
     function findTextNodes(root) {
         // 4 === NodeFilter.SHOW_TEXT. The named constant is undefined in some
@@ -1082,11 +1121,23 @@ ${cleanHtml()}
         range.setStart(match.startNode, match.startOffset);
         range.setEnd(match.endNode, match.endOffset);
 
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
+        clearFindHighlight();
+        if (supportsFindHighlight) {
+            // A custom Highlight paints the current result without touching
+            // the live Selection, so typing can remain in the search field.
+            highlightRegistry.set(FIND_HIGHLIGHT, new HighlightCtor(range));
+        } else {
+            // Legacy fallback: adding a Range inside contenteditable focuses
+            // it in Chromium. Restore whichever field/button the user was in
+            // immediately, including that field's own caret position.
+            const focusedControl = captureFindFocus();
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            restoreFindFocus(focusedControl);
+        }
 
-        // Bring an out-of-viewport match into view.
+        // Bring an out-of-viewport match into view without moving focus.
         const rect = typeof range.getBoundingClientRect === 'function'
             ? range.getBoundingClientRect()
             : null;
@@ -1115,14 +1166,16 @@ ${cleanHtml()}
             findMatches = [];
             findIndex = -1;
             if (findCount) findCount.textContent = '';
-            window.getSelection().removeAllRanges();
+            clearFindHighlight();
+            if (!supportsFindHighlight) window.getSelection().removeAllRanges();
             return;
         }
 
         findMatches = computeFindMatches(query);
         if (!findMatches.length) {
             findIndex = -1;
-            window.getSelection().removeAllRanges();
+            clearFindHighlight();
+            if (!supportsFindHighlight) window.getSelection().removeAllRanges();
             renderFindCount();
             return;
         }
@@ -1181,6 +1234,7 @@ ${cleanHtml()}
         findBar.hidden = true;
         findMatches = [];
         findIndex = -1;
+        clearFindHighlight();
         if (findCount) findCount.textContent = '';
         editor.focus();
     }
@@ -1189,25 +1243,18 @@ ${cleanHtml()}
         const match = findMatches[findIndex];
         if (!match || !replaceInput) return;
         const value = replaceInput.value;
+        clearFindHighlight();
 
         const range = document.createRange();
         range.setStart(match.startNode, match.startOffset);
         range.setEnd(match.endNode, match.endOffset);
         range.deleteContents();
 
-        const selection = window.getSelection();
-        if (value) {
-            const textNode = document.createTextNode(value);
-            range.insertNode(textNode);
-            const after = document.createRange();
-            after.setStart(textNode, textNode.length);
-            after.collapse(true);
-            selection.removeAllRanges();
-            selection.addRange(after);
-        } else {
-            selection.removeAllRanges();
-        }
+        if (value) range.insertNode(document.createTextNode(value));
 
+        // refreshFind paints/selects the next result. Do not create an
+        // intermediate editor Selection here: it would steal focus from the
+        // replacement field before the user can type or press Enter again.
         editor.dispatchEvent(new Event('input', { bubbles: true }));
         refreshFind(false);
     }
@@ -1217,6 +1264,7 @@ ${cleanHtml()}
         const query = findInput.value.trim();
         if (!query) return;
         const value = replaceInput.value;
+        clearFindHighlight();
 
         // Reverse order keeps earlier node references valid as we edit.
         const matches = computeFindMatches(query);
