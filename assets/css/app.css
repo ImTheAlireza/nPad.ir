@@ -85,6 +85,9 @@
     --danger: #b42318;
     --success: #027a48;
 
+    /* Spell-check wave — a blue that reads clearly on both surfaces. */
+    --spell-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='5' viewBox='0 0 10 5'%3E%3Cpath d='M0 3 Q 2.5 0 5 3 T 10 3' fill='none' stroke='%232563eb' stroke-width='1.7'/%3E%3C/svg%3E");
+
     /* Shape */
     --radius-sm: 6px;
     --radius-md: 10px;
@@ -135,6 +138,7 @@
     --text-onaccent: #04222b;
 
     --border-subtle: #303c53;   /* decorative separators / card edges */
+    --spell-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='5' viewBox='0 0 10 5'%3E%3Cpath d='M0 3 Q 2.5 0 5 3 T 10 3' fill='none' stroke='%2360a5fa' stroke-width='1.7'/%3E%3C/svg%3E");
     --border-strong: #5f6e8d;   /* interactive edges — 3.29:1 on raised, 3.68:1 on page */
 
     --accent: #22d3ee;
@@ -1688,6 +1692,113 @@ body.focus-mode .focus-exit { display: inline-flex; }
 .focus-exit .icon { width: 18px; height: 18px; }
 
 /* --------------------------------------------------------------------------
+   17c. Custom spell checker — flagged words get a blue wave that draws in
+   from the left (a smooth trim-path reveal), and a clickable suggestion
+   tooltip appears after a long hover.
+   -------------------------------------------------------------------------- */
+
+.spell-err {
+    position: relative;
+    cursor: help;
+    /* Never let the flag itself look like emphasis. */
+    background: transparent;
+    color: inherit;
+}
+
+.spell-err::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -3px;
+    height: 5px;
+    background-image: var(--spell-wave);
+    background-repeat: repeat-x;
+    background-position: left bottom;
+    background-size: 10px 5px;
+    transform-origin: left center;
+    pointer-events: none;
+    animation: spell-wave-in 0.45s cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+
+@keyframes spell-wave-in {
+    from { transform: scaleX(0); opacity: 0; }
+    to   { transform: scaleX(1); opacity: 1; }
+}
+
+/* Suggestion tooltip — same card language as the menus. */
+.spell-tip {
+    position: fixed;
+    z-index: 90;
+    min-width: 200px;
+    max-width: 280px;
+    padding: var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
+    font-size: 14px;
+}
+
+.spell-tip[hidden] { display: none; }
+
+.spell-tip__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.spell-tip__item {
+    display: block;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-strong);
+    font-size: 14px;
+    text-align: start;
+    cursor: pointer;
+}
+
+.spell-tip__item:hover,
+.spell-tip__item:focus-visible {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+}
+
+.spell-tip__empty {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.spell-tip__actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.spell-tip__action {
+    flex: 1;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-body);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.spell-tip__action:hover {
+    background: var(--surface-hover);
+    color: var(--text-strong);
+}
+
+/* --------------------------------------------------------------------------
    18. Print — the old build opened a popup and copied innerHTML without any
    stylesheet, so printed output lost all formatting. Now we print in place.
    -------------------------------------------------------------------------- */
@@ -1698,10 +1809,13 @@ body.focus-mode .focus-exit { display: inline-flex; }
     .statusbar,
     .findbar,
     .focus-exit,
+    .spell-tip,
     .content,
     .footer,
     .toast-region,
     .skip-link { display: none !important; }
+
+    .spell-err::after { display: none; }
 
     body { background: #fff; color: #000; }
 

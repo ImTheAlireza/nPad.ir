@@ -251,6 +251,11 @@ export default async function run(check, group) {
 
     group('behaviour: find & replace');
 
+    // The custom spell checker re-wraps words on input; switch it off first
+    // so the find/replace assertions see a stable DOM.
+    const spellToggle = document.querySelector('[data-action="toggle-spellcheck"]');
+    spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
     const findBar = document.getElementById('findBar');
     const findInput = document.getElementById('findInput');
     const replaceInput = document.getElementById('replaceInput');
@@ -327,23 +332,99 @@ export default async function run(check, group) {
         assert.ok(!document.body.classList.contains('focus-mode'), 'Escape did not exit focus');
     });
 
-    check('text direction toggles and persists', () => {
-        const dirBtn = document.querySelector('[data-action="toggle-dir"]');
-        const before = editor.getAttribute('dir') || document.documentElement.getAttribute('dir');
-        dirBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-        const after = editor.getAttribute('dir');
-        assert.ok(after && after !== before, `dir did not change: ${before} -> ${after}`);
-        assert.ok(['ltr', 'rtl'].includes(window.localStorage.getItem('npad.editorDir')));
+    check('RTL and LTR buttons sit in the toolbar and switch direction', () => {
+        const rtlBtn = document.querySelector('[data-action="dir-rtl"]');
+        const ltrBtn = document.querySelector('[data-action="dir-ltr"]');
+        assert.ok(rtlBtn && ltrBtn, 'direction buttons missing');
+        assert.ok(rtlBtn.closest('[role="group"]'), 'not inside a toolbar group');
+
+        rtlBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.getAttribute('dir'), 'rtl', 'rtl not applied');
+        assert.equal(rtlBtn.getAttribute('aria-pressed'), 'true');
+        assert.equal(ltrBtn.getAttribute('aria-pressed'), 'false');
+        assert.equal(window.localStorage.getItem('npad.editorDir'), 'rtl');
         assert.ok(tracked.includes('dir_toggled'), 'dir_toggled not tracked');
+
+        ltrBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.getAttribute('dir'), 'ltr', 'ltr not applied');
+        assert.equal(ltrBtn.getAttribute('aria-pressed'), 'true');
     });
 
-    check('spell check toggles and persists', () => {
-        const spellBtn = document.querySelector('[data-action="toggle-spellcheck"]');
-        const before = editor.spellcheck;
-        spellBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-        assert.equal(editor.spellcheck, !before);
-        assert.equal(window.localStorage.getItem('npad.spellcheck'), before ? '0' : '1');
+    group('behaviour: custom spell checker');
+
+    check('misspelled words are flagged with the custom mark', async () => {
+        // Earlier groups may have switched the checker off; make sure it is on.
+        if (spellToggle.getAttribute('aria-pressed') !== 'true') {
+            spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        }
+        editor.dataset.spellDebounce = '10';
+        editor.innerHTML = '<p>hellow wrld and correct</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        const marks = editor.querySelectorAll('.spell-err');
+        assert.equal(marks.length, 2, `expected 2 marks, got ${marks.length}`);
+        assert.equal(marks[0].textContent, 'hellow');
+        assert.equal(marks[1].textContent, 'wrld');
+    });
+
+    check('toggle disables the checker, clears marks and persists', () => {
+        spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.querySelectorAll('.spell-err').length, 0, 'marks not cleared');
+        assert.equal(spellToggle.getAttribute('aria-pressed'), 'false');
+        assert.equal(window.localStorage.getItem('npad.spellcheck'), '0');
         assert.ok(tracked.includes('spellcheck_toggled'), 'spellcheck_toggled not tracked');
+
+        spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(spellToggle.getAttribute('aria-pressed'), 'true');
+        assert.equal(window.localStorage.getItem('npad.spellcheck'), '1');
+    });
+
+    check('hovering a flag for the delay opens a clickable suggestion tooltip', async () => {
+        editor.dataset.spellDelay = '10';
+        editor.innerHTML = '<p>hellow world</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+
+        const mark = editor.querySelector('.spell-err');
+        assert.ok(mark, 'no flag to hover');
+        mark.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+
+        const tip = document.querySelector('.spell-tip');
+        assert.ok(tip && !tip.hidden, 'tooltip did not appear');
+        const items = tip.querySelectorAll('.spell-tip__item');
+        assert.ok(items.length >= 1, 'no suggestions offered');
+        assert.equal(items[0].textContent, 'hello');
+
+        items[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(editor.textContent.includes('hello world'), editor.textContent);
+        assert.ok(tracked.includes('spell_replace_used'), 'spell_replace_used not tracked');
+        assert.ok(tip.hidden, 'tooltip did not close after replace');
+    });
+
+    check('add to dictionary stops the word being flagged and persists', async () => {
+        editor.innerHTML = '<p>npadd note</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        const mark = editor.querySelector('.spell-err');
+        assert.ok(mark, 'npadd was not flagged');
+
+        mark.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        const tip = document.querySelector('.spell-tip');
+        const add = [...tip.querySelectorAll('.spell-tip__action')]
+            .find((b) => b.textContent === strings.spellAdd);
+        add.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+        assert.ok(!editor.querySelector('.spell-err'), 'mark still present after add');
+        assert.ok(window.localStorage.getItem('npad.customWords').includes('npadd'));
+        assert.ok(tracked.includes('spell_add_word'), 'spell_add_word not tracked');
+
+        // A fresh re-mark pass must not flag it again.
+        editor.innerHTML = '<p>npadd again</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        assert.ok(!editor.querySelector('.spell-err'), 'custom word re-flagged');
     });
 
     group('behaviour: save state');
@@ -361,6 +442,17 @@ export default async function run(check, group) {
         const raw = window.localStorage.getItem('npad:document');
         assert.ok(raw, 'nothing flushed on pagehide — this is the data-loss bug');
         assert.ok(JSON.parse(raw).html.includes('work in progress'), 'flushed content wrong');
+    });
+
+    check('autosave timer persists without spell marks', async () => {
+        editor.textContent = 'autosave works';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 950));
+        const raw = window.localStorage.getItem('npad:document');
+        assert.ok(raw, 'autosave did not persist');
+        const html = JSON.parse(raw).html;
+        assert.ok(html.includes('autosave works'), 'autosave content wrong');
+        assert.ok(!html.includes('spell-err'), 'spell marks leaked into storage');
     });
 
     group('behaviour: dialog');

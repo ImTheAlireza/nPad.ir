@@ -32,6 +32,8 @@ const ALLOWED = new Set([
     'focus_mode_enabled',
     'dir_toggled',
     'spellcheck_toggled',
+    'spell_replace_used',
+    'spell_add_word',
 ]);
 
 let enabled = true;

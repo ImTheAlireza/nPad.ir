@@ -67,6 +67,9 @@ function npad_icon_paths(): array
         'expand'      => '<path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/>',
         'contract'    => '<path d="M9 4v5H4"/><path d="M15 4v5h5"/><path d="M9 20v-5H4"/><path d="M15 20v-5h5"/>',
         'dir'         => '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="m9 16-2 2 2 2"/><path d="m15 16 2 2-2 2"/>',
+        'dir-ltr'     => '<path d="M4 6h12"/><path d="M4 12h12"/><path d="M4 18h9"/><path d="m19 15 3 3-3 3"/>',
+        'dir-rtl'     => '<path d="M20 6h-12"/><path d="M20 12h-12"/><path d="M20 18h-9"/><path d="m5 15-3 3 3 3"/>',
+        'find-replace' => '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m19 19-3-3"/><path d="M18 3v5"/><path d="m15.5 6 2.5-2.5L20.5 6"/>',
         'spellcheck'  => '<path d="M4 7h12"/><path d="M4 12h12"/><path d="M4 17h8"/><path d="m14 15 3 3 5-5"/>',
         'globe'       => '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
     ];

@@ -86,6 +86,8 @@ const ALLOWED_EVENTS = [
     'focus_mode_enabled',
     'dir_toggled',
     'spellcheck_toggled',
+    'spell_replace_used',
+    'spell_add_word',
 ];
 
 $event = trim((string) ($_POST['event'] ?? ''));

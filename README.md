@@ -42,6 +42,8 @@ Live: <https://npad.ir>
 │     ├─ theme.js         Light/dark
 │     ├─ analytics.js     Anonymous event reporting
 │     ├─ dashboard.js     Admin charts
+│     ├─ spellcheck.js    Custom spell checker (marks + suggestion tooltip)
+│     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
 │     └─ vendor/          Self-hosted Chart.js 4.5.1
 │
 ├─ fonts/                 Self-hosted Inter + Vazirmatn (WOFF2, ~96 KB)

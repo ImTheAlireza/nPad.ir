@@ -90,10 +90,19 @@ return [
         'group_insert'  => 'Insert',
         'group_view'    => 'View',
         'find'          => 'Find in note',
+        'find_replace'  => 'Find and replace',
         'text_direction' => 'Text direction',
+        'dir_ltr'       => 'Left-to-right text',
+        'dir_rtl'       => 'Right-to-left text',
         'spellcheck'    => 'Spell check',
         'focus'         => 'Focus mode',
         'focus_exit'    => 'Exit focus mode',
+    ],
+
+    'spell' => [
+        'add'            => 'Add to dictionary',
+        'ignore'         => 'Ignore',
+        'no_suggestions' => 'No suggestions',
     ],
 
     'editor' => [

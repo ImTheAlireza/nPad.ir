@@ -55,6 +55,8 @@ $groups = [
             ['command' => 'justifyCenter', 'icon' => 'align-center', 'label' => t('toolbar.align_center')],
             ['command' => 'justifyRight',  'icon' => 'align-right',  'label' => t('toolbar.align_right')],
             ['command' => 'justifyFull',   'icon' => 'align-just',   'label' => t('toolbar.align_justify')],
+            ['action' => 'dir-ltr', 'icon' => 'dir-ltr', 'label' => t('toolbar.dir_ltr')],
+            ['action' => 'dir-rtl', 'icon' => 'dir-rtl', 'label' => t('toolbar.dir_rtl')],
         ],
     ],
     [
@@ -206,6 +208,9 @@ $jsStrings = [
     'findCount'         => t('find.count'),
     'findNoResults'     => t('find.no_results'),
     'findClose'         => t('find.close'),
+    'spellAdd'          => t('spell.add'),
+    'spellIgnore'       => t('spell.ignore'),
+    'spellNoSuggestions' => t('spell.no_suggestions'),
     'detailWords'       => t('details.words'),
     'detailCharacters'  => t('details.characters'),
     'detailNoSpaces'    => t('details.no_spaces'),
@@ -241,7 +246,7 @@ $jsStrings = [
                 <?php foreach ($group['items'] as $item): ?>
                     <?php $isToggle = $item['toggle'] ?? ($group['toggle'] ?? false); ?>
                     <button type="button" class="toolbar__btn"
-                            data-command="<?= e($item['command']) ?>"
+                            <?= isset($item['command']) ? 'data-command="' . e($item['command']) . '"' : 'data-action="' . e($item['action']) . '"' ?>
                             title="<?= e($item['label']) ?>"
                             aria-label="<?= e($item['label']) ?>"
                             <?= $isToggle ? 'aria-pressed="false"' : '' ?>>
@@ -269,9 +274,9 @@ $jsStrings = [
                     title="<?= e(t('toolbar.find')) ?>" aria-label="<?= e(t('toolbar.find')) ?>">
                 <?= icon('search') ?>
             </button>
-            <button type="button" class="toolbar__btn" data-action="toggle-dir" aria-pressed="false"
-                    title="<?= e(t('toolbar.text_direction')) ?>" aria-label="<?= e(t('toolbar.text_direction')) ?>">
-                <?= icon('dir') ?>
+            <button type="button" class="toolbar__btn" data-action="find-replace"
+                    title="<?= e(t('toolbar.find_replace')) ?>" aria-label="<?= e(t('toolbar.find_replace')) ?>">
+                <?= icon('find-replace') ?>
             </button>
             <button type="button" class="toolbar__btn" data-action="toggle-spellcheck" aria-pressed="true"
                     title="<?= e(t('toolbar.spellcheck')) ?>" aria-label="<?= e(t('toolbar.spellcheck')) ?>">
@@ -319,8 +324,8 @@ $jsStrings = [
          aria-multiline="true"
          aria-label="<?= e(t('editor.label')) ?>"
          data-placeholder="<?= e(t('editor.placeholder')) ?>"
-         spellcheck="true"
-         autocorrect="on"></div>
+         spellcheck="false"
+         autocorrect="off"></div>
 
     <div class="statusbar" id="statusbar" data-save-state="saved">
         <div class="statusbar__counts" id="statusCounts" role="status" aria-live="polite">

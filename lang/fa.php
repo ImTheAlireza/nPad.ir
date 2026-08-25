@@ -90,10 +90,19 @@ return [
         'group_insert'  => 'درج',
         'group_view'    => 'نمایش',
         'find'          => 'جستجو در یادداشت',
+        'find_replace'  => 'جستجو و جایگزینی',
         'text_direction' => 'جهت متن',
+        'dir_ltr'       => 'متن چپ‌به‌راست',
+        'dir_rtl'       => 'متن راست‌به‌چپ',
         'spellcheck'    => 'غلط‌یاب',
         'focus'         => 'حالت تمرکز',
         'focus_exit'    => 'خروج از حالت تمرکز',
+    ],
+
+    'spell' => [
+        'add'            => 'افزودن به فرهنگ لغت',
+        'ignore'         => 'نادیده گرفتن',
+        'no_suggestions' => 'پیشنهادی نیست',
     ],
 
     'editor' => [

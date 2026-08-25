@@ -13,6 +13,7 @@
 import { loadDocument, saveDocument, clearDocument, saveDocumentSync } from './storage.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
+import { initSpellcheck } from './spellcheck.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -54,12 +55,27 @@ export function initEditor({ strings, onEvent }) {
 
     /* View toggles. */
     const focusBtn = document.querySelector('[data-action="toggle-focus"]');
-    const dirBtn = document.querySelector('[data-action="toggle-dir"]');
+    const dirBtn = document.querySelector('[data-action="dir-rtl"]');
     const spellBtn = document.querySelector('[data-action="toggle-spellcheck"]');
 
     let saveTimer = null;
     let dirty = false;
     let lastSavedAt = 0;
+
+    /* Custom spell checker (self-contained module). */
+    const spell = initSpellcheck({ editor, strings, onEvent: track });
+
+    /**
+     * Editor HTML without transient spell-check marks, for storage and
+     * exports. Marks are re-applied automatically after restore.
+     */
+    function cleanHtml() {
+        const clone = editor.cloneNode(true);
+        clone.querySelectorAll('.spell-err').forEach((el) => {
+            el.replaceWith(document.createTextNode(el.textContent));
+        });
+        return clone.innerHTML;
+    }
 
     /* ---------------------------------------------------------------------
        Counting
@@ -137,7 +153,7 @@ export function initEditor({ strings, onEvent }) {
     }
 
     async function persist() {
-        const html = editor.innerHTML;
+        const html = cleanHtml();
         setSaveState('saving');
         const ok = await saveDocument(html);
         dirty = !ok;
@@ -157,8 +173,9 @@ export function initEditor({ strings, onEvent }) {
     function flush() {
         if (!dirty) return;
         window.clearTimeout(saveTimer);
-        saveDocumentSync(editor.innerHTML);
-        void saveDocument(editor.innerHTML);
+        const html = cleanHtml();
+        saveDocumentSync(html);
+        void saveDocument(html);
         dirty = false;
     }
 
@@ -879,7 +896,7 @@ export function initEditor({ strings, onEvent }) {
 <meta charset="utf-8">
 <title>NPad note — ${stamp()}</title>
 <style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}</style>
-${editor.innerHTML}
+${cleanHtml()}
 `;
         download(`npad-${stamp()}.html`, doc, 'text/html;charset=utf-8');
         track('download_html');
@@ -1253,7 +1270,7 @@ ${editor.innerHTML}
        View options: focus mode, text direction, spell check
        --------------------------------------------------------------------- */
 
-    function persist(key, value) {
+    function remember(key, value) {
         try { localStorage.setItem(key, value); } catch { /* private mode */ }
     }
 
@@ -1269,23 +1286,24 @@ ${editor.innerHTML}
         const exitBtn = document.querySelector('.focus-exit');
         if (exitBtn) exitBtn.hidden = !on;
         if (on && !suppress) track('focus_mode_enabled');
-        persist('npad.focusMode', on ? '1' : '0');
+        remember('npad.focusMode', on ? '1' : '0');
     }
 
     function currentDir() {
         return editor.getAttribute('dir') || document.documentElement.getAttribute('dir') || 'ltr';
     }
 
-    function applyDir(dir) {
-        editor.setAttribute('dir', dir);
-        if (dirBtn) dirBtn.setAttribute('aria-pressed', String(dir === 'rtl'));
-        persist('npad.editorDir', dir);
+    function syncDirButtons(dir) {
+        const ltrBtn = document.querySelector('[data-action="dir-ltr"]');
+        const rtlBtn = document.querySelector('[data-action="dir-rtl"]');
+        if (ltrBtn) ltrBtn.setAttribute('aria-pressed', String(dir === 'ltr'));
+        if (rtlBtn) rtlBtn.setAttribute('aria-pressed', String(dir === 'rtl'));
     }
 
-    function applySpellcheck(on) {
-        editor.spellcheck = on;
-        if (spellBtn) spellBtn.setAttribute('aria-pressed', String(on));
-        persist('npad.spellcheck', on ? '1' : '0');
+    function applyDir(dir) {
+        editor.setAttribute('dir', dir);
+        syncDirButtons(dir);
+        remember('npad.editorDir', dir);
     }
 
     const actions = {
@@ -1306,13 +1324,18 @@ ${editor.innerHTML}
             updateCounts();
         },
         find: () => openFind(false),
+        'find-replace': () => openFind(true),
         'toggle-focus': () => applyFocusMode(!document.body.classList.contains('focus-mode')),
-        'toggle-dir': () => {
-            applyDir(currentDir() === 'rtl' ? 'ltr' : 'rtl');
+        'dir-ltr': () => {
+            applyDir('ltr');
+            track('dir_toggled');
+        },
+        'dir-rtl': () => {
+            applyDir('rtl');
             track('dir_toggled');
         },
         'toggle-spellcheck': () => {
-            applySpellcheck(!editor.spellcheck);
+            spell.setEnabled(!spell.isEnabled());
             track('spellcheck_toggled');
         },
     };
@@ -1397,7 +1420,8 @@ ${editor.innerHTML}
             if (localStorage.getItem('npad.focusMode') === '1') applyFocusMode(true, true);
             const savedDir = localStorage.getItem('npad.editorDir');
             if (savedDir === 'ltr' || savedDir === 'rtl') applyDir(savedDir);
-            applySpellcheck(localStorage.getItem('npad.spellcheck') !== '0');
+            else syncDirButtons(currentDir());
+            spell.refresh();
         } catch { /* private mode */ }
     })();
 
