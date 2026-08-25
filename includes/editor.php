@@ -213,6 +213,9 @@ $jsStrings = [
     'spellNoSuggestions' => t('spell.no_suggestions'),
     'noteUntitled'      => t('notes.untitled'),
     'noteEmptyPreview'  => t('notes.empty_preview'),
+    'noteTabsLabel'     => t('notes.tabs_label'),
+    'noteCloseTab'      => t('notes.close_tab'),
+    'noteUnsavedTab'    => t('notes.unsaved_tab'),
     'noteShow'          => t('notes.show'),
     'noteHide'          => t('notes.hide'),
     'notePin'           => t('notes.pin'),
@@ -225,6 +228,8 @@ $jsStrings = [
     'noteDeleteTitle'   => t('notes.delete_title'),
     'noteDeleteBody'    => t('notes.delete_body'),
     'noFolder'          => t('notes.no_folder'),
+    'folderLabel'       => t('notes.folder_label'),
+    'folderMenu'        => t('notes.folder_menu'),
     'addFolderTitle'    => t('notes.add_folder_title'),
     'renameFolderTitle' => t('notes.rename_folder_title'),
     'folderName'        => t('notes.folder_name'),
@@ -401,6 +406,30 @@ $jsStrings = [
             aria-label="<?= e(t('notes.hide')) ?>"></button>
 
     <main class="editor-shell" id="main">
+        <div class="document-tabs-bar">
+            <div class="document-tabs" id="documentTabs" role="tablist"
+                 aria-label="<?= e(t('notes.tabs_label')) ?>"></div>
+            <button type="button" class="document-tabs__new" data-action="new"
+                    title="<?= e(t('notes.new')) ?>" aria-label="<?= e(t('notes.new')) ?>">
+                <?= icon('plus') ?>
+            </button>
+        </div>
+
+        <template id="documentTabTemplate">
+            <div class="document-tab" role="presentation">
+                <button type="button" class="document-tab__main" data-tab-action="open"
+                        role="tab" aria-selected="false" tabindex="-1">
+                    <?= icon('file') ?>
+                    <span class="document-tab__title" dir="auto"></span>
+                    <span class="document-tab__dirty" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="document-tab__close" data-tab-action="close"
+                        title="<?= e(t('notes.close_tab')) ?>" aria-label="<?= e(t('notes.close_tab')) ?>">
+                    <?= icon('close') ?>
+                </button>
+            </div>
+        </template>
+
         <div class="document-header">
             <button type="button" class="document-header__notes" data-action="toggle-notes"
                     aria-expanded="false" aria-controls="notesSidebar"
@@ -414,14 +443,20 @@ $jsStrings = [
                        placeholder="<?= e(t('notes.untitled')) ?>">
             </label>
             <div class="document-organization">
-                <label class="document-folder">
-                    <?= icon('folder') ?>
-                    <span class="visually-hidden"><?= e(t('notes.folder_label')) ?></span>
-                    <select class="document-folder__select" id="noteFolder"
-                            aria-label="<?= e(t('notes.folder_label')) ?>">
-                        <option value=""><?= e(t('notes.no_folder')) ?></option>
-                    </select>
-                </label>
+                <div class="document-folder" id="documentFolderPicker">
+                    <button type="button" class="document-folder__trigger" id="noteFolder"
+                            aria-label="<?= e(t('notes.folder_label')) ?>"
+                            aria-haspopup="listbox" aria-expanded="false" aria-controls="noteFolderOptions">
+                        <?= icon('folder', ['class' => 'icon document-folder__icon']) ?>
+                        <span class="document-folder__value" id="noteFolderValue"><?= e(t('notes.no_folder')) ?></span>
+                        <?= icon('chevron-down', ['class' => 'icon document-folder__chevron']) ?>
+                    </button>
+                    <div class="document-folder__menu" id="noteFolderMenu" hidden>
+                        <div class="document-folder__menu-label"><?= e(t('notes.folder_menu')) ?></div>
+                        <div class="document-folder__options" id="noteFolderOptions" role="listbox"
+                             aria-label="<?= e(t('notes.folder_menu')) ?>"></div>
+                    </div>
+                </div>
                 <div class="document-tags" id="currentNoteTags"></div>
                 <button type="button" class="document-tags__manage" data-action="manage-note-tags"
                         title="<?= e(t('notes.manage_tags')) ?>" aria-label="<?= e(t('notes.manage_tags')) ?>">

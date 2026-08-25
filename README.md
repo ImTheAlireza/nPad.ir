@@ -1,8 +1,8 @@
 # NPad
 
-A free, private online notepad. Create rich-text notes, organize them with
-folders and color-coded tags, and filter them in the browser; everything is
-saved locally, works offline, and needs no account.
+A free, private online notepad. Keep several rich-text notes open in document
+tabs, organize them with folders and color-coded tags, and filter them in the
+browser; everything is saved locally, works offline, and needs no account.
 
 Live: <https://npad.ir>
 
@@ -36,7 +36,7 @@ Live: <https://npad.ir>
 │  ├─ css/app.css         Design tokens + all styling
 │  └─ js/
 │     ├─ app.js           Entry point
-│     ├─ editor.js        Multi-note UI, editing, autosave, files, shortcuts
+│     ├─ editor.js        Document tabs, note UI, editing, autosave, shortcuts
 │     ├─ storage.js       Notes + folder/tag metadata, migration and recovery
 │     ├─ sanitize.js      HTML allow-list sanitiser
 │     ├─ ui.js            Menus, dialogs, toasts
@@ -129,7 +129,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-207 assertions covering:
+214 assertions covering:
 
 | Suite | What it proves |
 |---|---|
@@ -137,9 +137,9 @@ npm test
 | `contrast` | Every token pair meets WCAG AA (4.5:1 text, 3:1 controls) in both themes |
 | `lang` | `en.php` and `fa.php` expose identical key structures |
 | `sanitize` | 22 XSS vectors neutralised; formatting preserved |
-| `storage` | Legacy migration, multiple notes, folder/tag metadata and relationships, synchronous recovery and selective deletion |
+| `storage` | Legacy migration, multiple notes, open-tab state, folder/tag relationships, synchronous recovery and selective deletion |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
-| `behaviour` | Multi-note and folder/tag create, assign, filter, rename and delete flows work; menus, themes, autosave and editor tools remain functional |
+| `behaviour` | Document tabs and folder/tag create, assign, filter, rename and delete flows work; menus, themes, autosave and editor tools remain functional |
 
 ## Notable decisions
 
@@ -165,6 +165,10 @@ floor.
 **`execCommand`.** Deprecated, but still the only broadly supported way to
 drive `contenteditable` without shipping an editing engine. All calls are
 funnelled through one `exec()` in `editor.js` for future replacement.
+
+**Tabs are views, not copies.** Opening a note adds its ID to a small ordered
+local session list. Switching tabs flushes the current note before restoring
+the next one, while closing a tab never deletes the underlying note.
 
 **Analytics is opt-out and truthy.** Do Not Track and Global Privacy Control
 are honoured, IPs are truncated before storage, and `/privacy.php` documents

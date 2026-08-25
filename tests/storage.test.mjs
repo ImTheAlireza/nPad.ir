@@ -1,4 +1,4 @@
-/** Multi-note persistence, fallback, recovery, and legacy migration. */
+/** Multi-note, tab-session, fallback, recovery, and legacy migration persistence. */
 
 import { JSDOM } from 'jsdom';
 import assert from 'node:assert/strict';
@@ -58,6 +58,11 @@ export default async function run(check, group) {
         assert.equal(storage.getActiveNoteId(), second.id);
     });
 
+    storage.setOpenNoteIds([migrated[0].id, second.id, second.id]);
+    check('open document tabs persist in order without duplicates', () => {
+        assert.deepEqual(storage.getOpenNoteIds(), [migrated[0].id, second.id]);
+    });
+
     const folder = storage.createFolderRecord('Work');
     const tag = storage.createTagRecord('Urgent', '#dc2626');
     await storage.saveOrganization({ folders: [folder], tags: [tag] });
@@ -93,6 +98,7 @@ export default async function run(check, group) {
     check('deleting one note leaves all other notes intact', () => {
         assert.equal(notes.length, 1);
         assert.equal(notes[0].title, 'Migrated');
+        assert.deepEqual(storage.getOpenNoteIds(), [migrated[0].id]);
     });
 
     await storage.clearNotes();
@@ -100,6 +106,7 @@ export default async function run(check, group) {
     check('clear removes notes and the active selection', () => {
         assert.equal(notes.length, 0);
         assert.equal(storage.getActiveNoteId(), null);
+        assert.deepEqual(storage.getOpenNoteIds(), []);
     });
 
     dom.window.close();

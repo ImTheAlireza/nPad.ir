@@ -261,6 +261,10 @@ export default async function run(check, group) {
     const noteItems = () => [...notesList.querySelectorAll('.note-item')];
     const noteByTitle = (title) => noteItems().find((item) =>
         item.querySelector('.note-item__title').textContent === title);
+    const documentTabs = document.getElementById('documentTabs');
+    const tabItems = () => [...documentTabs.querySelectorAll('.document-tab')];
+    const tabByTitle = (title) => tabItems().find((tab) =>
+        tab.querySelector('.document-tab__title').textContent === title);
     const settle = () => new Promise((resolve) => window.setTimeout(resolve, 20));
 
     check('responsive sidebar exposes named create, search and note controls', () => {
@@ -353,6 +357,61 @@ export default async function run(check, group) {
         assert.ok(noteByTitle(copyTitle));
     });
 
+    group('behaviour: document tabs');
+
+    check('opened notes stay available as document tabs', () => {
+        assert.equal(tabItems().length, 2);
+        assert.ok(tabByTitle('Renamed original'));
+        assert.ok(tabByTitle(copyTitle));
+        assert.equal(tabByTitle('Renamed original').classList.contains('document-tab--active'), true);
+    });
+
+    tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('tabs switch documents without opening the notes sidebar', () => {
+        assert.equal(noteTitle.value, copyTitle);
+        assert.equal(editor.textContent, 'Project draft');
+        assert.equal(document.getElementById('notesWorkspace').dataset.notesOpen, 'false');
+        assert.equal(tabByTitle(copyTitle).querySelector('[role="tab"]').getAttribute('aria-selected'), 'true');
+    });
+
+    tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    await settle();
+    check('arrow keys move between tabs and preserve tab focus', () => {
+        assert.equal(noteTitle.value, 'Renamed original');
+        const activeTab = tabByTitle('Renamed original').querySelector('[role="tab"]');
+        assert.equal(activeTab.getAttribute('aria-selected'), 'true');
+        assert.equal(document.activeElement, activeTab);
+    });
+
+    tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    tabByTitle(copyTitle).querySelector('[data-tab-action="close"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('closing the active tab selects its neighbour without deleting the note', () => {
+        assert.equal(tabItems().length, 1);
+        assert.equal(noteTitle.value, 'Renamed original');
+        assert.ok(noteByTitle(copyTitle), 'closing a tab deleted its note');
+        assert.equal(JSON.parse(localStorage.getItem('npad:open-tabs')).length, 1);
+    });
+
+    noteByTitle(copyTitle).querySelector('[data-note-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('a closed tab reopens from the note list', () => {
+        assert.equal(tabItems().length, 2);
+        assert.equal(noteTitle.value, copyTitle);
+        assert.equal(tabByTitle(copyTitle).classList.contains('document-tab--active'), true);
+    });
+
+    tabByTitle('Renamed original').querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
     group('behaviour: folders and tags');
 
     document.querySelector('[data-organization-action="add-folder"]')
@@ -363,16 +422,23 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
 
-    check('folders can be created and appear in the note folder selector', () => {
+    check('folders can be created and appear in the note folder picker', () => {
         const folderRow = document.querySelector('#foldersList .organization-row');
         assert.equal(folderRow.querySelector('.organization-filter__name').textContent, 'Work');
-        assert.ok([...document.getElementById('noteFolder').options]
-            .some((option) => option.textContent === 'Work'));
+        assert.ok([...document.querySelectorAll('#noteFolderOptions [role="option"]')]
+            .some((option) => option.textContent.includes('Work')));
     });
 
-    const folderSelect = document.getElementById('noteFolder');
-    folderSelect.selectedIndex = 1;
-    folderSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const folderPicker = document.getElementById('noteFolder');
+    folderPicker.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    check('the custom folder picker opens an accessible styled menu', () => {
+        assert.equal(folderPicker.getAttribute('aria-expanded'), 'true');
+        assert.equal(document.getElementById('noteFolderMenu').hidden, false);
+        assert.equal(document.getElementById('noteFolderOptions').getAttribute('role'), 'listbox');
+    });
+    [...document.querySelectorAll('#noteFolderOptions [role="option"]')]
+        .find((option) => option.textContent.includes('Work'))
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     check('the active note can be assigned to a folder', () => {
         assert.equal(noteByTitle('Renamed original').querySelector('.note-item__folder').textContent, 'Work');
         assert.equal(document.querySelector('#foldersList .organization-filter__count').textContent, '1');
@@ -387,7 +453,7 @@ export default async function run(check, group) {
     await settle();
     check('folders can be renamed without losing their notes', () => {
         assert.equal(document.querySelector('#foldersList .organization-filter__name').textContent, 'Projects');
-        assert.equal(folderSelect.selectedOptions[0].textContent, 'Projects');
+        assert.equal(document.getElementById('noteFolderValue').textContent, 'Projects');
     });
 
     document.querySelector('[data-organization-action="add-tag"]')
@@ -461,7 +527,8 @@ export default async function run(check, group) {
     await settle();
     check('deleting a folder moves its notes to Unfiled', () => {
         assert.equal(document.querySelectorAll('#foldersList .organization-row').length, 0);
-        assert.equal(folderSelect.value, '');
+        assert.equal(folderPicker.dataset.folderId, '');
+        assert.equal(document.getElementById('noteFolderValue').textContent, strings.noFolder);
         assert.ok(noteByTitle('Renamed original'));
     });
 

@@ -19,6 +19,8 @@ import {
     clearNotes,
     getActiveNoteId,
     setActiveNoteId,
+    getOpenNoteIds,
+    setOpenNoteIds,
     loadOrganization,
     saveOrganization,
     createFolderRecord,
@@ -66,7 +68,13 @@ export function initEditor({ strings, onEvent }) {
     const notesSearch = document.getElementById('notesSearch');
     const notesEmpty = document.getElementById('notesEmpty');
     const noteTitleInput = document.getElementById('noteTitle');
-    const noteFolderSelect = document.getElementById('noteFolder');
+    const documentTabs = document.getElementById('documentTabs');
+    const documentTabTemplate = document.getElementById('documentTabTemplate');
+    const noteFolderTrigger = document.getElementById('noteFolder');
+    const noteFolderPicker = document.getElementById('documentFolderPicker');
+    const noteFolderMenu = document.getElementById('noteFolderMenu');
+    const noteFolderOptions = document.getElementById('noteFolderOptions');
+    const noteFolderValue = document.getElementById('noteFolderValue');
     const currentTagsEl = document.getElementById('currentNoteTags');
     const foldersList = document.getElementById('foldersList');
     const tagsList = document.getElementById('tagsList');
@@ -92,6 +100,7 @@ export function initEditor({ strings, onEvent }) {
     let notes = [];
     let organization = { folders: [], tags: [], updatedAt: 0 };
     let activeNoteId = null;
+    let openNoteIds = [];
     let sidebarOpen = false;
     let noteFilter = { type: 'all', id: null };
 
@@ -193,6 +202,53 @@ export function initEditor({ strings, onEvent }) {
         return String(note?.title || '').trim() || strings.noteUntitled || 'Untitled note';
     }
 
+    function rememberOpenTab(id) {
+        if (!id || openNoteIds.includes(id)) return;
+        openNoteIds.push(id);
+        setOpenNoteIds(openNoteIds);
+    }
+
+    function renderTabs() {
+        if (!documentTabs || !documentTabTemplate) return;
+        openNoteIds = openNoteIds.filter((id) => notes.some((note) => note.id === id));
+        const fragment = document.createDocumentFragment();
+
+        for (const id of openNoteIds) {
+            const note = notes.find((item) => item.id === id);
+            if (!note) continue;
+            const tab = documentTabTemplate.content.firstElementChild.cloneNode(true);
+            const title = displayTitle(note);
+            const active = id === activeNoteId;
+            const unsaved = active && dirty;
+            tab.dataset.noteId = id;
+            tab.classList.toggle('document-tab--active', active);
+            tab.classList.toggle('document-tab--dirty', unsaved);
+
+            const main = tab.querySelector('[data-tab-action="open"]');
+            main.dataset.noteId = id;
+            main.setAttribute('aria-selected', String(active));
+            main.setAttribute('aria-controls', 'editor');
+            main.tabIndex = active ? 0 : -1;
+            main.title = unsaved ? `${title} — ${strings.noteUnsavedTab}` : title;
+            main.setAttribute('aria-label', unsaved ? `${title}, ${strings.noteUnsavedTab}` : title);
+            tab.querySelector('.document-tab__title').textContent = title;
+
+            const close = tab.querySelector('[data-tab-action="close"]');
+            close.dataset.noteId = id;
+            close.hidden = openNoteIds.length < 2;
+            const closeLabel = `${strings.noteCloseTab}: ${title}`;
+            close.setAttribute('aria-label', closeLabel);
+            close.title = closeLabel;
+            fragment.appendChild(tab);
+        }
+
+        documentTabs.replaceChildren(fragment);
+        const activeTab = documentTabs.querySelector('[role="tab"][aria-selected="true"]');
+        if (activeTab && typeof activeTab.scrollIntoView === 'function') {
+            activeTab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+    }
+
     function snapshotActiveNote() {
         const current = activeNote();
         if (!current) return null;
@@ -214,6 +270,7 @@ export function initEditor({ strings, onEvent }) {
         const savingId = snapshot.id;
         if (activeNoteId === savingId) setSaveState('saving');
         renderNotes();
+        renderTabs();
 
         const ok = await saveNote(snapshot);
         if (activeNoteId === savingId) {
@@ -222,14 +279,17 @@ export function initEditor({ strings, onEvent }) {
             dirty = !ok || changedWhileSaving;
             lastSavedAt = ok ? snapshot.updatedAt : lastSavedAt;
             setSaveState(ok && !changedWhileSaving ? 'saved' : 'unsaved');
+            renderTabs();
         }
         return ok;
     }
 
     function scheduleSave() {
         if (!activeNoteId) return;
+        const wasDirty = dirty;
         dirty = true;
         setSaveState('unsaved');
+        if (!wasDirty) renderTabs();
         window.clearTimeout(saveTimer);
         saveTimer = window.setTimeout(persist, AUTOSAVE_DELAY);
     }
@@ -422,20 +482,44 @@ export function initEditor({ strings, onEvent }) {
             tagsList.replaceChildren(fragment);
         }
 
-        if (noteFolderSelect) {
+        if (noteFolderTrigger && noteFolderOptions && noteFolderValue) {
             const selected = activeNote()?.folderId || '';
-            const first = document.createElement('option');
-            first.value = '';
-            first.textContent = strings.noFolder;
-            const options = [first];
-            for (const folder of organization.folders) {
-                const option = document.createElement('option');
-                option.value = folder.id;
-                option.textContent = folder.name;
-                options.push(option);
+            const selectedFolder = folderById(selected);
+            const selectedName = selectedFolder?.name || strings.noFolder;
+            const folders = [...organization.folders]
+                .sort((a, b) => a.name.localeCompare(b.name, document.documentElement.lang));
+            const choices = [{ id: '', name: strings.noFolder }, ...folders];
+            const fragment = document.createDocumentFragment();
+
+            for (const choice of choices) {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'document-folder__option';
+                option.dataset.folderId = choice.id;
+                option.setAttribute('role', 'option');
+                option.setAttribute('aria-selected', String(choice.id === selected));
+                option.tabIndex = -1;
+
+                const icon = document.createElement('span');
+                icon.className = 'document-folder__option-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                icon.classList.toggle('document-folder__option-icon--empty', !choice.id);
+                const label = document.createElement('span');
+                label.className = 'document-folder__option-label';
+                label.textContent = choice.name;
+                const check = document.createElement('span');
+                check.className = 'document-folder__option-check';
+                check.setAttribute('aria-hidden', 'true');
+                check.textContent = '✓';
+                option.append(icon, label, check);
+                fragment.appendChild(option);
             }
-            noteFolderSelect.replaceChildren(...options);
-            noteFolderSelect.value = selected;
+
+            noteFolderOptions.replaceChildren(fragment);
+            noteFolderValue.textContent = selectedName;
+            noteFolderTrigger.dataset.folderId = selected;
+            noteFolderTrigger.classList.toggle('document-folder__trigger--empty', !selected);
+            noteFolderTrigger.setAttribute('aria-label', `${strings.folderLabel}: ${selectedName}`);
         }
 
         if (currentTagsEl) {
@@ -448,6 +532,42 @@ export function initEditor({ strings, onEvent }) {
         }
 
         syncFilterButtons();
+    }
+
+    function folderOptionButtons() {
+        return noteFolderOptions
+            ? [...noteFolderOptions.querySelectorAll('[role="option"]')]
+            : [];
+    }
+
+    function openFolderMenu({ focus = 'selected' } = {}) {
+        if (!noteFolderMenu || !noteFolderTrigger) return;
+        noteFolderMenu.hidden = false;
+        noteFolderTrigger.setAttribute('aria-expanded', 'true');
+        const options = folderOptionButtons();
+        const selected = options.find((option) => option.getAttribute('aria-selected') === 'true');
+        const target = focus === 'last' ? options.at(-1) : (selected || options[0]);
+        target?.focus();
+    }
+
+    function closeFolderMenu({ returnFocus = false } = {}) {
+        if (!noteFolderMenu || !noteFolderTrigger || noteFolderMenu.hidden) return;
+        noteFolderMenu.hidden = true;
+        noteFolderTrigger.setAttribute('aria-expanded', 'false');
+        if (returnFocus) noteFolderTrigger.focus();
+    }
+
+    function chooseFolder(id) {
+        const note = activeNote();
+        if (!note) return;
+        const folderId = id && folderById(id) ? id : null;
+        closeFolderMenu();
+        if (note.folderId === folderId) return;
+        note.folderId = folderId;
+        note.updatedAt = Date.now();
+        renderOrganization();
+        renderNotes();
+        scheduleSave();
     }
 
     function setNoteFilter(type, id = null) {
@@ -482,6 +602,8 @@ export function initEditor({ strings, onEvent }) {
     }
 
     function showNote(note, { focusEditor = false } = {}) {
+        closeFolderMenu();
+        rememberOpenTab(note.id);
         activeNoteId = note.id;
         setActiveNoteId(note.id);
         editor.innerHTML = sanitizeHtml(note.html || '');
@@ -494,20 +616,48 @@ export function initEditor({ strings, onEvent }) {
         updateCounts();
         renderOrganization();
         renderNotes();
+        renderTabs();
         spell.refresh();
         if (focusEditor) editor.focus();
     }
 
-    async function switchNote(id) {
+    async function switchNote(id, { focusEditor = true, closeMobile = true } = {}) {
         if (!id || id === activeNoteId) {
-            closeSidebarOnMobile();
+            if (id) rememberOpenTab(id);
+            renderTabs();
+            if (closeMobile) closeSidebarOnMobile();
             return;
         }
         if (dirty) await persist();
         const note = notes.find((item) => item.id === id);
         if (!note) return;
-        showNote(note, { focusEditor: true });
-        closeSidebarOnMobile();
+        showNote(note, { focusEditor });
+        if (closeMobile) closeSidebarOnMobile();
+    }
+
+    async function activateDocumentTab(id, { focusTab = true } = {}) {
+        await switchNote(id, { focusEditor: false, closeMobile: false });
+        if (focusTab) {
+            [...(documentTabs?.querySelectorAll('[data-tab-action="open"]') || [])]
+                .find((tab) => tab.dataset.noteId === id)?.focus();
+        }
+    }
+
+    async function closeDocumentTab(id) {
+        if (!id || !openNoteIds.includes(id) || openNoteIds.length < 2) return;
+        const closingIndex = openNoteIds.indexOf(id);
+        if (id === activeNoteId && dirty) await persist();
+        openNoteIds = openNoteIds.filter((noteId) => noteId !== id);
+        setOpenNoteIds(openNoteIds);
+
+        if (id === activeNoteId) {
+            const nextId = openNoteIds[Math.min(closingIndex, openNoteIds.length - 1)];
+            const next = notes.find((note) => note.id === nextId);
+            if (next) showNote(next);
+        } else {
+            renderTabs();
+        }
+        documentTabs?.querySelector('[role="tab"][aria-selected="true"]')?.focus();
     }
 
     async function createNewNote({
@@ -575,6 +725,7 @@ export function initEditor({ strings, onEvent }) {
         if (id === activeNoteId && noteTitleInput) noteTitleInput.value = value;
         await saveNote(updated);
         renderNotes();
+        renderTabs();
     }
 
     async function duplicateNote(id) {
@@ -617,12 +768,21 @@ export function initEditor({ strings, onEvent }) {
         });
         if (!confirmed) return;
 
+        const closingIndex = openNoteIds.indexOf(id);
         await deleteNote(id);
         notes = notes.filter((item) => item.id !== id);
+        openNoteIds = openNoteIds.filter((noteId) => noteId !== id);
+        setOpenNoteIds(openNoteIds);
         if (id === activeNoteId) {
-            const next = sortedNotes()[0];
+            const adjacentId = openNoteIds[Math.min(
+                Math.max(closingIndex, 0),
+                openNoteIds.length - 1,
+            )];
+            const next = notes.find((item) => item.id === adjacentId) || sortedNotes()[0];
             if (next) showNote(next);
             else await createNewNote({ focusTitle: false });
+        } else {
+            renderTabs();
         }
         renderOrganization();
         renderNotes();
@@ -852,6 +1012,45 @@ export function initEditor({ strings, onEvent }) {
     }
 
     if (notesSearch) notesSearch.addEventListener('input', renderNotes);
+    if (documentTabs) {
+        documentTabs.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-tab-action]');
+            if (!button) return;
+            if (button.dataset.tabAction === 'open') {
+                void activateDocumentTab(button.dataset.noteId);
+            } else if (button.dataset.tabAction === 'close') {
+                void closeDocumentTab(button.dataset.noteId);
+            }
+        });
+        documentTabs.addEventListener('auxclick', (event) => {
+            if (event.button !== 1) return;
+            const tab = event.target.closest('[data-tab-action="open"]');
+            if (!tab) return;
+            event.preventDefault();
+            void closeDocumentTab(tab.dataset.noteId);
+        });
+        documentTabs.addEventListener('keydown', (event) => {
+            const current = event.target.closest('[data-tab-action="open"]');
+            if (!current) return;
+            const tabs = [...documentTabs.querySelectorAll('[data-tab-action="open"]')];
+            const index = tabs.indexOf(current);
+            let nextIndex = null;
+            const rtl = document.documentElement.dir === 'rtl';
+            if (event.key === 'ArrowRight') nextIndex = index + (rtl ? -1 : 1);
+            else if (event.key === 'ArrowLeft') nextIndex = index + (rtl ? 1 : -1);
+            else if (event.key === 'Home') nextIndex = 0;
+            else if (event.key === 'End') nextIndex = tabs.length - 1;
+            else if (event.key === 'Delete') {
+                event.preventDefault();
+                void closeDocumentTab(current.dataset.noteId);
+                return;
+            }
+            if (nextIndex === null || !tabs.length) return;
+            event.preventDefault();
+            const next = tabs[(nextIndex + tabs.length) % tabs.length];
+            void activateDocumentTab(next.dataset.noteId);
+        });
+    }
     if (notesList) {
         notesList.addEventListener('click', (event) => {
             const button = event.target.closest('[data-note-action]');
@@ -880,14 +1079,50 @@ export function initEditor({ strings, onEvent }) {
         else if (action.dataset.organizationAction === 'edit-tag') void promptTag(tagById(id));
         else if (action.dataset.organizationAction === 'delete-tag') void deleteTagRecord(id);
     });
-    noteFolderSelect?.addEventListener('change', () => {
-        const note = activeNote();
-        if (!note) return;
-        note.folderId = noteFolderSelect.value || null;
-        note.updatedAt = Date.now();
-        renderOrganization();
-        renderNotes();
-        scheduleSave();
+    noteFolderTrigger?.addEventListener('click', () => {
+        if (noteFolderMenu?.hidden) openFolderMenu();
+        else closeFolderMenu({ returnFocus: true });
+    });
+    noteFolderTrigger?.addEventListener('keydown', (event) => {
+        if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+        event.preventDefault();
+        openFolderMenu({ focus: event.key === 'ArrowUp' ? 'last' : 'selected' });
+    });
+    noteFolderOptions?.addEventListener('click', (event) => {
+        const option = event.target.closest('[role="option"]');
+        if (option) chooseFolder(option.dataset.folderId);
+    });
+    noteFolderOptions?.addEventListener('keydown', (event) => {
+        const option = event.target.closest('[role="option"]');
+        if (!option) return;
+        const options = folderOptionButtons();
+        const index = options.indexOf(option);
+        let nextIndex = null;
+        if (event.key === 'ArrowDown') nextIndex = index + 1;
+        else if (event.key === 'ArrowUp') nextIndex = index - 1;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = options.length - 1;
+        else if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            chooseFolder(option.dataset.folderId);
+            noteFolderTrigger?.focus();
+            return;
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeFolderMenu({ returnFocus: true });
+            return;
+        } else if (event.key === 'Tab') {
+            closeFolderMenu();
+            return;
+        }
+        if (nextIndex !== null && options.length) {
+            event.preventDefault();
+            options[(nextIndex + options.length) % options.length]?.focus();
+        }
+    });
+    document.addEventListener('click', (event) => {
+        if (noteFolderPicker && !noteFolderPicker.contains(event.target)) closeFolderMenu();
     });
     currentTagsEl?.addEventListener('click', (event) => {
         const chip = event.target.closest('[data-remove-tag]');
@@ -900,6 +1135,7 @@ export function initEditor({ strings, onEvent }) {
         note.title = noteTitleInput.value;
         note.updatedAt = Date.now();
         renderNotes();
+        renderTabs();
         scheduleSave();
     });
     noteTitleInput?.addEventListener('keydown', (event) => {
@@ -1664,6 +1900,7 @@ ${cleanHtml()}
         window.clearTimeout(saveTimer);
         await clearNotes();
         notes = [];
+        openNoteIds = [];
         activeNoteId = null;
         dirty = false;
         await createNewNote({ focusTitle: false, report: false });
@@ -2144,6 +2381,11 @@ ${cleanHtml()}
     // Escape: close the find bar first, then leave focus mode.
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return;
+        if (noteFolderMenu && !noteFolderMenu.hidden) {
+            event.preventDefault();
+            closeFolderMenu({ returnFocus: true });
+            return;
+        }
         if (findBar && !findBar.hidden) {
             event.preventDefault();
             closeFind();
@@ -2190,6 +2432,10 @@ ${cleanHtml()}
             return updated;
         });
         if (repaired.length) await Promise.all(repaired.map(saveNote));
+
+        const existingIds = new Set(notes.map((note) => note.id));
+        openNoteIds = getOpenNoteIds().filter((id) => existingIds.has(id));
+        setOpenNoteIds(openNoteIds);
 
         if (!notes.length) {
             await createNewNote({ focusTitle: false, report: false });

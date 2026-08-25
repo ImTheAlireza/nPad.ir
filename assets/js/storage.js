@@ -3,8 +3,9 @@
  *
  * IndexedDB is the primary store. Browsers without IndexedDB use one compact
  * localStorage collection, while pagehide writes the active note to a small
- * synchronous recovery record. Existing v2 single-document records and the
- * old `npad:document` fallback are migrated without losing content.
+ * synchronous recovery record. The ordered open-tab session is tiny and stays
+ * in localStorage beside the active note ID. Existing v2 single-document
+ * records and the old `npad:document` fallback migrate without losing content.
  */
 
 const DB_NAME = 'npad';
@@ -16,6 +17,7 @@ const LEGACY_KEY = 'npad:document';
 const FALLBACK_KEY = 'npad:notes';
 const PENDING_KEY = 'npad:pending-note';
 const ACTIVE_KEY = 'npad:active-note';
+const OPEN_TABS_KEY = 'npad:open-tabs';
 const ORGANIZATION_KEY = 'npad:organization';
 const ORGANIZATION_ID = 'organization';
 
@@ -291,6 +293,7 @@ export async function saveNote(record) {
 /** Delete one note from every possible persistence path. */
 export async function deleteNote(id) {
     const noteId = String(id);
+    setOpenNoteIds(getOpenNoteIds().filter((openId) => openId !== noteId));
     const fallback = readFallbackNotes().filter((note) => note.id !== noteId);
     writeFallbackCollection(fallback);
     try {
@@ -322,6 +325,7 @@ export async function clearNotes() {
         localStorage.removeItem(LEGACY_KEY);
         localStorage.removeItem(PENDING_KEY);
         localStorage.removeItem(ACTIVE_KEY);
+        localStorage.removeItem(OPEN_TABS_KEY);
     } catch { /* storage disabled */ }
 
     const db = await openDatabase();
@@ -397,6 +401,22 @@ export function createTagRecord(name, color) {
         createdAt: now,
         updatedAt: now,
     };
+}
+
+export function getOpenNoteIds() {
+    const stored = parse(OPEN_TABS_KEY);
+    if (!Array.isArray(stored)) return [];
+    return [...new Set(stored.map(String).filter(Boolean))];
+}
+
+export function setOpenNoteIds(ids) {
+    try {
+        const unique = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
+        localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(unique));
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 export function getActiveNoteId() {

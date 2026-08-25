@@ -198,7 +198,16 @@ export default async function run(check, group) {
             assert.ok(template?.content.querySelector('[data-note-action="open"]'));
             assert.ok(document.getElementById('foldersList'), 'folder list missing');
             assert.ok(document.getElementById('tagsList'), 'tag list missing');
-            assert.ok(document.getElementById('noteFolder')?.getAttribute('aria-label'));
+            const tabs = document.getElementById('documentTabs');
+            const tabTemplate = document.getElementById('documentTabTemplate');
+            assert.equal(tabs?.getAttribute('role'), 'tablist');
+            assert.ok(tabs?.getAttribute('aria-label'), 'document tabs are not named');
+            assert.equal(tabTemplate?.content.querySelector('[data-tab-action="open"]')?.getAttribute('role'), 'tab');
+            assert.ok(tabTemplate?.content.querySelector('[data-tab-action="close"]')?.getAttribute('aria-label'));
+            const folderPicker = document.getElementById('noteFolder');
+            assert.ok(folderPicker?.getAttribute('aria-label'));
+            assert.equal(folderPicker?.getAttribute('aria-haspopup'), 'listbox');
+            assert.ok(document.getElementById(folderPicker?.getAttribute('aria-controls')));
             assert.ok(document.querySelector('[data-action="manage-note-tags"]')?.getAttribute('aria-label'));
             ['all', 'pinned', 'unfiled'].forEach((filter) => {
                 assert.ok(document.querySelector(`[data-filter-type="${filter}"]`), `${filter} filter missing`);
