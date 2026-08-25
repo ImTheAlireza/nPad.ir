@@ -185,6 +185,13 @@ export default async function run(check, group) {
             assert.equal(ed.getAttribute('aria-multiline'), 'true');
             assert.ok(ed.getAttribute('aria-label'));
             assert.ok(ed.hasAttribute('contenteditable'));
+            const findOptions = [...document.querySelectorAll('[data-find-option]')];
+            assert.equal(findOptions.length, 4, 'advanced find controls missing');
+            findOptions.forEach((option) => {
+                assert.equal(option.tagName, 'BUTTON');
+                assert.equal(option.getAttribute('aria-pressed'), 'false');
+                assert.ok(option.textContent.trim(), 'unnamed find option');
+            });
         });
 
         check('multi-note workspace is accessible and ready for enhancement', () => {

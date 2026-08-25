@@ -53,6 +53,11 @@ return [
         'next'             => 'نتیجه بعدی',
         'replace'          => 'جایگزین',
         'replace_all'      => 'جایگزینی همه',
+        'case_sensitive'   => 'تطبیق حروف بزرگ و کوچک',
+        'whole_word'       => 'تمام واژه',
+        'regular_expression' => 'عبارت منظم',
+        'in_selection'     => 'در بخش انتخاب‌شده',
+        'invalid_regex'    => 'عبارت منظم معتبر نیست',
         'count'            => '{current} از {total}',
         'no_results'       => 'نتیجه‌ای یافت نشد',
         'close'            => 'بستن جستجو',
@@ -185,6 +190,7 @@ return [
         'add'            => 'افزودن به فرهنگ لغت',
         'ignore'         => 'نادیده گرفتن',
         'no_suggestions' => 'پیشنهادی نیست',
+        'suggestions_for' => 'پیشنهادهای املایی برای «{word}»',
     ],
 
     'editor' => [

@@ -85,6 +85,11 @@
     --danger: #b42318;
     --success: #027a48;
 
+    /* Search matches: every result is visible; the active one is stronger. */
+    --find-all-bg: rgba(234, 179, 8, 0.30);
+    --find-current-bg: #facc15;
+    --find-current-text: #422006;
+
     /* Spell-check wave — a blue that reads clearly on both surfaces. */
     --spell-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='5' viewBox='0 0 10 5'%3E%3Cpath d='M0 3 Q 2.5 0 5 3 T 10 3' fill='none' stroke='%232563eb' stroke-width='1.7'/%3E%3C/svg%3E");
 
@@ -149,6 +154,10 @@
 
     --danger: #fda29b;
     --success: #6ce9a6;
+
+    --find-all-bg: rgba(250, 204, 21, 0.26);
+    --find-current-bg: #fde047;
+    --find-current-text: #1c1917;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
@@ -2667,6 +2676,57 @@ kbd {
     gap: var(--space-2);
 }
 
+.findbar__options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+.findbar__toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 32px;
+    padding-inline: var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.findbar__toggle:hover,
+.findbar__toggle:focus-visible {
+    border-color: var(--border-subtle);
+    background: var(--surface-hover);
+    color: var(--text-strong);
+}
+
+.findbar__toggle[aria-pressed='true'] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+}
+
+.findbar__toggle:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+}
+
+.findbar__toggle[hidden] { display: none; }
+
+.findbar__toggle-symbol {
+    font-weight: 700;
+    letter-spacing: -0.04em;
+}
+
+.findbar__toggle-symbol--code { font-family: var(--font-mono); }
+.findbar__toggle .icon { width: 15px; height: 15px; }
+
 .findbar__input {
     flex: 1 1 200px;
     min-width: 160px;
@@ -2683,6 +2743,11 @@ kbd {
     outline: 2px solid var(--accent-ring);
     outline-offset: 1px;
     border-color: var(--accent);
+}
+
+.findbar__input[aria-invalid='true'] {
+    border-color: var(--danger);
+    outline-color: color-mix(in srgb, var(--danger) 45%, transparent);
 }
 
 .findbar__count {
@@ -2730,11 +2795,36 @@ kbd {
     color: var(--text-onaccent);
 }
 
-/* Paint the active result without moving the browser Selection (and therefore
-   keyboard focus) out of the Find/Replace fields. */
+/* Custom Highlight API path: paint every result without touching the DOM or
+   moving keyboard focus out of the Find/Replace fields. */
+.editor::highlight(npad-find-all) {
+    background: var(--find-all-bg);
+    color: inherit;
+}
+
 .editor::highlight(npad-find-current) {
-    background: var(--accent-soft);
-    color: var(--accent-text);
+    background: var(--find-current-bg);
+    color: var(--find-current-text);
+    text-decoration: underline 2px;
+}
+
+/* Fallback for webviews without CSS.highlights. A match split by rich-text
+   markup can have several mark fragments sharing the same data index. */
+.npad-find-match {
+    border-radius: 2px;
+    background: var(--find-all-bg);
+    color: inherit;
+}
+
+.npad-find-match--current {
+    background: var(--find-current-bg);
+    color: var(--find-current-text);
+    text-decoration: underline 2px;
+}
+
+@media (pointer: coarse) {
+    .findbar__toggle,
+    .findbar__btn { min-height: 44px; }
 }
 
 /* Focus mode: hide chrome, let the text own the viewport. The find bar
@@ -2802,17 +2892,26 @@ body.focus-mode .focus-exit { display: inline-flex; }
 .focus-exit .icon { width: 18px; height: 18px; }
 
 /* --------------------------------------------------------------------------
-   17c. Custom spell checker — flagged words get a blue wave that draws in
-   from the left (a smooth trim-path reveal), and a clickable suggestion
-   tooltip appears after a long hover.
+   17c. Custom spell checker — flagged words get a blue wave that draws in;
+   corrections open by tap, keyboard activation, or hover.
    -------------------------------------------------------------------------- */
 
 .spell-err {
     position: relative;
-    cursor: help;
+    margin-block: -4px;
+    padding-block: 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    touch-action: manipulation;
     /* Never let the flag itself look like emphasis. */
     background: transparent;
     color: inherit;
+}
+
+.spell-err:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+    background: var(--accent-soft);
 }
 
 .spell-err::after {
@@ -2840,8 +2939,8 @@ body.focus-mode .focus-exit { display: inline-flex; }
 .spell-tip {
     position: fixed;
     z-index: 90;
-    min-width: 200px;
-    max-width: 280px;
+    min-width: min(200px, calc(100vw - 16px));
+    max-width: min(320px, calc(100vw - 16px));
     padding: var(--space-2);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
@@ -2924,6 +3023,13 @@ body.focus-mode .focus-exit { display: inline-flex; }
     color: var(--text-strong);
 }
 
+@media (pointer: coarse) {
+    .spell-tip { padding: var(--space-3); }
+    .spell-tip__item,
+    .spell-tip__action { min-height: 44px; }
+    .spell-tip__item { font-size: 16px; }
+}
+
 /* --------------------------------------------------------------------------
    18. Print — the old build opened a popup and copied innerHTML without any
    stylesheet, so printed output lost all formatting. Now we print in place.
@@ -2989,7 +3095,12 @@ body.focus-mode .focus-exit { display: inline-flex; }
 }
 
 @media (forced-colors: active) {
-    .toolbar__btn[aria-pressed='true'] { outline: 2px solid ButtonText; }
-    .findbar__btn, .focus-exit { border: 1px solid ButtonText; }
+    .toolbar__btn[aria-pressed='true'],
+    .findbar__toggle[aria-pressed='true'] { outline: 2px solid ButtonText; }
+    .findbar__btn, .findbar__toggle, .focus-exit { border: 1px solid ButtonText; }
+    .npad-find-match { outline: 1px solid Highlight; }
+    .npad-find-match--current { outline: 3px solid Highlight; }
+    .editor::highlight(npad-find-all) { background: Highlight; color: HighlightText; }
+    .editor::highlight(npad-find-current) { background: Highlight; color: HighlightText; }
     .card, .faq__item, .appbar, .editor-shell { border: 1px solid ButtonBorder; }
 }

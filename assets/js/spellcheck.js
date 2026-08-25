@@ -4,8 +4,8 @@
  * A dictionary-based checker that works on the live contenteditable DOM:
  *  - misspelled words are wrapped in <span class="spell-err"> with a
  *    hand-drawn blue wave that animates in (see app.css)
- *  - hovering a flagged word for ~3s opens a clickable tooltip with
- *    replace suggestions, plus "add to dictionary" / "ignore"
+ *  - tapping, keyboard-activating, or hovering a flagged word opens a
+ *    correction dialog with replace suggestions and dictionary actions
  *  - everything is local: the bundled wordlist + a per-browser custom
  *    word list in localStorage. No network, no native spellcheck UI.
  *
@@ -116,6 +116,15 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
             const span = document.createElement('span');
             span.className = 'spell-err';
             span.textContent = m[0];
+            span.tabIndex = 0;
+            span.setAttribute('role', 'button');
+            span.setAttribute('aria-haspopup', 'dialog');
+            span.setAttribute('aria-expanded', 'false');
+            span.setAttribute(
+                'aria-label',
+                (strings.spellSuggestionsFor || 'Spelling suggestions for “{word}”')
+                    .replace('{word}', m[0]),
+            );
             parts.push(span);
             lastIndex = m.index + m[0].length;
         }
@@ -246,6 +255,7 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
 
         restoreCaret(caret);
         restoreExternalFocus(focusedControl);
+        editor.dispatchEvent(new window.CustomEvent('npad:spell-render'));
     }
 
     function scheduleRemark(delay) {
@@ -294,8 +304,10 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     function ensureTip() {
         if (tip) return tip;
         tip = document.createElement('div');
+        tip.id = 'spellSuggestions';
         tip.className = 'spell-tip';
-        tip.setAttribute('role', 'tooltip');
+        tip.setAttribute('role', 'dialog');
+        tip.setAttribute('aria-modal', 'false');
         tip.hidden = true;
 
         // The word and this detached, body-level popup form one hover region.
@@ -311,15 +323,37 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
             if (event.relatedTarget && tip.contains(event.relatedTarget)) return;
             scheduleHide();
         });
+        tip.addEventListener('keydown', (event) => {
+            const buttons = [...tip.querySelectorAll('button:not(:disabled)')];
+            const index = buttons.indexOf(document.activeElement);
+            let next = null;
+            if (event.key === 'ArrowDown') next = index + 1;
+            else if (event.key === 'ArrowUp') next = index - 1;
+            else if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = buttons.length - 1;
+            else if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                hideTip({ returnFocus: true });
+                return;
+            }
+            if (next !== null && buttons.length) {
+                event.preventDefault();
+                buttons[(next + buttons.length) % buttons.length].focus();
+            }
+        });
         document.body.appendChild(tip);
         return tip;
     }
 
-    function hideTip() {
+    function hideTip({ returnFocus = false } = {}) {
+        const word = hoverEl;
         if (tip) tip.hidden = true;
+        if (word?.isConnected) word.setAttribute('aria-expanded', 'false');
         clearTimeout(hoverTimer);
         cancelHide();
         hoverEl = null;
+        if (returnFocus && word?.isConnected) word.focus();
     }
 
     function positionTip(wordEl) {
@@ -345,36 +379,55 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         tipEl.style.top = `${top}px`;
     }
 
-    function replaceWord(wordEl, newText) {
-        wordEl.replaceWith(document.createTextNode(newText));
-        lastText = null;
+    function finishWordAction(wordEl, value) {
+        const textNode = document.createTextNode(value);
         hideTip();
+        wordEl.replaceWith(textNode);
+        lastText = null;
+        editor.focus();
+        try {
+            const range = document.createRange();
+            range.setStart(textNode, textNode.length);
+            range.collapse(true);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } catch { /* keep the replacement even when selection APIs are unavailable */ }
         editor.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function replaceWord(wordEl, newText) {
+        finishWordAction(wordEl, newText);
         track('spell_replace_used');
     }
 
     function addToDictionary(wordEl) {
-        custom.add(norm(wordEl.textContent));
+        const word = wordEl.textContent;
+        custom.add(norm(word));
         try { localStorage.setItem(LS_CUSTOM, JSON.stringify([...custom])); } catch { /* ignore */ }
-        lastText = null;
-        hideTip();
-        wordEl.replaceWith(document.createTextNode(wordEl.textContent));
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        finishWordAction(wordEl, word);
         track('spell_add_word');
     }
 
     function ignoreWord(wordEl) {
-        ignored.add(norm(wordEl.textContent));
-        lastText = null;
-        hideTip();
-        wordEl.replaceWith(document.createTextNode(wordEl.textContent));
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        const word = wordEl.textContent;
+        ignored.add(norm(word));
+        finishWordAction(wordEl, word);
     }
 
-    function showTip(wordEl) {
+    function showTip(wordEl, { focusFirst = false } = {}) {
         const tipEl = ensureTip();
+        if (hoverEl && hoverEl !== wordEl && hoverEl.isConnected) {
+            hoverEl.setAttribute('aria-expanded', 'false');
+        }
+        hoverEl = wordEl;
         const suggestions = suggest(wordEl.textContent);
         tipEl.textContent = '';
+        tipEl.setAttribute(
+            'aria-label',
+            (strings.spellSuggestionsFor || 'Spelling suggestions for “{word}”')
+                .replace('{word}', wordEl.textContent),
+        );
 
         const list = document.createElement('div');
         list.className = 'spell-tip__list';
@@ -410,7 +463,10 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
 
         tipEl.append(list, actions);
         tipEl.hidden = false;
+        wordEl.setAttribute('aria-controls', tipEl.id);
+        wordEl.setAttribute('aria-expanded', 'true');
         positionTip(wordEl);
+        if (focusFirst) tipEl.querySelector('button')?.focus();
     }
 
     /* ------------------------------------------------------------------
@@ -466,6 +522,27 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         scheduleRemark(Math.max(0, delay));
     });
 
+    // A tap/click opens corrections immediately. Hover remains available for
+    // mouse users, while Enter/Space/ArrowDown makes every flagged word fully
+    // keyboard operable without relying on a pointer.
+    editor.addEventListener('click', (event) => {
+        const el = event.target.closest ? event.target.closest('.spell-err') : null;
+        if (!el) return;
+        cancelHide();
+        clearTimeout(hoverTimer);
+        showTip(el);
+    });
+
+    editor.addEventListener('keydown', (event) => {
+        const el = event.target.closest ? event.target.closest('.spell-err') : null;
+        if (!el || !['Enter', ' ', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        cancelHide();
+        clearTimeout(hoverTimer);
+        showTip(el, { focusFirst: true });
+    });
+
     editor.addEventListener('mouseover', (event) => {
         const el = event.target.closest ? event.target.closest('.spell-err') : null;
         if (!el) return;
@@ -501,11 +578,13 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     });
 
     const hideOnOutside = (event) => {
-        if (tip && !tip.hidden && !(tip.contains(event.target))) hideTip();
+        const word = event.target.closest ? event.target.closest('.spell-err') : null;
+        if (word) return;
+        if (tip && !tip.hidden && !tip.contains(event.target)) hideTip();
     };
     document.addEventListener('click', hideOnOutside);
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') hideTip();
+        if (event.key === 'Escape' && tip && !tip.hidden) hideTip({ returnFocus: true });
     });
     window.addEventListener('scroll', hideTip, { capture: true, passive: true });
     window.addEventListener('resize', hideTip, { passive: true });

@@ -698,6 +698,11 @@ export default async function run(check, group) {
         findInput.value = 'hello';
         findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
         assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
+        const marks = [...editor.querySelectorAll('.npad-find-match')];
+        const matchIds = new Set(marks.map((mark) => mark.dataset.findMatch));
+        assert.equal(matchIds.size, 3, `only ${matchIds.size} highlighted matches`);
+        assert.ok(marks.some((mark) => mark.classList.contains('npad-find-match--current')),
+            'active match is not visually distinct');
     });
 
     check('typing a query keeps focus and the caret in the Find field', () => {
@@ -710,6 +715,39 @@ export default async function run(check, group) {
 
         assert.equal(document.activeElement, findInput, 'focus jumped into the editor');
         assert.equal(findInput.selectionStart, findInput.value.length, 'input caret moved');
+    });
+
+    check('case, whole-word and regular-expression options refine results', () => {
+        const option = (name) => findBar.querySelector(`[data-find-option="${name}"]`);
+        const toggle = (name) => option(name)
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+        editor.innerHTML = '<p>Cat cat concatenate</p>';
+        findInput.value = 'cat';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
+
+        toggle('case');
+        assert.match(findCount.textContent, /1 of 2/, `case: ${findCount.textContent}`);
+        toggle('whole');
+        assert.match(findCount.textContent, /1 of 1/, `whole: ${findCount.textContent}`);
+        toggle('case');
+        assert.match(findCount.textContent, /1 of 2/, `case off: ${findCount.textContent}`);
+
+        toggle('regex');
+        findInput.value = 'c.t';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 2/, `regex: ${findCount.textContent}`);
+        findInput.value = '[';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.equal(findInput.getAttribute('aria-invalid'), 'true');
+        assert.equal(findCount.textContent, strings.findInvalidRegex);
+
+        toggle('regex');
+        toggle('whole');
+        findInput.value = 'hello';
+        editor.innerHTML = '<p>Hello world, hello again.</p><p>H<b>ello</b> there.</p>';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
     });
 
     check('Enter and Shift+Enter step through matches', () => {
@@ -746,6 +784,45 @@ export default async function run(check, group) {
             .find((b) => b.dataset.findAction === 'replace-all');
         replaceAllBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.ok(!/hello/i.test(editor.textContent), editor.textContent);
+    });
+
+    check('regular-expression replacements expand capture groups', () => {
+        const regex = findBar.querySelector('[data-find-option="regex"]');
+        regex.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        editor.innerHTML = '<p>item-12 item-34</p>';
+        findInput.value = 'item-(\\d+)';
+        replaceInput.value = '$1:item';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        findBar.querySelector('[data-find-action="replace-all"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.textContent, '12:item 34:item');
+        regex.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+
+    check('replace in selection never changes matching text outside the selection', () => {
+        findBar.querySelector('[data-find-action="close"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        editor.innerHTML = '<p>one one one</p>';
+        const text = editor.querySelector('p').firstChild;
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.setEnd(text, 7);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        document.querySelector('[data-action="find-replace"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        const inSelection = findBar.querySelector('[data-find-option="selection"]');
+        assert.equal(inSelection.disabled, false, 'selection scope was not captured');
+        inSelection.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        findInput.value = 'one';
+        replaceInput.value = 'X';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 2/, findCount.textContent);
+        findBar.querySelector('[data-find-action="replace-all"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.textContent, 'X X one');
     });
 
     check('no-results message and Escape close', () => {
@@ -806,6 +883,50 @@ export default async function run(check, group) {
         assert.equal(marks[0].textContent, 'hellow');
         assert.equal(marks[1].textContent, 'wrld');
         assert.equal(marks[2].textContent, 'secon');
+        assert.equal(marks[0].tabIndex, 0);
+        assert.equal(marks[0].getAttribute('role'), 'button');
+        assert.equal(marks[0].getAttribute('aria-haspopup'), 'dialog');
+        assert.ok(marks[0].getAttribute('aria-label').includes('hellow'));
+    });
+
+    check('tap and keyboard activation open navigable spelling corrections', () => {
+        editor.innerHTML = '<p>hellow world</p>';
+        const nativeSetTimeout = global.setTimeout;
+        global.setTimeout = (callback) => {
+            callback();
+            return 1;
+        };
+        let mark;
+        try {
+            editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+            mark = editor.querySelector('.spell-err');
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
+        assert.ok(mark, 'no spelling mark available for activation');
+        mark.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        const tip = document.querySelector('.spell-tip');
+        assert.ok(tip && !tip.hidden, 'tap did not open suggestions');
+        assert.equal(tip.getAttribute('role'), 'dialog');
+        assert.equal(mark.getAttribute('aria-expanded'), 'true');
+
+        document.body.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(tip.hidden, true, 'outside tap did not close suggestions');
+        mark.focus();
+        mark.dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'Enter', bubbles: true, cancelable: true,
+        }));
+        const buttons = [...tip.querySelectorAll('button')];
+        assert.equal(document.activeElement, buttons[0], 'keyboard open did not focus a suggestion');
+        buttons[0].dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'ArrowDown', bubbles: true, cancelable: true,
+        }));
+        assert.equal(document.activeElement, buttons[1], 'ArrowDown did not move through corrections');
+        buttons[1].dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'Escape', bubbles: true, cancelable: true,
+        }));
+        assert.equal(tip.hidden, true);
+        assert.equal(document.activeElement, mark, 'Escape did not return focus to the word');
     });
 
     check('toggle disables the checker, clears marks and persists', () => {
@@ -937,13 +1058,24 @@ export default async function run(check, group) {
             `unexpected: ${bar.dataset.saveState}`);
     });
 
-    check('pagehide flush persists to localStorage fallback', () => {
+    check('pagehide flush persists content without transient search highlights', () => {
         editor.textContent = 'work in progress';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        pressKey(document, { key: 'f', ctrlKey: true });
+        findInput.value = 'work';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.ok(editor.querySelector('.npad-find-match'), 'search highlight missing before flush');
+        window.dispatchEvent(new window.Event('beforeprint'));
+        assert.equal(editor.querySelector('.npad-find-match'), null, 'search highlight leaked into print');
+        window.dispatchEvent(new window.Event('afterprint'));
+        assert.ok(editor.querySelector('.npad-find-match'), 'search highlight was not restored after print');
         window.dispatchEvent(new window.Event('pagehide'));
         const raw = window.localStorage.getItem('npad:pending-note');
         assert.ok(raw, 'nothing flushed on pagehide — this is the data-loss bug');
-        assert.ok(JSON.parse(raw).html.includes('work in progress'), 'flushed content wrong');
+        const html = JSON.parse(raw).html;
+        assert.ok(html.includes('work in progress'), 'flushed content wrong');
+        assert.ok(!html.includes('npad-find-match'), 'search highlights leaked into storage');
+        pressKey(findInput, { key: 'Escape' });
     });
 
     check('autosave timer persists without spell marks', async () => {

@@ -53,6 +53,11 @@ return [
         'next'             => 'Next match',
         'replace'          => 'Replace',
         'replace_all'      => 'Replace all',
+        'case_sensitive'   => 'Match case',
+        'whole_word'       => 'Whole word',
+        'regular_expression' => 'Regular expression',
+        'in_selection'     => 'In selection',
+        'invalid_regex'    => 'Invalid regular expression',
         'count'            => '{current} of {total}',
         'no_results'       => 'No matches',
         'close'            => 'Close search',
@@ -185,6 +190,7 @@ return [
         'add'            => 'Add to dictionary',
         'ignore'         => 'Ignore',
         'no_suggestions' => 'No suggestions',
+        'suggestions_for' => 'Spelling suggestions for “{word}”',
     ],
 
     'editor' => [

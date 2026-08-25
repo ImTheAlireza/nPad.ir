@@ -45,7 +45,7 @@ Live: <https://npad.ir>
 │     ├─ theme.js         Light/dark
 │     ├─ analytics.js     Anonymous event reporting
 │     ├─ dashboard.js     Admin charts
-│     ├─ spellcheck.js    Custom spell checker (marks + suggestion tooltip)
+│     ├─ spellcheck.js    Local spell checker with tap/keyboard corrections
 │     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
 │     └─ vendor/          Self-hosted Chart.js 4.5.1
 │
@@ -145,6 +145,21 @@ PDFs, including Flate-compressed streams and embedded Unicode font maps. It is
 not OCR; scanned/image-only, encrypted, damaged, and unsupported PDFs report a
 localized error instead of silently creating an empty note.
 
+## Advanced search and spelling
+
+Find and Replace supports case-sensitive search, Unicode-aware whole-word
+matching, regular expressions with capture-group replacements, and replacement
+limited to the editor selection. Every result is highlighted at once while the
+active result uses a stronger color; the CSS Custom Highlight API keeps modern
+browsers' document DOM untouched, with a transient `<mark>` fallback for older
+webviews. Search highlights are always removed from saved and exported notes.
+
+Misspelled words can be tapped to open local correction suggestions immediately.
+On desktop, each flagged word is keyboard-focusable: Enter, Space, or Arrow Down
+opens its accessible correction dialog; arrow keys move through suggestions and
+Escape returns focus to the word. Coarse-pointer layouts provide 44 px correction
+targets. The dictionary and custom words remain entirely on the device.
+
 ## Tests
 
 ```bash
@@ -152,7 +167,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-233 assertions covering:
+239 assertions covering:
 
 | Suite | What it proves |
 |---|---|
@@ -163,7 +178,7 @@ npm test
 | `formats` | Markdown/JSON/RTF round trips, valid DOCX ZIPs, compressed Open XML, PDF stream and Unicode-map extraction |
 | `storage` | Legacy migration, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
-| `behaviour` | Document tabs, folder/tag flows, automatic backups and restore-as-copy recovery work; autosave and editor tools remain functional |
+| `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes and highlighting; tap/keyboard spelling corrections; autosave and editor tools |
 
 ## Notable decisions
 
@@ -185,6 +200,11 @@ never succeed — they only burned timeouts.
 first-party JavaScript with no CDN or conversion service. PDF export uses the
 browser's print engine rather than a Latin-only PDF generator, preserving
 Persian fonts and RTL layout.
+
+**Search paint is transient.** Modern browsers receive non-destructive CSS
+highlights for all matches and a distinct active result. The legacy DOM fallback
+is stripped before every save, backup, print, and export, so searching can never
+change a note's stored content.
 
 **Light theme authored first.** Cards and FAQ items used
 `rgba(255,255,255,0.03)` on both themes, which computed to 1.01:1 on the light

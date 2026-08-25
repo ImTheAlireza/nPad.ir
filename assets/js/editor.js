@@ -107,6 +107,10 @@ export function initEditor({ strings, onEvent }) {
     const replaceInput = findBar && findBar.querySelector('[data-find-replace]');
     const findCount = findBar && findBar.querySelector('#findCount');
     const findReplaceRow = document.getElementById('findReplaceRow');
+    const findOptionButtons = findBar
+        ? new Map([...findBar.querySelectorAll('[data-find-option]')]
+            .map((button) => [button.dataset.findOption, button]))
+        : new Map();
 
     /* View toggles. */
     const focusBtn = document.querySelector('[data-action="toggle-focus"]');
@@ -135,6 +139,9 @@ export function initEditor({ strings, onEvent }) {
         const clone = editor.cloneNode(true);
         clone.querySelectorAll('.spell-err').forEach((el) => {
             el.replaceWith(document.createTextNode(el.textContent));
+        });
+        clone.querySelectorAll('.npad-find-match').forEach((el) => {
+            el.replaceWith(...el.childNodes);
         });
         return clone.innerHTML;
     }
@@ -2318,13 +2325,17 @@ ${cleanHtml()}
 
     let findMatches = [];
     let findIndex = -1;
+    let findSelectionScope = null;
 
-    const FIND_HIGHLIGHT = 'npad-find-current';
+    const FIND_ALL_HIGHLIGHT = 'npad-find-all';
+    const FIND_CURRENT_HIGHLIGHT = 'npad-find-current';
     const highlightRegistry = window.CSS && window.CSS.highlights;
     const HighlightCtor = window.Highlight;
     const supportsFindHighlight = !!(highlightRegistry && HighlightCtor);
+    const WORD_CHARACTER = /[\p{L}\p{M}\p{N}_\u200c]/u;
 
-    const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const findOptionOn = (name) => findOptionButtons.get(name)?.getAttribute('aria-pressed') === 'true';
 
     /** Preserve both an external control's focus and its text caret. */
     function captureFindFocus() {
@@ -2356,76 +2367,230 @@ ${cleanHtml()}
         }
     }
 
-    function clearFindHighlight() {
-        if (supportsFindHighlight) highlightRegistry.delete(FIND_HIGHLIGHT);
-    }
-
-    function findTextNodes(root) {
+    function findTextModel() {
         // 4 === NodeFilter.SHOW_TEXT. The named constant is undefined in some
         // embedded runtimes (jsdom, older webviews), so use the literal.
         const nodes = [];
-        const walker = document.createTreeWalker(root, 4);
+        const starts = [];
+        const walker = document.createTreeWalker(editor, 4);
+        let combined = '';
         let node;
         while ((node = walker.nextNode())) {
-            if (node.nodeValue && node.nodeValue.length) nodes.push(node);
+            if (!node.nodeValue?.length) continue;
+            starts.push(combined.length);
+            nodes.push(node);
+            combined += node.nodeValue;
         }
-        return nodes;
+        return { nodes, starts, combined };
+    }
+
+    function rangeFromOffsets(start, end, model = findTextModel()) {
+        if (!model.nodes.length) return null;
+        const safeStart = Math.max(0, Math.min(start, model.combined.length));
+        const safeEnd = Math.max(safeStart, Math.min(end, model.combined.length));
+        let startIndex = 0;
+        while (startIndex < model.nodes.length - 1 && model.starts[startIndex + 1] <= safeStart) {
+            startIndex += 1;
+        }
+        let endIndex = startIndex;
+        while (endIndex < model.nodes.length - 1 && model.starts[endIndex + 1] < safeEnd) {
+            endIndex += 1;
+        }
+        if (safeStart === safeEnd) endIndex = startIndex;
+
+        const range = document.createRange();
+        range.setStart(model.nodes[startIndex], safeStart - model.starts[startIndex]);
+        range.setEnd(model.nodes[endIndex], safeEnd - model.starts[endIndex]);
+        return range;
+    }
+
+    function selectedEditorOffsets() {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount || selection.isCollapsed) return null;
+        const source = selection.getRangeAt(0);
+        const inside = (node) => node === editor || editor.contains(node);
+        if (!inside(source.startContainer) || !inside(source.endContainer)) return null;
+
+        try {
+            const beforeStart = document.createRange();
+            beforeStart.selectNodeContents(editor);
+            beforeStart.setEnd(source.startContainer, source.startOffset);
+            const beforeEnd = document.createRange();
+            beforeEnd.selectNodeContents(editor);
+            beforeEnd.setEnd(source.endContainer, source.endOffset);
+            const start = beforeStart.toString().length;
+            const end = beforeEnd.toString().length;
+            return end > start ? { start, end } : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function currentEditorOffset() {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return null;
+        const range = selection.getRangeAt(0);
+        const inside = (node) => node === editor || editor.contains(node);
+        if (!inside(range.startContainer)) return null;
+        try {
+            const before = document.createRange();
+            before.selectNodeContents(editor);
+            before.setEnd(range.startContainer, range.startOffset);
+            return before.toString().length;
+        } catch {
+            return null;
+        }
+    }
+
+    function unwrapFallbackFindMarks() {
+        const parents = new Set();
+        editor.querySelectorAll('.npad-find-match').forEach((mark) => {
+            const parent = mark.parentNode;
+            if (!parent) return;
+            parents.add(parent);
+            while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+            mark.remove();
+        });
+        parents.forEach((parent) => parent.normalize());
+    }
+
+    function clearFindVisuals() {
+        if (supportsFindHighlight) {
+            highlightRegistry.delete(FIND_ALL_HIGHLIGHT);
+            highlightRegistry.delete(FIND_CURRENT_HIGHLIGHT);
+        } else {
+            unwrapFallbackFindMarks();
+        }
+    }
+
+    function paintFallbackFindMatches() {
+        const model = findTextModel();
+        const segments = [];
+        findMatches.forEach((match, matchIndex) => {
+            if (match.start === match.end) return;
+            model.nodes.forEach((node, nodeIndex) => {
+                const nodeStart = model.starts[nodeIndex];
+                const nodeEnd = nodeStart + node.nodeValue.length;
+                const start = Math.max(match.start, nodeStart);
+                const end = Math.min(match.end, nodeEnd);
+                if (end > start) {
+                    segments.push({
+                        node,
+                        start: start - nodeStart,
+                        end: end - nodeStart,
+                        globalStart: start,
+                        matchIndex,
+                    });
+                }
+            });
+        });
+        segments.sort((a, b) => b.globalStart - a.globalStart || b.end - a.end);
+        for (const segment of segments) {
+            if (!segment.node.isConnected || segment.end > segment.node.length) continue;
+            const range = document.createRange();
+            range.setStart(segment.node, segment.start);
+            range.setEnd(segment.node, segment.end);
+            const mark = document.createElement('mark');
+            mark.className = 'npad-find-match';
+            mark.dataset.findMatch = String(segment.matchIndex);
+            range.surroundContents(mark);
+        }
+    }
+
+    function paintFindMatches() {
+        if (!findMatches.length) return;
+        if (supportsFindHighlight) {
+            const ranges = findMatches
+                .map((match) => rangeFromOffsets(match.start, match.end))
+                .filter(Boolean);
+            if (ranges.length) highlightRegistry.set(FIND_ALL_HIGHLIGHT, new HighlightCtor(...ranges));
+        } else {
+            paintFallbackFindMatches();
+        }
+    }
+
+    function setActiveFindVisual() {
+        const match = findMatches[findIndex];
+        if (!match) return null;
+        const range = rangeFromOffsets(match.start, match.end);
+        if (!range) return null;
+
+        if (supportsFindHighlight) {
+            highlightRegistry.delete(FIND_CURRENT_HIGHLIGHT);
+            highlightRegistry.set(FIND_CURRENT_HIGHLIGHT, new HighlightCtor(range));
+        } else {
+            editor.querySelectorAll('.npad-find-match--current').forEach((mark) => {
+                mark.classList.remove('npad-find-match--current');
+            });
+            editor.querySelectorAll(`[data-find-match="${findIndex}"]`).forEach((mark) => {
+                mark.classList.add('npad-find-match--current');
+            });
+        }
+        return range;
+    }
+
+    function compileFindPattern(query) {
+        const source = findOptionOn('regex') ? query : escapeRegExp(query);
+        const flags = `gu${findOptionOn('case') ? '' : 'i'}`;
+        try {
+            return { regex: new RegExp(source, flags), error: null };
+        } catch (error) {
+            return { regex: null, error };
+        }
     }
 
     /**
-     * Every occurrence of the query, in document order, as ranges.
-     * Matches may span text nodes (e.g. a phrase split by bold markup);
-     * each range records its exact start and end node/offset.
+     * Every occurrence in document order, represented as stable global text
+     * offsets. The ranges are rebuilt on demand, so fallback <mark> wrappers
+     * and rich-text replacements cannot leave stale node references behind.
      */
     function computeFindMatches(query) {
-        const nodes = findTextNodes(editor);
-        const starts = new Array(nodes.length);
-        let combined = '';
-        for (let i = 0; i < nodes.length; i++) {
-            starts[i] = combined.length;
-            combined += nodes[i].nodeValue;
-        }
+        const model = findTextModel();
+        const scope = findOptionOn('selection') && findSelectionScope
+            ? {
+                start: Math.max(0, Math.min(findSelectionScope.start, model.combined.length)),
+                end: Math.max(0, Math.min(findSelectionScope.end, model.combined.length)),
+            }
+            : { start: 0, end: model.combined.length };
+        const input = model.combined.slice(scope.start, Math.max(scope.start, scope.end));
+        const compiled = compileFindPattern(query);
+        if (!compiled.regex) return { matches: [], error: compiled.error };
 
         const matches = [];
-        if (!query) return matches;
-
-        const re = new RegExp(escapeRegExp(query), 'gi');
-        let m;
-        while ((m = re.exec(combined)) !== null) {
-            const start = m.index;
-            const end = m.index + m[0].length;
-
-            let si = 0;
-            while (si < nodes.length - 1 && starts[si + 1] <= start) si++;
-            let ei = si;
-            while (ei < nodes.length - 1 && starts[ei + 1] < end) ei++;
-
+        let result;
+        while ((result = compiled.regex.exec(input)) !== null) {
+            const start = scope.start + result.index;
+            const end = start + result[0].length;
+            if (findOptionOn('whole')) {
+                const before = start > 0 ? model.combined[start - 1] : '';
+                const after = end < model.combined.length ? model.combined[end] : '';
+                if ((before && WORD_CHARACTER.test(before)) || (after && WORD_CHARACTER.test(after))) {
+                    if (result.index === compiled.regex.lastIndex) compiled.regex.lastIndex += 1;
+                    continue;
+                }
+            }
             matches.push({
-                startNode: nodes[si],
-                startOffset: start - starts[si],
-                endNode: nodes[ei],
-                endOffset: end - starts[ei],
+                start,
+                end,
+                text: result[0],
+                captures: [...result],
+                groups: result.groups || {},
+                input,
+                localIndex: result.index,
             });
-
-            if (m.index === re.lastIndex) re.lastIndex++; // no zero-length spin
+            if (result.index === compiled.regex.lastIndex) compiled.regex.lastIndex += 1;
         }
-        return matches;
+        return { matches, error: null };
     }
 
     function selectFindMatch(match) {
-        const range = document.createRange();
-        range.setStart(match.startNode, match.startOffset);
-        range.setEnd(match.endNode, match.endOffset);
+        const range = setActiveFindVisual();
+        if (!range) return;
 
-        clearFindHighlight();
-        if (supportsFindHighlight) {
-            // A custom Highlight paints the current result without touching
-            // the live Selection, so typing can remain in the search field.
-            highlightRegistry.set(FIND_HIGHLIGHT, new HighlightCtor(range));
-        } else {
-            // Legacy fallback: adding a Range inside contenteditable focuses
-            // it in Chromium. Restore whichever field/button the user was in
-            // immediately, including that field's own caret position.
+        if (!supportsFindHighlight) {
+            // Legacy fallback keeps all matches marked in the DOM and uses
+            // Selection only for the current result. Restore the search
+            // field's focus and caret immediately after selecting it.
             const focusedControl = captureFindFocus();
             const selection = window.getSelection();
             selection.removeAllRanges();
@@ -2433,7 +2598,6 @@ ${cleanHtml()}
             restoreFindFocus(focusedControl);
         }
 
-        // Bring an out-of-viewport match into view without moving focus.
         const rect = typeof range.getBoundingClientRect === 'function'
             ? range.getBoundingClientRect()
             : null;
@@ -2443,8 +2607,13 @@ ${cleanHtml()}
         }
     }
 
-    function renderFindCount() {
-        if (!findCount) return;
+    function renderFindCount(error = null) {
+        if (!findCount || !findInput) return;
+        findInput.setAttribute('aria-invalid', String(!!error));
+        if (error) {
+            findCount.textContent = strings.findInvalidRegex || '';
+            return;
+        }
         if (!findMatches.length) {
             findCount.textContent = strings.findNoResults || '';
             return;
@@ -2456,50 +2625,33 @@ ${cleanHtml()}
 
     function refreshFind(fromCaret = false) {
         if (!findInput) return;
-        const query = findInput.value.trim();
+        const query = findInput.value;
+        const caretOffset = fromCaret ? currentEditorOffset() : null;
+        clearFindVisuals();
 
         if (!query) {
             findMatches = [];
             findIndex = -1;
+            findInput.setAttribute('aria-invalid', 'false');
             if (findCount) findCount.textContent = '';
-            clearFindHighlight();
-            if (!supportsFindHighlight) window.getSelection().removeAllRanges();
             return;
         }
 
-        findMatches = computeFindMatches(query);
-        if (!findMatches.length) {
+        const computed = computeFindMatches(query);
+        findMatches = computed.matches;
+        if (computed.error || !findMatches.length) {
             findIndex = -1;
-            clearFindHighlight();
-            if (!supportsFindHighlight) window.getSelection().removeAllRanges();
-            renderFindCount();
+            renderFindCount(computed.error);
             return;
         }
 
-        // On a fresh query, prefer the first match at or after the caret so
-        // "find next" starts where the user is looking.
-        // Range.END_TO_START === -1. Resolve from whichever global exposes
-        // the constructor — jsdom validates the constant by identity, and in
-        // some embedded runtimes only window.Range exists.
-        const RangeCtor = (typeof Range !== 'undefined' ? Range : window.Range) || null;
-        const END_TO_START = RangeCtor ? RangeCtor.END_TO_START : -1;
         let next = 0;
-        if (fromCaret) {
-            const selection = window.getSelection();
-            if (selection && selection.rangeCount && editor.contains(selection.anchorNode)) {
-                const caret = selection.getRangeAt(0);
-                for (let i = 0; i < findMatches.length; i++) {
-                    const probe = document.createRange();
-                    probe.setStart(findMatches[i].startNode, findMatches[i].startOffset);
-                    probe.setEnd(findMatches[i].endNode, findMatches[i].endOffset);
-                    if (caret.compareBoundaryPoints(END_TO_START, probe) <= 0) {
-                        next = i;
-                        break;
-                    }
-                }
-            }
+        if (caretOffset !== null) {
+            const afterCaret = findMatches.findIndex((match) => match.start >= caretOffset);
+            if (afterCaret >= 0) next = afterCaret;
         }
         findIndex = Math.min(next, findMatches.length - 1);
+        paintFindMatches();
         selectFindMatch(findMatches[findIndex]);
         renderFindCount();
     }
@@ -2511,11 +2663,22 @@ ${cleanHtml()}
         renderFindCount();
     }
 
+    function updateSelectionOption(replaceMode) {
+        const button = findOptionButtons.get('selection');
+        if (!button) return;
+        button.hidden = !replaceMode;
+        button.disabled = !findSelectionScope;
+        if (!replaceMode || !findSelectionScope) button.setAttribute('aria-pressed', 'false');
+    }
+
     function openFind(replaceMode = false) {
         if (!findBar) return;
         track('find_used');
+        const wasHidden = findBar.hidden;
+        if (wasHidden) findSelectionScope = selectedEditorOffsets();
         findBar.hidden = false;
         if (findReplaceRow) findReplaceRow.hidden = !replaceMode;
+        updateSelectionOption(replaceMode);
         if (findInput) {
             findInput.focus();
             if (findInput.value) {
@@ -2528,53 +2691,85 @@ ${cleanHtml()}
     function closeFind() {
         if (!findBar) return;
         findBar.hidden = true;
+        clearFindVisuals();
         findMatches = [];
         findIndex = -1;
-        clearFindHighlight();
+        findSelectionScope = null;
+        const selectionButton = findOptionButtons.get('selection');
+        if (selectionButton) {
+            selectionButton.setAttribute('aria-pressed', 'false');
+            selectionButton.disabled = true;
+        }
+        if (findInput) findInput.setAttribute('aria-invalid', 'false');
         if (findCount) findCount.textContent = '';
         editor.focus();
+    }
+
+    function regexReplacement(match, replacement) {
+        if (!findOptionOn('regex')) return replacement;
+        return replacement.replace(/\$(\$|&|`|'|<[^>]+>|\d{1,2})/g, (token, part) => {
+            if (part === '$') return '$';
+            if (part === '&') return match.text;
+            if (part === '`') return match.input.slice(0, match.localIndex);
+            if (part === "'") return match.input.slice(match.localIndex + match.text.length);
+            if (part.startsWith('<')) {
+                const name = part.slice(1, -1);
+                return Object.prototype.hasOwnProperty.call(match.groups, name)
+                    ? (match.groups[name] || '')
+                    : token;
+            }
+            const index = Number(part);
+            if (index > 0 && index < match.captures.length) return match.captures[index] || '';
+            if (part.length === 2) {
+                const first = Number(part[0]);
+                if (first > 0 && first < match.captures.length) {
+                    return `${match.captures[first] || ''}${part[1]}`;
+                }
+            }
+            return token;
+        });
     }
 
     function replaceCurrentMatch() {
         const match = findMatches[findIndex];
         if (!match || !replaceInput) return;
-        const value = replaceInput.value;
-        clearFindHighlight();
+        const value = regexReplacement(match, replaceInput.value);
+        clearFindVisuals();
 
-        const range = document.createRange();
-        range.setStart(match.startNode, match.startOffset);
-        range.setEnd(match.endNode, match.endOffset);
+        const range = rangeFromOffsets(match.start, match.end);
+        if (!range) return;
         range.deleteContents();
-
         if (value) range.insertNode(document.createTextNode(value));
 
-        // refreshFind paints/selects the next result. Do not create an
-        // intermediate editor Selection here: it would steal focus from the
-        // replacement field before the user can type or press Enter again.
+        if (findOptionOn('selection') && findSelectionScope) {
+            findSelectionScope.end += value.length - (match.end - match.start);
+        }
         editor.dispatchEvent(new Event('input', { bubbles: true }));
         refreshFind(false);
     }
 
     function replaceAllMatches() {
-        if (!findInput || !replaceInput) return;
-        const query = findInput.value.trim();
-        if (!query) return;
-        const value = replaceInput.value;
-        clearFindHighlight();
+        if (!findInput || !replaceInput || !findMatches.length) return;
+        const matches = [...findMatches];
+        clearFindVisuals();
+        let totalDelta = 0;
 
-        // Reverse order keeps earlier node references valid as we edit.
-        const matches = computeFindMatches(query);
+        // Reverse order keeps every earlier global offset stable. Rebuild each
+        // Range against the current DOM so rich-text and fallback marks are safe.
         for (let i = matches.length - 1; i >= 0; i--) {
-            const range = document.createRange();
-            range.setStart(matches[i].startNode, matches[i].startOffset);
-            range.setEnd(matches[i].endNode, matches[i].endOffset);
+            const match = matches[i];
+            const value = regexReplacement(match, replaceInput.value);
+            const range = rangeFromOffsets(match.start, match.end);
+            if (!range) continue;
             range.deleteContents();
             if (value) range.insertNode(document.createTextNode(value));
+            totalDelta += value.length - (match.end - match.start);
         }
 
-        if (matches.length) {
-            editor.dispatchEvent(new Event('input', { bubbles: true }));
+        if (findOptionOn('selection') && findSelectionScope) {
+            findSelectionScope.end += totalDelta;
         }
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
         refreshFind(false);
     }
 
@@ -2599,6 +2794,13 @@ ${cleanHtml()}
             }
         });
         findBar.addEventListener('click', (event) => {
+            const option = event.target.closest('[data-find-option]');
+            if (option) {
+                if (option.disabled) return;
+                option.setAttribute('aria-pressed', String(option.getAttribute('aria-pressed') !== 'true'));
+                refreshFind(false);
+                return;
+            }
             const btn = event.target.closest('[data-find-action]');
             if (!btn) return;
             const action = btn.dataset.findAction;
@@ -2609,6 +2811,14 @@ ${cleanHtml()}
             else if (action === 'close') closeFind();
         });
     }
+
+    editor.addEventListener('npad:spell-render', () => {
+        if (findBar && !findBar.hidden) refreshFind(false);
+    });
+    window.addEventListener('beforeprint', clearFindVisuals);
+    window.addEventListener('afterprint', () => {
+        if (findBar && !findBar.hidden) refreshFind(false);
+    });
 
     /* ---------------------------------------------------------------------
        View options: focus mode, text direction, spell check
@@ -2766,6 +2976,11 @@ ${cleanHtml()}
         if (pendingFontSize) convertSizeMarkers(pendingFontSize);
         updateCounts();   // immediate, not debounced
         scheduleSave();
+        if (findBar && !findBar.hidden) {
+            Promise.resolve().then(() => {
+                if (!findBar.hidden) refreshFind(false);
+            });
+        }
     });
 
     (async () => {

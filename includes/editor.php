@@ -214,12 +214,18 @@ $jsStrings = [
     'findNext'          => t('find.next'),
     'findReplace'       => t('find.replace'),
     'findReplaceAll'    => t('find.replace_all'),
+    'findCaseSensitive' => t('find.case_sensitive'),
+    'findWholeWord'     => t('find.whole_word'),
+    'findRegex'         => t('find.regular_expression'),
+    'findInSelection'   => t('find.in_selection'),
+    'findInvalidRegex'  => t('find.invalid_regex'),
     'findCount'         => t('find.count'),
     'findNoResults'     => t('find.no_results'),
     'findClose'         => t('find.close'),
     'spellAdd'          => t('spell.add'),
     'spellIgnore'       => t('spell.ignore'),
     'spellNoSuggestions' => t('spell.no_suggestions'),
+    'spellSuggestionsFor' => t('spell.suggestions_for'),
     'noteUntitled'      => t('notes.untitled'),
     'noteEmptyPreview'  => t('notes.empty_preview'),
     'noteTabsLabel'     => t('notes.tabs_label'),
@@ -573,6 +579,28 @@ $jsStrings = [
             <button type="button" class="findbar__btn" data-find-action="close"
                     title="<?= e(t('find.close')) ?>" aria-label="<?= e(t('find.close')) ?>">
                 <?= icon('close', ['class' => 'icon']) ?>
+            </button>
+        </div>
+        <div class="findbar__options" role="group" aria-label="<?= e(t('find.label')) ?>">
+            <button type="button" class="findbar__toggle" data-find-option="case"
+                    aria-pressed="false" title="<?= e(t('find.case_sensitive')) ?>">
+                <span class="findbar__toggle-symbol" aria-hidden="true">Aa</span>
+                <span><?= e(t('find.case_sensitive')) ?></span>
+            </button>
+            <button type="button" class="findbar__toggle" data-find-option="whole"
+                    aria-pressed="false" title="<?= e(t('find.whole_word')) ?>">
+                <span class="findbar__toggle-symbol" aria-hidden="true">ab</span>
+                <span><?= e(t('find.whole_word')) ?></span>
+            </button>
+            <button type="button" class="findbar__toggle" data-find-option="regex"
+                    aria-pressed="false" title="<?= e(t('find.regular_expression')) ?>">
+                <span class="findbar__toggle-symbol findbar__toggle-symbol--code" aria-hidden="true">.*</span>
+                <span><?= e(t('find.regular_expression')) ?></span>
+            </button>
+            <button type="button" class="findbar__toggle" data-find-option="selection"
+                    aria-pressed="false" title="<?= e(t('find.in_selection')) ?>" hidden>
+                <?= icon('select-all', ['class' => 'icon']) ?>
+                <span><?= e(t('find.in_selection')) ?></span>
             </button>
         </div>
         <div class="findbar__row" id="findReplaceRow" hidden>
