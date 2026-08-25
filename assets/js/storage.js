@@ -3,15 +3,16 @@
  *
  * IndexedDB is the primary store. Browsers without IndexedDB use one compact
  * localStorage collection, while pagehide writes the active note to a small
- * synchronous recovery record. The ordered open-tab session is tiny and stays
- * in localStorage beside the active note ID. Existing v2 single-document
- * records and the old `npad:document` fallback migrate without losing content.
+ * synchronous recovery record. Timestamped backups use a dedicated IndexedDB
+ * store with a bounded localStorage fallback. The ordered open-tab session is
+ * tiny and stays beside the active note ID. Existing records migrate safely.
  */
 
 const DB_NAME = 'npad';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = 'documents';
 const META_STORE = 'metadata';
+const BACKUP_STORE = 'backups';
 const LEGACY_ID = 'current';
 const LEGACY_KEY = 'npad:document';
 const FALLBACK_KEY = 'npad:notes';
@@ -19,7 +20,11 @@ const PENDING_KEY = 'npad:pending-note';
 const ACTIVE_KEY = 'npad:active-note';
 const OPEN_TABS_KEY = 'npad:open-tabs';
 const ORGANIZATION_KEY = 'npad:organization';
+const BACKUP_KEY = 'npad:backups';
 const ORGANIZATION_ID = 'organization';
+const BACKUP_INTERVAL = 5 * 60 * 1000;
+const MAX_BACKUPS_PER_NOTE = 30;
+const MAX_BACKUPS_TOTAL = 120;
 
 /** @type {Promise<IDBDatabase|null>|null} */
 let connection = null;
@@ -48,6 +53,11 @@ function openDatabase() {
             }
             if (!db.objectStoreNames.contains(META_STORE)) {
                 db.createObjectStore(META_STORE, { keyPath: 'key' });
+            }
+            if (!db.objectStoreNames.contains(BACKUP_STORE)) {
+                const backups = db.createObjectStore(BACKUP_STORE, { keyPath: 'id' });
+                backups.createIndex('noteId', 'noteId', { unique: false });
+                backups.createIndex('createdAt', 'createdAt', { unique: false });
             }
             if (event.oldVersion < 2 && db.objectStoreNames.contains('editorContent')) {
                 try { db.deleteObjectStore('editorContent'); } catch { /* already absent */ }
@@ -83,6 +93,28 @@ function normaliseNote(record = {}) {
         tags: [...new Set(Array.isArray(record.tags) ? record.tags.map(String).filter(Boolean) : [])],
         createdAt: Number(record.createdAt) || Number(record.updatedAt) || now,
         updatedAt: Number(record.updatedAt) || now,
+    };
+}
+
+function normaliseBackup(record = {}) {
+    const now = Date.now();
+    const reasons = new Set(['automatic', 'deleted', 'cleared']);
+    const validTime = (value) => {
+        const number = Number(value);
+        return Number.isFinite(number) && number > 0 ? number : now;
+    };
+    return {
+        id: String(record.id || `backup-${newId()}`),
+        noteId: String(record.noteId || record.id || newId()),
+        title: String(record.title || ''),
+        html: String(record.html ?? record.content ?? ''),
+        pinned: !!record.pinned,
+        folderId: record.folderId ? String(record.folderId) : null,
+        tags: [...new Set(Array.isArray(record.tags) ? record.tags.map(String).filter(Boolean) : [])],
+        noteCreatedAt: validTime(record.noteCreatedAt ?? record.createdAt),
+        sourceUpdatedAt: validTime(record.sourceUpdatedAt ?? record.updatedAt),
+        createdAt: validTime(record.backedUpAt ?? record.createdAt),
+        reason: reasons.has(record.reason) ? record.reason : 'automatic',
     };
 }
 
@@ -137,6 +169,52 @@ function readFallbackNotes() {
     const pending = parse(PENDING_KEY);
     if (pending && pending.id) notes.push(pending);
     return notes.map(normaliseNote);
+}
+
+function readFallbackBackups() {
+    const stored = parse(BACKUP_KEY);
+    const backups = Array.isArray(stored) ? stored : stored?.backups;
+    return (Array.isArray(backups) ? backups : [])
+        .map(normaliseBackup)
+        .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function mergeBackups(...collections) {
+    const merged = new Map();
+    for (const collection of collections) {
+        for (const raw of collection || []) {
+            const backup = normaliseBackup(raw);
+            const previous = merged.get(backup.id);
+            if (!previous || backup.createdAt >= previous.createdAt) merged.set(backup.id, backup);
+        }
+    }
+    return [...merged.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function pruneBackups(backups) {
+    const counts = new Map();
+    const kept = [];
+    for (const backup of mergeBackups(backups)) {
+        const count = counts.get(backup.noteId) || 0;
+        if (kept.length >= MAX_BACKUPS_TOTAL || count >= MAX_BACKUPS_PER_NOTE) continue;
+        kept.push(backup);
+        counts.set(backup.noteId, count + 1);
+    }
+    return kept;
+}
+
+function writeFallbackBackups(backups) {
+    const kept = pruneBackups(backups);
+    while (kept.length) {
+        try {
+            localStorage.setItem(BACKUP_KEY, JSON.stringify({ version: 1, backups: kept }));
+            return true;
+        } catch {
+            // Quota pressure: discard the oldest snapshot and try again.
+            kept.pop();
+        }
+    }
+    return false;
 }
 
 function mergeNotes(...collections) {
@@ -198,6 +276,55 @@ function putIntoDatabase(db, notes) {
         try {
             tx = db.transaction(STORE, 'readwrite');
             for (const note of notes) tx.objectStore(STORE).put(note);
+        } catch {
+            resolve(false);
+            return;
+        }
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+        tx.onabort = () => resolve(false);
+    });
+}
+
+function getAllBackupsFromDatabase(db) {
+    return new Promise((resolve) => {
+        let tx;
+        try {
+            tx = db.transaction(BACKUP_STORE, 'readonly');
+        } catch {
+            resolve([]);
+            return;
+        }
+        const request = tx.objectStore(BACKUP_STORE).getAll();
+        request.onsuccess = () => resolve((request.result || []).map(normaliseBackup));
+        request.onerror = () => resolve([]);
+    });
+}
+
+function putBackupsIntoDatabase(db, backups) {
+    return new Promise((resolve) => {
+        let tx;
+        try {
+            tx = db.transaction(BACKUP_STORE, 'readwrite');
+            for (const backup of backups) tx.objectStore(BACKUP_STORE).put(backup);
+        } catch {
+            resolve(false);
+            return;
+        }
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+        tx.onabort = () => resolve(false);
+    });
+}
+
+function removeBackupsFromDatabase(db, ids = null) {
+    return new Promise((resolve) => {
+        let tx;
+        try {
+            tx = db.transaction(BACKUP_STORE, 'readwrite');
+            const store = tx.objectStore(BACKUP_STORE);
+            if (ids === null) store.clear();
+            else for (const id of ids) store.delete(String(id));
         } catch {
             resolve(false);
             return;
@@ -288,6 +415,87 @@ export async function saveNote(record) {
     if (ok) clearRecovery(note.id, note.updatedAt);
     else upsertFallback(note);
     return ok || !!readFallbackNotes().find((item) => item.id === note.id);
+}
+
+/** List timestamped local snapshots, newest first. */
+export async function listBackups() {
+    const fallback = readFallbackBackups();
+    const db = await openDatabase();
+    if (!db) return pruneBackups(fallback);
+
+    const stored = await getAllBackupsFromDatabase(db);
+    const all = mergeBackups(stored, fallback);
+    const merged = pruneBackups(all);
+    const keptIds = new Set(merged.map((backup) => backup.id));
+    const expiredIds = stored.filter((backup) => !keptIds.has(backup.id)).map((backup) => backup.id);
+    if (expiredIds.length) await removeBackupsFromDatabase(db, expiredIds);
+    if (fallback.length && await putBackupsIntoDatabase(db, merged)) {
+        try { localStorage.removeItem(BACKUP_KEY); } catch { /* storage disabled */ }
+    }
+    return merged;
+}
+
+function backupMatchesNote(backup, note) {
+    return backup.title === note.title
+        && backup.html === note.html
+        && backup.pinned === note.pinned
+        && backup.folderId === note.folderId
+        && backup.tags.length === note.tags.length
+        && backup.tags.every((id, index) => id === note.tags[index]);
+}
+
+/** Save a throttled automatic snapshot, or force one before destructive work. */
+export async function saveBackup(record, { reason = 'automatic', force = false } = {}) {
+    const note = normaliseNote(record);
+    const existing = await listBackups();
+    const latest = existing.find((backup) => backup.noteId === note.id);
+    const now = Date.now();
+
+    if (latest && latest.reason === reason && backupMatchesNote(latest, note)) return latest;
+    if (!force && latest && now - latest.createdAt < BACKUP_INTERVAL) return null;
+
+    const backup = normaliseBackup({
+        id: `backup-${newId()}`,
+        noteId: note.id,
+        title: note.title,
+        html: note.html,
+        pinned: note.pinned,
+        folderId: note.folderId,
+        tags: note.tags,
+        noteCreatedAt: note.createdAt,
+        sourceUpdatedAt: note.updatedAt,
+        createdAt: now,
+        reason,
+    });
+    const kept = pruneBackups([backup, ...existing]);
+    const keptIds = new Set(kept.map((item) => item.id));
+    const removedIds = existing.filter((item) => !keptIds.has(item.id)).map((item) => item.id);
+    const db = await openDatabase();
+
+    if (!db) return writeFallbackBackups(kept) ? backup : null;
+    const saved = await putBackupsIntoDatabase(db, [backup]);
+    if (saved && removedIds.length) await removeBackupsFromDatabase(db, removedIds);
+    if (saved) return backup;
+    return writeFallbackBackups(kept) ? backup : null;
+}
+
+/** Permanently delete one snapshot without touching its source note. */
+export async function deleteBackup(id) {
+    const backupId = String(id);
+    const fallback = readFallbackBackups().filter((backup) => backup.id !== backupId);
+    if (fallback.length) writeFallbackBackups(fallback);
+    else {
+        try { localStorage.removeItem(BACKUP_KEY); } catch { /* storage disabled */ }
+    }
+    const db = await openDatabase();
+    return db ? removeBackupsFromDatabase(db, [backupId]) : true;
+}
+
+/** Permanently delete every local snapshot. */
+export async function clearBackups() {
+    try { localStorage.removeItem(BACKUP_KEY); } catch { /* storage disabled */ }
+    const db = await openDatabase();
+    return db ? removeBackupsFromDatabase(db, null) : true;
 }
 
 /** Delete one note from every possible persistence path. */

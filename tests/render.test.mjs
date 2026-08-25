@@ -209,6 +209,11 @@ export default async function run(check, group) {
             assert.equal(folderPicker?.getAttribute('aria-haspopup'), 'listbox');
             assert.ok(document.getElementById(folderPicker?.getAttribute('aria-controls')));
             assert.ok(document.querySelector('[data-action="manage-note-tags"]')?.getAttribute('aria-label'));
+            const backupDialog = document.getElementById('backupDialog');
+            assert.ok(document.querySelector('[data-action="backups"]'), 'recovery menu item missing');
+            assert.ok(backupDialog?.getAttribute('aria-labelledby'), 'recovery screen is not named');
+            assert.ok(backupDialog?.querySelector('[data-backup-action="close"]')?.getAttribute('aria-label'));
+            assert.ok(document.getElementById('backupList'), 'recovery list missing');
             ['all', 'pinned', 'unfiled'].forEach((filter) => {
                 assert.ok(document.querySelector(`[data-filter-type="${filter}"]`), `${filter} filter missing`);
             });

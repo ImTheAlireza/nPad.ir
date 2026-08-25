@@ -414,6 +414,19 @@ export default async function run(check, group) {
 
     group('behaviour: folders and tags');
 
+    document.querySelector('[data-action="manage-note-tags"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('an empty tag manager offers OK instead of an inapplicable Apply action', () => {
+        const buttons = [...document.querySelectorAll('#appDialog .dialog__footer button')];
+        assert.equal(buttons.length, 1);
+        assert.equal(buttons[0].textContent, strings.ok);
+        assert.equal(buttons[0].dataset.action, 'ok');
+    });
+    document.querySelector('#appDialog [data-action="ok"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
     document.querySelector('[data-organization-action="add-folder"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
@@ -543,6 +556,61 @@ export default async function run(check, group) {
         assert.equal(document.querySelectorAll('#currentNoteTags .tag-chip').length, 0);
         assert.ok(noteByTitle('Renamed original'));
     });
+
+    group('behaviour: automatic backups and recovery');
+
+    document.querySelector('[data-action="backups"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    let deletedProjectBackup;
+    check('the recovery screen lists timestamped automatic and deletion backups', () => {
+        const dialog = document.getElementById('backupDialog');
+        const items = [...dialog.querySelectorAll('.backup-item')];
+        deletedProjectBackup = items.find((item) =>
+            item.querySelector('.backup-item__title').textContent === 'Project'
+            && item.querySelector('.backup-item__reason').textContent === strings.backupDeleted);
+        assert.equal(dialog.open, true);
+        assert.ok(items.length >= 2, `expected backups, got ${items.length}`);
+        assert.ok(deletedProjectBackup, 'deleted Project snapshot missing');
+        assert.ok(deletedProjectBackup.querySelector('time').dateTime);
+        assert.equal(deletedProjectBackup.querySelector('.backup-item__missing').textContent, strings.backupMissing);
+    });
+
+    deletedProjectBackup.querySelector('[data-backup-action="restore"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const restoredTitle = `Project ${strings.backupRestoredSuffix}`;
+    check('restoring a backup creates a separate active note', () => {
+        assert.equal(document.getElementById('backupDialog').open, false);
+        assert.equal(noteTitle.value, restoredTitle);
+        assert.equal(editor.textContent, 'Project draft');
+        assert.ok(noteByTitle(restoredTitle));
+        assert.ok(noteByTitle('Renamed original'), 'restore overwrote another note');
+        assert.equal(tabByTitle(restoredTitle).classList.contains('document-tab--active'), true);
+    });
+
+    document.querySelector('[data-action="backups"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const backupsBeforeDelete = document.querySelectorAll('#backupList .backup-item').length;
+    const backupToDelete = [...document.querySelectorAll('#backupList .backup-item')]
+        .find((item) => item.querySelector('.backup-item__reason').textContent === strings.backupDeleted);
+    const deletedBackupId = backupToDelete.dataset.backupId;
+    backupToDelete.querySelector('[data-backup-action="delete"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('recovery snapshots can be permanently removed without deleting notes', () => {
+        assert.equal(document.getElementById('backupDialog').open, true);
+        assert.equal(document.querySelectorAll('#backupList .backup-item').length, backupsBeforeDelete - 1);
+        assert.equal(document.querySelector(`[data-backup-id="${deletedBackupId}"]`), null);
+        assert.ok(noteByTitle(restoredTitle));
+    });
+    document.querySelector('#backupDialog [data-backup-action="close"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
 
     group('behaviour: find & replace');
 

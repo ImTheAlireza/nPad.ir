@@ -30,6 +30,7 @@ $fileItems = [
     ['action' => 'print',     'icon' => 'printer',   'label' => t('menu.print'),     'shortcut' => 'Ctrl+P'],
     ['separator' => true],
     ['action' => 'details',   'icon' => 'info',      'label' => t('menu.details')],
+    ['action' => 'backups',   'icon' => 'undo',      'label' => t('menu.backups')],
     ['action' => 'clear',     'icon' => 'trash',     'label' => t('menu.clear')],
 ];
 

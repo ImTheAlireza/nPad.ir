@@ -21,6 +21,10 @@ import {
     setActiveNoteId,
     getOpenNoteIds,
     setOpenNoteIds,
+    listBackups,
+    saveBackup,
+    deleteBackup,
+    clearBackups,
     loadOrganization,
     saveOrganization,
     createFolderRecord,
@@ -81,6 +85,10 @@ export function initEditor({ strings, onEvent }) {
     const folderItemTemplate = document.getElementById('folderItemTemplate');
     const tagFilterTemplate = document.getElementById('tagFilterTemplate');
     const notesBackdrop = document.querySelector('[data-notes-backdrop]');
+    const backupDialog = document.getElementById('backupDialog');
+    const backupList = document.getElementById('backupList');
+    const backupEmpty = document.getElementById('backupEmpty');
+    const backupCount = document.getElementById('backupCount');
 
     /* Find & replace bar (guarded: the markup ships with the editor page). */
     const findBar = document.getElementById('findBar');
@@ -101,6 +109,7 @@ export function initEditor({ strings, onEvent }) {
     let organization = { folders: [], tags: [], updatedAt: 0 };
     let activeNoteId = null;
     let openNoteIds = [];
+    let recoveryBackups = [];
     let sidebarOpen = false;
     let noteFilter = { type: 'all', id: null };
 
@@ -265,6 +274,8 @@ export function initEditor({ strings, onEvent }) {
 
     async function persist() {
         window.clearTimeout(saveTimer);
+        const current = activeNote();
+        const previous = current ? { ...current, tags: [...current.tags] } : null;
         const snapshot = snapshotActiveNote();
         if (!snapshot) return false;
         const savingId = snapshot.id;
@@ -272,6 +283,14 @@ export function initEditor({ strings, onEvent }) {
         renderNotes();
         renderTabs();
 
+        const previousHasContent = previous
+            && (previous.html.trim()
+                || (previous.title.trim() && previous.title.trim() !== strings.noteUntitled));
+        const snapshotHasContent = snapshot.html.trim()
+            || (snapshot.title.trim() && snapshot.title.trim() !== strings.noteUntitled);
+        if (previousHasContent || snapshotHasContent) {
+            await saveBackup(previousHasContent ? previous : snapshot);
+        }
         const ok = await saveNote(snapshot);
         if (activeNoteId === savingId) {
             const changedWhileSaving = (noteTitleInput?.value.trim() || '') !== snapshot.title
@@ -667,6 +686,7 @@ export function initEditor({ strings, onEvent }) {
         report = true,
         folderId,
         tags,
+        pinned = false,
     } = {}) {
         if (dirty) await persist();
         const initialFolder = folderId !== undefined
@@ -678,6 +698,7 @@ export function initEditor({ strings, onEvent }) {
         const note = createNoteRecord({
             title: title || strings.noteUntitled,
             html,
+            pinned,
             folderId: initialFolder,
             tags: initialTags,
         });
@@ -723,6 +744,7 @@ export function initEditor({ strings, onEvent }) {
         const updated = { ...note, title: value, updatedAt: Date.now() };
         notes = notes.map((item) => item.id === id ? updated : item);
         if (id === activeNoteId && noteTitleInput) noteTitleInput.value = value;
+        await saveBackup(note);
         await saveNote(updated);
         renderNotes();
         renderTabs();
@@ -769,6 +791,7 @@ export function initEditor({ strings, onEvent }) {
         if (!confirmed) return;
 
         const closingIndex = openNoteIds.indexOf(id);
+        await saveBackup(note, { reason: 'deleted', force: true });
         await deleteNote(id);
         notes = notes.filter((item) => item.id !== id);
         openNoteIds = openNoteIds.filter((noteId) => noteId !== id);
@@ -957,13 +980,16 @@ export function initEditor({ strings, onEvent }) {
         const note = activeNote();
         if (!note) return;
         const selected = new Set(note.tags);
+        const hasTags = organization.tags.length > 0;
         const action = await showDialog({
             title: strings.manageTags,
             bodyHtml: `<div class="tag-checklist" id="tagChecklist"></div>`,
-            buttons: [
-                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
-                { label: strings.apply, action: 'apply-tags', variant: 'btn--primary' },
-            ],
+            buttons: hasTags
+                ? [
+                    { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                    { label: strings.apply, action: 'apply-tags', variant: 'btn--primary' },
+                ]
+                : [{ label: strings.ok, action: 'ok', variant: 'btn--primary' }],
             onOpen: (body) => {
                 const list = body.querySelector('#tagChecklist');
                 if (!organization.tags.length) {
@@ -991,6 +1017,7 @@ export function initEditor({ strings, onEvent }) {
             .map((input) => input.value);
         const updated = { ...note, tags, updatedAt: Date.now() };
         notes = notes.map((item) => item.id === note.id ? updated : item);
+        await saveBackup(note);
         await saveNote(updated);
         renderOrganization();
         renderNotes();
@@ -1006,6 +1033,7 @@ export function initEditor({ strings, onEvent }) {
             updatedAt: Date.now(),
         };
         notes = notes.map((item) => item.id === note.id ? updated : item);
+        await saveBackup(note);
         await saveNote(updated);
         renderOrganization();
         renderNotes();
@@ -1888,6 +1916,158 @@ ${cleanHtml()}
         track('view_details');
     }
 
+    function backupReasonLabel(reason) {
+        if (reason === 'deleted') return strings.backupDeleted;
+        if (reason === 'cleared') return strings.backupCleared;
+        return strings.backupAutomatic;
+    }
+
+    async function renderBackupRecovery() {
+        if (!backupList || !backupEmpty || !backupCount) return;
+        recoveryBackups = await listBackups();
+        const fragment = document.createDocumentFragment();
+
+        for (const backup of recoveryBackups) {
+            const item = document.createElement('article');
+            item.className = 'backup-item';
+            item.dataset.backupId = backup.id;
+
+            const header = document.createElement('div');
+            header.className = 'backup-item__header';
+            const title = document.createElement('h3');
+            title.className = 'backup-item__title';
+            title.dir = 'auto';
+            title.textContent = displayTitle(backup);
+            const time = document.createElement('time');
+            time.className = 'backup-item__time';
+            const timestamp = new Date(backup.createdAt);
+            time.dateTime = timestamp.toISOString();
+            time.textContent = timestamp.toLocaleString([], {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+            });
+            header.append(title, time);
+
+            const metadata = document.createElement('div');
+            metadata.className = 'backup-item__metadata';
+            const reason = document.createElement('span');
+            reason.className = `backup-item__reason backup-item__reason--${backup.reason}`;
+            reason.textContent = backupReasonLabel(backup.reason);
+            metadata.appendChild(reason);
+            if (!notes.some((note) => note.id === backup.noteId)) {
+                const missing = document.createElement('span');
+                missing.className = 'backup-item__missing';
+                missing.textContent = strings.backupMissing;
+                metadata.appendChild(missing);
+            }
+
+            const preview = document.createElement('p');
+            preview.className = 'backup-item__preview';
+            preview.dir = 'auto';
+            preview.textContent = notePreview(backup);
+
+            const actions = document.createElement('div');
+            actions.className = 'backup-item__actions';
+            const restore = document.createElement('button');
+            restore.type = 'button';
+            restore.className = 'backup-item__restore';
+            restore.dataset.backupAction = 'restore';
+            restore.dataset.backupId = backup.id;
+            restore.textContent = strings.backupRestore;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'backup-item__delete';
+            remove.dataset.backupAction = 'delete';
+            remove.dataset.backupId = backup.id;
+            remove.textContent = strings.backupDelete;
+            actions.append(restore, remove);
+
+            item.append(header, metadata, preview, actions);
+            fragment.appendChild(item);
+        }
+
+        backupList.replaceChildren(fragment);
+        backupEmpty.hidden = recoveryBackups.length !== 0;
+        backupCount.textContent = (strings.backupCount || '{count}')
+            .replace('{count}', recoveryBackups.length.toLocaleString());
+        backupDialog?.querySelector('[data-backup-action="clear"]')
+            ?.toggleAttribute('hidden', recoveryBackups.length === 0);
+    }
+
+    async function showBackupRecovery({ persistCurrent = true } = {}) {
+        if (!backupDialog) return;
+        if (persistCurrent && dirty) await persist();
+        await renderBackupRecovery();
+        if (!backupDialog.open) backupDialog.showModal();
+        const firstAction = backupDialog.querySelector('[data-backup-action="restore"]');
+        (firstAction || backupDialog.querySelector('[data-backup-action="close"]'))?.focus();
+        track('backups_opened');
+    }
+
+    function closeBackupRecovery() {
+        if (backupDialog?.open) backupDialog.close();
+    }
+
+    async function restoreLocalBackup(id) {
+        const backup = recoveryBackups.find((item) => item.id === id);
+        if (!backup) return;
+        const folderId = folderById(backup.folderId) ? backup.folderId : null;
+        const tags = backup.tags.filter((tagId) => !!tagById(tagId));
+        closeBackupRecovery();
+        await createNewNote({
+            title: `${displayTitle(backup)} ${strings.backupRestoredSuffix}`.trim(),
+            html: backup.html,
+            focusTitle: false,
+            report: false,
+            folderId,
+            tags,
+            pinned: backup.pinned,
+        });
+        toast(strings.backupRestored, 'success');
+        track('backup_restored');
+    }
+
+    async function removeLocalBackup(id) {
+        const backup = recoveryBackups.find((item) => item.id === id);
+        if (!backup) return;
+        closeBackupRecovery();
+        const confirmed = await confirmDialog({
+            title: strings.backupDeleteTitle,
+            message: strings.backupDeleteBody,
+            confirmLabel: strings.backupDelete,
+            cancelLabel: strings.cancel,
+            danger: true,
+        });
+        if (confirmed) await deleteBackup(id);
+        await showBackupRecovery({ persistCurrent: false });
+    }
+
+    async function removeAllLocalBackups() {
+        closeBackupRecovery();
+        const confirmed = await confirmDialog({
+            title: strings.backupClearTitle,
+            message: strings.backupClearBody,
+            confirmLabel: strings.backupClear,
+            cancelLabel: strings.cancel,
+            danger: true,
+        });
+        if (confirmed) await clearBackups();
+        await showBackupRecovery({ persistCurrent: false });
+    }
+
+    backupDialog?.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-backup-action]');
+        if (!action) return;
+        if (action.dataset.backupAction === 'close') closeBackupRecovery();
+        else if (action.dataset.backupAction === 'restore') {
+            void restoreLocalBackup(action.dataset.backupId);
+        } else if (action.dataset.backupAction === 'delete') {
+            void removeLocalBackup(action.dataset.backupId);
+        } else if (action.dataset.backupAction === 'clear') {
+            void removeAllLocalBackups();
+        }
+    });
+
     async function clearSaved() {
         const ok = await confirmDialog({
             title: strings.clearTitle,
@@ -1897,6 +2077,10 @@ ${cleanHtml()}
             danger: true,
         });
         if (!ok) return;
+        if (dirty) await persist();
+        for (const note of notes) {
+            await saveBackup(note, { reason: 'cleared', force: true });
+        }
         window.clearTimeout(saveTimer);
         await clearNotes();
         notes = [];
@@ -2310,6 +2494,7 @@ ${cleanHtml()}
         'save-html': saveAsHtml,
         print: printFile,
         details: showDetails,
+        backups: showBackupRecovery,
         clear: clearSaved,
         copy: () => copySelection(false),
         cut: () => copySelection(true),

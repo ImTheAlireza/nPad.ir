@@ -74,6 +74,8 @@ const ALLOWED_EVENTS = [
     'download_html',
     'print_used',
     'view_details',
+    'backups_opened',
+    'backup_restored',
     'copy_used',
     'cut_used',
     'paste_used',

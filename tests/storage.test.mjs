@@ -85,6 +85,18 @@ export default async function run(check, group) {
         assert.deepEqual(categorized.tags, [tag.id]);
     });
 
+    const automaticBackup = await storage.saveBackup(second, { force: true });
+    await storage.saveBackup(second, { force: true });
+    const deletionBackup = await storage.saveBackup(second, { reason: 'deleted', force: true });
+    let backups = await storage.listBackups();
+    check('timestamped backups persist and identical snapshots are deduplicated', () => {
+        assert.equal(backups.length, 2);
+        assert.ok(automaticBackup.createdAt > 0);
+        assert.equal(automaticBackup.noteId, second.id);
+        assert.deepEqual(new Set(backups.map((backup) => backup.reason)), new Set(['automatic', 'deleted']));
+        assert.equal(deletionBackup.html, second.html);
+    });
+
     const recovered = { ...second, html: '<p>Recovered at pagehide</p>', updatedAt: Date.now() + 1000 };
     storage.saveNoteSync(recovered);
     notes = await storage.listNotes();
@@ -95,18 +107,35 @@ export default async function run(check, group) {
 
     await storage.deleteNote(second.id);
     notes = await storage.listNotes();
-    check('deleting one note leaves all other notes intact', () => {
+    backups = await storage.listBackups();
+    check('deleting a note preserves its recovery snapshots', () => {
         assert.equal(notes.length, 1);
         assert.equal(notes[0].title, 'Migrated');
         assert.deepEqual(storage.getOpenNoteIds(), [migrated[0].id]);
+        assert.equal(backups.length, 2);
     });
 
     await storage.clearNotes();
     notes = await storage.listNotes();
-    check('clear removes notes and the active selection', () => {
+    backups = await storage.listBackups();
+    check('clearing notes leaves recovery snapshots available', () => {
         assert.equal(notes.length, 0);
         assert.equal(storage.getActiveNoteId(), null);
         assert.deepEqual(storage.getOpenNoteIds(), []);
+        assert.equal(backups.length, 2);
+    });
+
+    await storage.deleteBackup(automaticBackup.id);
+    backups = await storage.listBackups();
+    check('individual recovery snapshots can be permanently removed', () => {
+        assert.equal(backups.length, 1);
+        assert.equal(backups[0].id, deletionBackup.id);
+    });
+
+    await storage.clearBackups();
+    backups = await storage.listBackups();
+    check('all recovery snapshots can be cleared independently', () => {
+        assert.equal(backups.length, 0);
     });
 
     dom.window.close();

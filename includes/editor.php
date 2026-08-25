@@ -176,6 +176,7 @@ $jsStrings = [
     'offline'           => t('status.offline'),
     'confirm'           => t('dialog.confirm'),
     'cancel'            => t('dialog.cancel'),
+    'close'             => t('dialog.close'),
     'ok'                => t('dialog.ok'),
     'newTitle'          => t('dialog.new_title'),
     'newBody'           => t('dialog.new_body'),
@@ -248,6 +249,24 @@ $jsStrings = [
     'noTags'            => t('notes.no_tags'),
     'removeTag'         => t('notes.remove_tag'),
     'organizationDuplicate' => t('notes.duplicate_name'),
+    'backupTitle'       => t('backups.title'),
+    'backupIntro'       => t('backups.intro'),
+    'backupPrivacy'     => t('backups.privacy'),
+    'backupEmpty'       => t('backups.empty'),
+    'backupCount'       => t('backups.count'),
+    'backupAutomatic'   => t('backups.automatic'),
+    'backupDeleted'     => t('backups.deleted'),
+    'backupCleared'     => t('backups.cleared'),
+    'backupMissing'     => t('backups.missing'),
+    'backupRestore'     => t('backups.restore'),
+    'backupDelete'      => t('backups.delete'),
+    'backupDeleteTitle' => t('backups.delete_title'),
+    'backupDeleteBody'  => t('backups.delete_body'),
+    'backupClear'       => t('backups.clear'),
+    'backupClearTitle'  => t('backups.clear_title'),
+    'backupClearBody'   => t('backups.clear_body'),
+    'backupRestored'    => t('backups.restored'),
+    'backupRestoredSuffix' => t('backups.restored_suffix'),
     'detailWords'       => t('details.words'),
     'detailCharacters'  => t('details.characters'),
     'detailNoSpaces'    => t('details.no_spaces'),
@@ -625,6 +644,37 @@ $jsStrings = [
     </div>
     <p class="font-picker__note"><?= e(t('toolbar.fonts_device')) ?></p>
 </div>
+
+<dialog class="dialog backup-dialog" id="backupDialog" aria-labelledby="backupDialogTitle">
+    <div class="dialog__header">
+        <h2 class="dialog__title" id="backupDialogTitle"><?= e(t('backups.title')) ?></h2>
+        <button type="button" class="dialog__close" data-backup-action="close"
+                aria-label="<?= e(t('dialog.close')) ?>">
+            <?= icon('close') ?>
+        </button>
+    </div>
+    <div class="dialog__body backup-recovery">
+        <p class="backup-recovery__intro"><?= e(t('backups.intro')) ?></p>
+        <div class="backup-recovery__toolbar">
+            <span class="backup-recovery__count" id="backupCount" aria-live="polite"></span>
+            <button type="button" class="backup-recovery__clear" data-backup-action="clear" hidden>
+                <?= icon('trash') ?>
+                <span><?= e(t('backups.clear')) ?></span>
+            </button>
+        </div>
+        <div class="backup-list" id="backupList"></div>
+        <div class="backup-empty" id="backupEmpty" hidden>
+            <?= icon('undo') ?>
+            <p><?= e(t('backups.empty')) ?></p>
+        </div>
+        <p class="backup-recovery__privacy"><?= icon('lock') ?> <?= e(t('backups.privacy')) ?></p>
+    </div>
+    <div class="dialog__footer">
+        <button type="button" class="btn btn--primary" data-backup-action="close">
+            <?= e(t('dialog.close')) ?>
+        </button>
+    </div>
+</dialog>
 
 <dialog class="dialog" id="appDialog" aria-labelledby="dialogTitle">
     <div class="dialog__header">
