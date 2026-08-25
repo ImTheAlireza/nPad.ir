@@ -35,6 +35,21 @@ return [
         'paste'       => 'Paste',
         'paste_plain' => 'Paste as plain text',
         'select_all'  => 'Select all',
+        'find'        => 'Find',
+        'find_replace' => 'Find and replace',
+    ],
+
+    'find' => [
+        'label'            => 'Search in note',
+        'placeholder'      => 'Find',
+        'replace_placeholder' => 'Replace with',
+        'prev'             => 'Previous match',
+        'next'             => 'Next match',
+        'replace'          => 'Replace',
+        'replace_all'      => 'Replace all',
+        'count'            => '{current} of {total}',
+        'no_results'       => 'No matches',
+        'close'            => 'Close search',
     ],
 
     'toolbar' => [
@@ -73,6 +88,12 @@ return [
         'group_align'   => 'Alignment',
         'group_colour'  => 'Colour',
         'group_insert'  => 'Insert',
+        'group_view'    => 'View',
+        'find'          => 'Find in note',
+        'text_direction' => 'Text direction',
+        'spellcheck'    => 'Spell check',
+        'focus'         => 'Focus mode',
+        'focus_exit'    => 'Exit focus mode',
     ],
 
     'editor' => [
@@ -174,6 +195,8 @@ return [
             ['keys' => 'Ctrl + K', 'desc' => 'Insert link'],
             ['keys' => 'Ctrl + S', 'desc' => 'Download as .txt'],
             ['keys' => 'Ctrl + P', 'desc' => 'Print'],
+            ['keys' => 'Ctrl + F', 'desc' => 'Find'],
+            ['keys' => 'Ctrl + H', 'desc' => 'Find and replace'],
             ['keys' => 'Ctrl + Z', 'desc' => 'Undo'],
             ['keys' => 'Ctrl + Shift + Z', 'desc' => 'Redo'],
         ],

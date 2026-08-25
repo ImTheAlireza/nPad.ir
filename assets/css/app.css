@@ -1545,6 +1545,149 @@ kbd {
 }
 
 /* --------------------------------------------------------------------------
+   17b. Find & replace bar, focus mode, view toggles
+   -------------------------------------------------------------------------- */
+
+.findbar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--surface-sunken);
+}
+
+.findbar[hidden] { display: none; }
+
+.findbar__row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.findbar__input {
+    flex: 1 1 200px;
+    min-width: 160px;
+    height: 36px;
+    padding-inline: var(--space-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunken);
+    color: var(--text-strong);
+    font-size: 14px;
+}
+
+.findbar__input:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+    border-color: var(--accent);
+}
+
+.findbar__count {
+    min-width: 5ch;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.findbar__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    height: 36px;
+    padding-inline: var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--text-body);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast),
+        transform var(--transition-fast);
+}
+
+.findbar__btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-strong);
+}
+
+.findbar__btn:active { transform: scale(0.94); }
+
+.findbar__btn .icon { width: 16px; height: 16px; }
+
+.findbar__btn--primary {
+    border-color: transparent;
+    background: var(--accent);
+    color: var(--text-onaccent);
+}
+
+.findbar__btn--primary:hover {
+    background: var(--accent-hover);
+    color: var(--text-onaccent);
+}
+
+/* Focus mode: hide chrome, let the text own the viewport. The find bar
+   stays available — it is hidden by default and only appears when opened. */
+body.focus-mode .appbar,
+body.focus-mode .toolbar,
+body.focus-mode .statusbar,
+body.focus-mode .footer,
+body.focus-mode .content { display: none; }
+
+body.focus-mode .page {
+    gap: 0;
+    padding-block: var(--space-4);
+}
+
+body.focus-mode .editor-shell {
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+}
+
+body.focus-mode .editor {
+    min-height: 92vh;
+    max-width: 72ch;
+    margin-inline: auto;
+    padding: var(--space-5);
+    background: transparent;
+    font-size: 17px;
+}
+
+/* Floating exit button, visible only in focus mode. */
+.focus-exit {
+    position: fixed;
+    top: var(--space-4);
+    inset-inline-end: var(--space-4);
+    z-index: 80;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--toolbar-target);
+    height: var(--toolbar-target);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--text-body);
+    box-shadow: var(--shadow-lg);
+    cursor: pointer;
+}
+
+.focus-exit[hidden] { display: none; }
+
+body.focus-mode .focus-exit { display: inline-flex; }
+
+.focus-exit:hover {
+    background: var(--surface-hover);
+    color: var(--text-strong);
+}
+
+.focus-exit .icon { width: 18px; height: 18px; }
+
+/* --------------------------------------------------------------------------
    18. Print — the old build opened a popup and copied innerHTML without any
    stylesheet, so printed output lost all formatting. Now we print in place.
    -------------------------------------------------------------------------- */
@@ -1553,6 +1696,8 @@ kbd {
     .appbar,
     .toolbar,
     .statusbar,
+    .findbar,
+    .focus-exit,
     .content,
     .footer,
     .toast-region,
@@ -1599,5 +1744,6 @@ kbd {
 
 @media (forced-colors: active) {
     .toolbar__btn[aria-pressed='true'] { outline: 2px solid ButtonText; }
+    .findbar__btn, .focus-exit { border: 1px solid ButtonText; }
     .card, .faq__item, .appbar, .editor-shell { border: 1px solid ButtonBorder; }
 }

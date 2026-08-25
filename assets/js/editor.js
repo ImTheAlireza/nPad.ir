@@ -45,6 +45,18 @@ export function initEditor({ strings, onEvent }) {
     const stateEl = document.getElementById('saveState');
     const statusbar = document.getElementById('statusbar');
 
+    /* Find & replace bar (guarded: the markup ships with the editor page). */
+    const findBar = document.getElementById('findBar');
+    const findInput = findBar && findBar.querySelector('[data-find-input]');
+    const replaceInput = findBar && findBar.querySelector('[data-find-replace]');
+    const findCount = findBar && findBar.querySelector('#findCount');
+    const findReplaceRow = document.getElementById('findReplaceRow');
+
+    /* View toggles. */
+    const focusBtn = document.querySelector('[data-action="toggle-focus"]');
+    const dirBtn = document.querySelector('[data-action="toggle-dir"]');
+    const spellBtn = document.querySelector('[data-action="toggle-spellcheck"]');
+
     let saveTimer = null;
     let dirty = false;
     let lastSavedAt = 0;
@@ -987,6 +999,295 @@ ${editor.innerHTML}
        Menu wiring + keyboard shortcuts
        --------------------------------------------------------------------- */
 
+    /* ---------------------------------------------------------------------
+       Find & replace (Ctrl+F / Ctrl+H)
+       --------------------------------------------------------------------- */
+
+    let findMatches = [];
+    let findIndex = -1;
+
+    const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    function findTextNodes(root) {
+        // 4 === NodeFilter.SHOW_TEXT. The named constant is undefined in some
+        // embedded runtimes (jsdom, older webviews), so use the literal.
+        const nodes = [];
+        const walker = document.createTreeWalker(root, 4);
+        let node;
+        while ((node = walker.nextNode())) {
+            if (node.nodeValue && node.nodeValue.length) nodes.push(node);
+        }
+        return nodes;
+    }
+
+    /**
+     * Every occurrence of the query, in document order, as ranges.
+     * Matches may span text nodes (e.g. a phrase split by bold markup);
+     * each range records its exact start and end node/offset.
+     */
+    function computeFindMatches(query) {
+        const nodes = findTextNodes(editor);
+        const starts = new Array(nodes.length);
+        let combined = '';
+        for (let i = 0; i < nodes.length; i++) {
+            starts[i] = combined.length;
+            combined += nodes[i].nodeValue;
+        }
+
+        const matches = [];
+        if (!query) return matches;
+
+        const re = new RegExp(escapeRegExp(query), 'gi');
+        let m;
+        while ((m = re.exec(combined)) !== null) {
+            const start = m.index;
+            const end = m.index + m[0].length;
+
+            let si = 0;
+            while (si < nodes.length - 1 && starts[si + 1] <= start) si++;
+            let ei = si;
+            while (ei < nodes.length - 1 && starts[ei + 1] < end) ei++;
+
+            matches.push({
+                startNode: nodes[si],
+                startOffset: start - starts[si],
+                endNode: nodes[ei],
+                endOffset: end - starts[ei],
+            });
+
+            if (m.index === re.lastIndex) re.lastIndex++; // no zero-length spin
+        }
+        return matches;
+    }
+
+    function selectFindMatch(match) {
+        const range = document.createRange();
+        range.setStart(match.startNode, match.startOffset);
+        range.setEnd(match.endNode, match.endOffset);
+
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        // Bring an out-of-viewport match into view.
+        const rect = typeof range.getBoundingClientRect === 'function'
+            ? range.getBoundingClientRect()
+            : null;
+        const viewport = window.innerHeight || document.documentElement.clientHeight;
+        if (rect && (rect.top < 0 || rect.bottom > viewport)) {
+            window.scrollBy(0, rect.top - Math.max(viewport * 0.25, 60));
+        }
+    }
+
+    function renderFindCount() {
+        if (!findCount) return;
+        if (!findMatches.length) {
+            findCount.textContent = strings.findNoResults || '';
+            return;
+        }
+        findCount.textContent = (strings.findCount || '{current} of {total}')
+            .replace('{current}', String(findIndex + 1))
+            .replace('{total}', String(findMatches.length));
+    }
+
+    function refreshFind(fromCaret = false) {
+        if (!findInput) return;
+        const query = findInput.value.trim();
+
+        if (!query) {
+            findMatches = [];
+            findIndex = -1;
+            if (findCount) findCount.textContent = '';
+            window.getSelection().removeAllRanges();
+            return;
+        }
+
+        findMatches = computeFindMatches(query);
+        if (!findMatches.length) {
+            findIndex = -1;
+            window.getSelection().removeAllRanges();
+            renderFindCount();
+            return;
+        }
+
+        // On a fresh query, prefer the first match at or after the caret so
+        // "find next" starts where the user is looking.
+        // Range.END_TO_START === -1. Resolve from whichever global exposes
+        // the constructor — jsdom validates the constant by identity, and in
+        // some embedded runtimes only window.Range exists.
+        const RangeCtor = (typeof Range !== 'undefined' ? Range : window.Range) || null;
+        const END_TO_START = RangeCtor ? RangeCtor.END_TO_START : -1;
+        let next = 0;
+        if (fromCaret) {
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount && editor.contains(selection.anchorNode)) {
+                const caret = selection.getRangeAt(0);
+                for (let i = 0; i < findMatches.length; i++) {
+                    const probe = document.createRange();
+                    probe.setStart(findMatches[i].startNode, findMatches[i].startOffset);
+                    probe.setEnd(findMatches[i].endNode, findMatches[i].endOffset);
+                    if (caret.compareBoundaryPoints(END_TO_START, probe) <= 0) {
+                        next = i;
+                        break;
+                    }
+                }
+            }
+        }
+        findIndex = Math.min(next, findMatches.length - 1);
+        selectFindMatch(findMatches[findIndex]);
+        renderFindCount();
+    }
+
+    function stepFind(direction) {
+        if (!findMatches.length) return;
+        findIndex = (findIndex + direction + findMatches.length) % findMatches.length;
+        selectFindMatch(findMatches[findIndex]);
+        renderFindCount();
+    }
+
+    function openFind(replaceMode = false) {
+        if (!findBar) return;
+        track('find_used');
+        findBar.hidden = false;
+        if (findReplaceRow) findReplaceRow.hidden = !replaceMode;
+        if (findInput) {
+            findInput.focus();
+            if (findInput.value) {
+                findInput.select();
+                refreshFind(false);
+            }
+        }
+    }
+
+    function closeFind() {
+        if (!findBar) return;
+        findBar.hidden = true;
+        findMatches = [];
+        findIndex = -1;
+        if (findCount) findCount.textContent = '';
+        editor.focus();
+    }
+
+    function replaceCurrentMatch() {
+        const match = findMatches[findIndex];
+        if (!match || !replaceInput) return;
+        const value = replaceInput.value;
+
+        const range = document.createRange();
+        range.setStart(match.startNode, match.startOffset);
+        range.setEnd(match.endNode, match.endOffset);
+        range.deleteContents();
+
+        const selection = window.getSelection();
+        if (value) {
+            const textNode = document.createTextNode(value);
+            range.insertNode(textNode);
+            const after = document.createRange();
+            after.setStart(textNode, textNode.length);
+            after.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(after);
+        } else {
+            selection.removeAllRanges();
+        }
+
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        refreshFind(false);
+    }
+
+    function replaceAllMatches() {
+        if (!findInput || !replaceInput) return;
+        const query = findInput.value.trim();
+        if (!query) return;
+        const value = replaceInput.value;
+
+        // Reverse order keeps earlier node references valid as we edit.
+        const matches = computeFindMatches(query);
+        for (let i = matches.length - 1; i >= 0; i--) {
+            const range = document.createRange();
+            range.setStart(matches[i].startNode, matches[i].startOffset);
+            range.setEnd(matches[i].endNode, matches[i].endOffset);
+            range.deleteContents();
+            if (value) range.insertNode(document.createTextNode(value));
+        }
+
+        if (matches.length) {
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        refreshFind(false);
+    }
+
+    if (findBar) {
+        findInput.addEventListener('input', () => refreshFind(true));
+        findInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                stepFind(event.shiftKey ? -1 : 1);
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeFind();
+            }
+        });
+        replaceInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                replaceCurrentMatch();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeFind();
+            }
+        });
+        findBar.addEventListener('click', (event) => {
+            const btn = event.target.closest('[data-find-action]');
+            if (!btn) return;
+            const action = btn.dataset.findAction;
+            if (action === 'prev') stepFind(-1);
+            else if (action === 'next') stepFind(1);
+            else if (action === 'replace') replaceCurrentMatch();
+            else if (action === 'replace-all') replaceAllMatches();
+            else if (action === 'close') closeFind();
+        });
+    }
+
+    /* ---------------------------------------------------------------------
+       View options: focus mode, text direction, spell check
+       --------------------------------------------------------------------- */
+
+    function persist(key, value) {
+        try { localStorage.setItem(key, value); } catch { /* private mode */ }
+    }
+
+    function applyFocusMode(on, suppress = false) {
+        document.body.classList.toggle('focus-mode', on);
+        if (focusBtn) {
+            focusBtn.setAttribute('aria-pressed', String(on));
+            const expand = focusBtn.querySelector('[data-icon="expand"]');
+            const contract = focusBtn.querySelector('[data-icon="contract"]');
+            if (expand) expand.hidden = on;
+            if (contract) contract.hidden = !on;
+        }
+        const exitBtn = document.querySelector('.focus-exit');
+        if (exitBtn) exitBtn.hidden = !on;
+        if (on && !suppress) track('focus_mode_enabled');
+        persist('npad.focusMode', on ? '1' : '0');
+    }
+
+    function currentDir() {
+        return editor.getAttribute('dir') || document.documentElement.getAttribute('dir') || 'ltr';
+    }
+
+    function applyDir(dir) {
+        editor.setAttribute('dir', dir);
+        if (dirBtn) dirBtn.setAttribute('aria-pressed', String(dir === 'rtl'));
+        persist('npad.editorDir', dir);
+    }
+
+    function applySpellcheck(on) {
+        editor.spellcheck = on;
+        if (spellBtn) spellBtn.setAttribute('aria-pressed', String(on));
+        persist('npad.spellcheck', on ? '1' : '0');
+    }
+
     const actions = {
         new: newFile,
         open: openFile,
@@ -1003,6 +1304,16 @@ ${editor.innerHTML}
             editor.focus();
             document.execCommand('selectAll');
             updateCounts();
+        },
+        find: () => openFind(false),
+        'toggle-focus': () => applyFocusMode(!document.body.classList.contains('focus-mode')),
+        'toggle-dir': () => {
+            applyDir(currentDir() === 'rtl' ? 'ltr' : 'rtl');
+            track('dir_toggled');
+        },
+        'toggle-spellcheck': () => {
+            applySpellcheck(!editor.spellcheck);
+            track('spellcheck_toggled');
         },
     };
 
@@ -1030,12 +1341,32 @@ ${editor.innerHTML}
         } else if (key === 'p') {
             event.preventDefault();
             printFile();
+        } else if (key === 'f') {
+            event.preventDefault();
+            openFind(false);
+        } else if (key === 'h') {
+            event.preventDefault();
+            openFind(true);
         } else if (key === 'z' && event.shiftKey) {
             // Chrome does not map Ctrl+Shift+Z to redo inside contenteditable.
             if (editor.contains(document.activeElement)) {
                 event.preventDefault();
                 exec('redo');
             }
+        }
+    });
+
+    // Escape: close the find bar first, then leave focus mode.
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (findBar && !findBar.hidden) {
+            event.preventDefault();
+            closeFind();
+            return;
+        }
+        if (document.body.classList.contains('focus-mode')) {
+            event.preventDefault();
+            applyFocusMode(false);
         }
     });
 
@@ -1060,6 +1391,14 @@ ${editor.innerHTML}
         updateCounts();
         setSaveState('saved');
         syncToolbarState();
+
+        // Restore view options (silent: booting into focus mode is not an event).
+        try {
+            if (localStorage.getItem('npad.focusMode') === '1') applyFocusMode(true, true);
+            const savedDir = localStorage.getItem('npad.editorDir');
+            if (savedDir === 'ltr' || savedDir === 'rtl') applyDir(savedDir);
+            applySpellcheck(localStorage.getItem('npad.spellcheck') !== '0');
+        } catch { /* private mode */ }
     })();
 
     window.addEventListener('online', () => setSaveState(dirty ? 'unsaved' : 'saved'));

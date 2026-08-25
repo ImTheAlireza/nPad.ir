@@ -196,6 +196,16 @@ $jsStrings = [
     'sizeInvalid'       => t('dialog.size_invalid'),
     'textColour'        => t('toolbar.text_colour'),
     'highlightColour'   => t('toolbar.highlight'),
+    'findLabel'         => t('find.label'),
+    'findPlaceholder'   => t('find.placeholder'),
+    'findReplacePlaceholder' => t('find.replace_placeholder'),
+    'findPrev'          => t('find.prev'),
+    'findNext'          => t('find.next'),
+    'findReplace'       => t('find.replace'),
+    'findReplaceAll'    => t('find.replace_all'),
+    'findCount'         => t('find.count'),
+    'findNoResults'     => t('find.no_results'),
+    'findClose'         => t('find.close'),
     'detailWords'       => t('details.words'),
     'detailCharacters'  => t('details.characters'),
     'detailNoSpaces'    => t('details.no_spaces'),
@@ -253,6 +263,53 @@ $jsStrings = [
                 <span class="colorfield__swatch" style="background-color: #fde047" aria-hidden="true"></span>
             </button>
         </div>
+
+        <div class="toolbar__group" role="group" aria-label="<?= e(t('toolbar.group_view')) ?>">
+            <button type="button" class="toolbar__btn" data-action="find"
+                    title="<?= e(t('toolbar.find')) ?>" aria-label="<?= e(t('toolbar.find')) ?>">
+                <?= icon('search') ?>
+            </button>
+            <button type="button" class="toolbar__btn" data-action="toggle-dir" aria-pressed="false"
+                    title="<?= e(t('toolbar.text_direction')) ?>" aria-label="<?= e(t('toolbar.text_direction')) ?>">
+                <?= icon('dir') ?>
+            </button>
+            <button type="button" class="toolbar__btn" data-action="toggle-spellcheck" aria-pressed="true"
+                    title="<?= e(t('toolbar.spellcheck')) ?>" aria-label="<?= e(t('toolbar.spellcheck')) ?>">
+                <?= icon('spellcheck') ?>
+            </button>
+        </div>
+    </div>
+
+    <div class="findbar" id="findBar" role="search" aria-label="<?= e(t('find.label')) ?>" hidden>
+        <div class="findbar__row">
+            <label class="visually-hidden" for="findInput"><?= e(t('find.placeholder')) ?></label>
+            <input type="search" class="findbar__input" id="findInput" data-find-input
+                   placeholder="<?= e(t('find.placeholder')) ?>" autocomplete="off" spellcheck="false">
+            <span class="findbar__count" id="findCount" aria-live="polite"></span>
+            <button type="button" class="findbar__btn" data-find-action="prev"
+                    title="<?= e(t('find.prev')) ?>" aria-label="<?= e(t('find.prev')) ?>">
+                <?= icon('chevron-up', ['class' => 'icon']) ?>
+            </button>
+            <button type="button" class="findbar__btn" data-find-action="next"
+                    title="<?= e(t('find.next')) ?>" aria-label="<?= e(t('find.next')) ?>">
+                <?= icon('chevron-down', ['class' => 'icon']) ?>
+            </button>
+            <button type="button" class="findbar__btn" data-find-action="close"
+                    title="<?= e(t('find.close')) ?>" aria-label="<?= e(t('find.close')) ?>">
+                <?= icon('close', ['class' => 'icon']) ?>
+            </button>
+        </div>
+        <div class="findbar__row" id="findReplaceRow" hidden>
+            <label class="visually-hidden" for="replaceInput"><?= e(t('find.replace_placeholder')) ?></label>
+            <input type="text" class="findbar__input" id="replaceInput" data-find-replace
+                   placeholder="<?= e(t('find.replace_placeholder')) ?>" autocomplete="off" spellcheck="false">
+            <button type="button" class="findbar__btn findbar__btn--primary" data-find-action="replace">
+                <?= e(t('find.replace')) ?>
+            </button>
+            <button type="button" class="findbar__btn" data-find-action="replace-all">
+                <?= e(t('find.replace_all')) ?>
+            </button>
+        </div>
     </div>
 
     <div id="editor"
@@ -275,6 +332,11 @@ $jsStrings = [
         </div>
     </div>
 </main>
+
+<button type="button" class="focus-exit" data-action="toggle-focus" hidden
+        title="<?= e(t('toolbar.focus_exit')) ?>" aria-label="<?= e(t('toolbar.focus_exit')) ?>">
+    <?= icon('contract', ['class' => 'icon']) ?>
+</button>
 
 <div class="font-picker__popup" id="fontPickerPopup" data-open="false" hidden>
     <div class="font-picker__search-wrap">

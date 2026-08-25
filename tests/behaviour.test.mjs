@@ -249,6 +249,103 @@ export default async function run(check, group) {
         assert.ok(/\b0\b/.test(counts.textContent), counts.textContent);
     });
 
+    group('behaviour: find & replace');
+
+    const findBar = document.getElementById('findBar');
+    const findInput = document.getElementById('findInput');
+    const replaceInput = document.getElementById('replaceInput');
+    const findCount = document.getElementById('findCount');
+    const pressKey = (target, opts) =>
+        target.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...opts }));
+
+    check('Ctrl+F opens the find bar and reports the event', () => {
+        pressKey(document, { key: 'f', ctrlKey: true });
+        assert.equal(findBar.hidden, false, 'find bar did not open');
+        assert.ok(tracked.includes('find_used'), 'find_used not tracked');
+    });
+
+    check('matches span text nodes and count is shown', () => {
+        // Three "hello" occurrences, one split across <b> markup.
+        editor.innerHTML = '<p>Hello world, hello again.</p><p>H<b>ello</b> there.</p>';
+        findInput.value = 'hello';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
+    });
+
+    check('Enter and Shift+Enter step through matches', () => {
+        pressKey(findInput, { key: 'Enter' });
+        assert.match(findCount.textContent, /2 of 3/, findCount.textContent);
+        pressKey(findInput, { key: 'Enter', shiftKey: true });
+        assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
+        assert.equal(window.getSelection().toString().toLowerCase(), 'hello');
+    });
+
+    check('replace swaps the current match and triggers autosave', () => {
+        // Caret sits inside the first match, so a fresh query starts one
+        // match in; step back onto the very first occurrence.
+        findInput.value = 'hello';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        let guard = 0;
+        while (!/1 of 3/.test(findCount.textContent) && guard++ < 5) {
+            pressKey(findInput, { key: 'Enter', shiftKey: true });
+        }
+        replaceInput.value = 'hi';
+        const replaceBtn = [...findBar.querySelectorAll('[data-find-action]')]
+            .find((b) => b.dataset.findAction === 'replace');
+        replaceBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(editor.innerHTML.includes('hi world'), editor.innerHTML.slice(0, 80));
+    });
+
+    check('replace all replaces every occurrence', () => {
+        findInput.value = 'hello';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        const replaceAllBtn = [...findBar.querySelectorAll('[data-find-action]')]
+            .find((b) => b.dataset.findAction === 'replace-all');
+        replaceAllBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(!/hello/i.test(editor.textContent), editor.textContent);
+    });
+
+    check('no-results message and Escape close', () => {
+        findInput.value = 'zzz-not-here';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.equal(findCount.textContent, strings.findNoResults);
+        pressKey(findInput, { key: 'Escape' });
+        assert.equal(findBar.hidden, true, 'find bar did not close');
+    });
+
+    group('behaviour: view toggles');
+
+    check('focus mode toggles, persists and shows the exit button', () => {
+        const focusBtn = document.querySelector('[data-action="toggle-focus"]');
+        focusBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(document.body.classList.contains('focus-mode'), 'focus class missing');
+        assert.equal(focusBtn.getAttribute('aria-pressed'), 'true');
+        assert.equal(window.localStorage.getItem('npad.focusMode'), '1');
+        assert.equal(document.querySelector('.focus-exit').hidden, false);
+        assert.ok(tracked.includes('focus_mode_enabled'), 'focus_mode_enabled not tracked');
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.ok(!document.body.classList.contains('focus-mode'), 'Escape did not exit focus');
+    });
+
+    check('text direction toggles and persists', () => {
+        const dirBtn = document.querySelector('[data-action="toggle-dir"]');
+        const before = editor.getAttribute('dir') || document.documentElement.getAttribute('dir');
+        dirBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        const after = editor.getAttribute('dir');
+        assert.ok(after && after !== before, `dir did not change: ${before} -> ${after}`);
+        assert.ok(['ltr', 'rtl'].includes(window.localStorage.getItem('npad.editorDir')));
+        assert.ok(tracked.includes('dir_toggled'), 'dir_toggled not tracked');
+    });
+
+    check('spell check toggles and persists', () => {
+        const spellBtn = document.querySelector('[data-action="toggle-spellcheck"]');
+        const before = editor.spellcheck;
+        spellBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.spellcheck, !before);
+        assert.equal(window.localStorage.getItem('npad.spellcheck'), before ? '0' : '1');
+        assert.ok(tracked.includes('spellcheck_toggled'), 'spellcheck_toggled not tracked');
+    });
+
     group('behaviour: save state');
 
     check('status bar advertises a save state', () => {

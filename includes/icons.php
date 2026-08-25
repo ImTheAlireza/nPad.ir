@@ -62,6 +62,12 @@ function npad_icon_paths(): array
         'pen'         => '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
         'keyboard'    => '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
         'arrow-up'    => '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+        'chevron-up'  => '<path d="m6 15 6-6 6 6"/>',
+        'chevron-down' => '<path d="m6 9 6 6 6-6"/>',
+        'expand'      => '<path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/>',
+        'contract'    => '<path d="M9 4v5H4"/><path d="M15 4v5h5"/><path d="M9 20v-5H4"/><path d="M15 20v-5h5"/>',
+        'dir'         => '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="m9 16-2 2 2 2"/><path d="m15 16 2 2-2 2"/>',
+        'spellcheck'  => '<path d="M4 7h12"/><path d="M4 12h12"/><path d="M4 17h8"/><path d="m14 15 3 3 5-5"/>',
         'globe'       => '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
     ];
 }

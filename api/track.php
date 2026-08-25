@@ -82,6 +82,10 @@ const ALLOWED_EVENTS = [
     'dark_mode_disabled',
     'link_created',
     'clear_data',
+    'find_used',
+    'focus_mode_enabled',
+    'dir_toggled',
+    'spellcheck_toggled',
 ];
 
 $event = trim((string) ($_POST['event'] ?? ''));

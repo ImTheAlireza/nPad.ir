@@ -94,6 +94,15 @@ function npad_render_menu(string $id, string $label, array $items): void
                <?= $lang === 'fa' ? 'aria-current="true"' : '' ?>>فا</a>
         </div>
 
+        <button type="button" class="iconbtn" data-action="toggle-focus"
+                aria-pressed="false"
+                aria-label="<?= e(t('toolbar.focus')) ?>"
+                data-label-focus="<?= e(t('toolbar.focus')) ?>"
+                data-label-focus-exit="<?= e(t('toolbar.focus_exit')) ?>">
+            <?= icon('expand', ['class' => 'icon', 'data-icon' => 'expand']) ?>
+            <?= icon('contract', ['class' => 'icon', 'data-icon' => 'contract', 'hidden' => 'hidden']) ?>
+        </button>
+
         <button type="button" class="iconbtn" data-theme-toggle
                 aria-pressed="false"
                 aria-label="<?= e(t('theme.dark')) ?>"

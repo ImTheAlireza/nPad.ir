@@ -35,6 +35,21 @@ return [
         'paste'       => 'چسباندن',
         'paste_plain' => 'چسباندن بدون قالب‌بندی',
         'select_all'  => 'انتخاب همه',
+        'find'        => 'جستجو',
+        'find_replace' => 'جستجو و جایگزینی',
+    ],
+
+    'find' => [
+        'label'            => 'جستجو در یادداشت',
+        'placeholder'      => 'جستجو',
+        'replace_placeholder' => 'جایگزینی با',
+        'prev'             => 'نتیجه قبلی',
+        'next'             => 'نتیجه بعدی',
+        'replace'          => 'جایگزین',
+        'replace_all'      => 'جایگزینی همه',
+        'count'            => '{current} از {total}',
+        'no_results'       => 'نتیجه‌ای یافت نشد',
+        'close'            => 'بستن جستجو',
     ],
 
     'toolbar' => [
@@ -73,6 +88,12 @@ return [
         'group_align'   => 'چیدمان',
         'group_colour'  => 'رنگ',
         'group_insert'  => 'درج',
+        'group_view'    => 'نمایش',
+        'find'          => 'جستجو در یادداشت',
+        'text_direction' => 'جهت متن',
+        'spellcheck'    => 'غلط‌یاب',
+        'focus'         => 'حالت تمرکز',
+        'focus_exit'    => 'خروج از حالت تمرکز',
     ],
 
     'editor' => [
@@ -174,6 +195,8 @@ return [
             ['keys' => 'Ctrl + K', 'desc' => 'درج پیوند'],
             ['keys' => 'Ctrl + S', 'desc' => 'دریافت فایل txt.'],
             ['keys' => 'Ctrl + P', 'desc' => 'چاپ'],
+            ['keys' => 'Ctrl + F', 'desc' => 'جستجو'],
+            ['keys' => 'Ctrl + H', 'desc' => 'جستجو و جایگزینی'],
             ['keys' => 'Ctrl + Z', 'desc' => 'واگرد'],
             ['keys' => 'Ctrl + Shift + Z', 'desc' => 'ازنو'],
         ],
