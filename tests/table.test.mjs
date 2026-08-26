@@ -220,6 +220,22 @@ export default function run(check, group) {
         assert.equal(table.querySelector(':scope > caption'), null);
     });
 
+    check('appending a row to a header-only table lands in a new tbody', () => {
+        const table = mount('<table><thead><tr><th>A</th><th>B</th></tr></thead></table>');
+        const row = tableModule.insertRow(table, table.rows[0].cells[0], false);
+        assert.equal(table.tBodies.length, 1, 'tbody not created');
+        assert.equal(row.parentNode.tagName, 'TBODY');
+        assert.equal(table.rows.length, 2);
+    });
+
+    check('moveRow refuses to cross section boundaries', () => {
+        const table = mount('<table><thead><tr><th>A</th></tr></thead>'
+            + '<tbody><tr><td>B</td></tr></tbody></table>');
+        assert.equal(tableModule.moveRow(table, table.rows[0].cells[0], 1), false, 'thead row moved into tbody');
+        assert.equal(tableModule.moveRow(table, table.rows[1].cells[0], -1), false, 'tbody row moved into thead');
+        assert.ok(tableModule.moveRow(table, table.rows[0].cells[0], 1) === false);
+    });
+
     check('moving a row swaps its position', () => {
         const table = mount(tableModule.createTableHtml({ rows: 3, cols: 1 }));
         table.rows[0].cells[0].textContent = 'one';

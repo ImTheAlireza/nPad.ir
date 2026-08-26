@@ -248,11 +248,23 @@ export function insertRowAt(table, gridData, target) {
     if (!rowCells(row).length) row.appendChild(makeCell());
 
     const anchor = gridData.rows[target] || null;
-    if (anchor) anchor.parentNode.insertBefore(row, anchor);
-    else {
-        const last = gridData.rows[gridData.rows.length - 1];
-        (last ? last.parentNode : table).appendChild(row);
+    if (anchor) {
+        anchor.parentNode.insertBefore(row, anchor);
+        return row;
     }
+    // Appending past the last row: data rows belong in <tbody>, never in a
+    // <thead> (a header-only table appends its first body row here).
+    const last = gridData.rows[gridData.rows.length - 1];
+    let parent = last ? last.parentNode : null;
+    if (parent?.tagName === 'THEAD') {
+        parent = table.querySelector(':scope > tbody')
+            || (() => {
+                const tbody = document.createElement('tbody');
+                table.appendChild(tbody);
+                return tbody;
+            })();
+    }
+    (parent || table).appendChild(row);
     return row;
 }
 
@@ -599,6 +611,9 @@ export function moveRow(table, cell, delta) {
     if (target < 0 || target >= gridData.rows.length) return false;
     const row = gridData.rows[pos.row];
     const other = gridData.rows[target];
+    // Crossing a section boundary (thead <-> tbody) silently changes header
+    // semantics, so only move within the same section.
+    if (row.parentNode?.tagName !== other.parentNode?.tagName) return false;
     if (delta > 0) other.parentNode.insertBefore(row, other.nextSibling);
     else other.parentNode.insertBefore(row, other);
     return true;

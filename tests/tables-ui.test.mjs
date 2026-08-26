@@ -193,7 +193,7 @@ export default async function run(check, group) {
         assert.ok(tracked.includes('table_tool_used'), 'table_tool_used not tracked');
     });
 
-    await step('merge and split rewrite spans correctly', () => {
+    await step('merge works even when clicking the toolbar collapses the selection', () => {
         const table = editor.querySelector('table');
         const body = table.tBodies[0];
         const [first, second] = [...body.rows[0].cells].slice(0, 2);
@@ -203,9 +203,13 @@ export default async function run(check, group) {
         const selection = window.getSelection();
         selection.removeAllRanges();
         selection.addRange(range);
+        // selectionchange saves the range (as in a real browser); then the
+        // toolbar button click moves focus and collapses the selection.
+        document.dispatchEvent(new window.Event('selectionchange'));
+        selection.removeAllRanges();
         clickTool('merge');
         const merged = body.rows[0].cells[0];
-        assert.equal(merged.getAttribute('colspan'), '2', 'merge did not set colspan');
+        assert.equal(merged.getAttribute('colspan'), '2', 'merge lost the collapsed selection');
         clickTool('split');
         assert.equal(body.rows[0].cells[0].getAttribute('colspan'), null, 'split did not restore cells');
     });
@@ -268,6 +272,28 @@ export default async function run(check, group) {
         putCaretInCell(editor, true);
         clickMenu('insert-hr');
         assert.ok(editor.querySelector('hr'), 'hr not inserted');
+    });
+
+    await step('inserting a table from inside a cell places it beside the current table', async () => {
+        editor.innerHTML = '<p>pre</p><table><tbody><tr><td>x</td><td>y</td></tr></tbody></table><p><br></p>';
+        document.dispatchEvent(new window.Event('selectionchange'));
+        const first = editor.querySelector('table');
+        putCaretInCell(first.tBodies[0].rows[0].cells[0], true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu('insert-table');
+        const body = dialog.querySelector('.dialog__body');
+        body.querySelector('[data-table-rows]').value = '2';
+        body.querySelector('[data-table-cols]').value = '2';
+        body.querySelector('[data-table-rows]').dispatchEvent(new window.Event('input', { bubbles: true }));
+        click(dialog.querySelector('[data-action="insert"]'));
+        await flush();
+
+        const tables = [...editor.querySelectorAll('table')];
+        assert.equal(tables.length, 2, 'second table not created');
+        const second = tables[1];
+        assert.equal(second.parentNode, editor, 'new table nested inside another table or cell');
+        assert.equal(first.contains(second), false, 'new table is a child of the first table');
+        // Clean up: the context-menu step rebuilds the DOM anyway.
     });
 
     await step('right-click context menu opens, acts and closes', () => {

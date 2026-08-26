@@ -686,6 +686,10 @@ export function initEditor({ strings, onEvent }) {
         setActiveNoteId(note.id);
         editor.innerHTML = sanitizeHtml(note.html || '');
         normaliseTables(editor);
+        // The new note's caret is empty: force the base toolbar back even if
+        // the previous note ended with the caret inside a table.
+        markActiveCell(null);
+        setToolbarContext('base');
         if (noteTitleInput) noteTitleInput.value = displayTitle(note);
         lastSavedAt = note.updatedAt || 0;
         dirty = false;
@@ -1409,10 +1413,16 @@ export function initEditor({ strings, onEvent }) {
         const range = selection.getRangeAt(0);
         range.deleteContents();
 
-        // Inside a table cell the insert simply lands in the cell (this is how
-        // nested tables form); elsewhere avoid planting a block inside a
-        // non-empty paragraph, which corrupts the DOM.
-        if (closestTableCell(range.startContainer)) {
+        // A block inside a table cell would nest (breaking the grid model and
+        // the DOCX/Markdown exporters), so it lands right after the table the
+        // cell belongs to. Inline text insertion still goes into the cell.
+        const cell = closestTableCell(range.startContainer);
+        if (cell) {
+            const table = cell.closest('table');
+            if (table) {
+                table.after(element);
+                return true;
+            }
             range.insertNode(element);
             return true;
         }
@@ -1430,12 +1440,6 @@ export function initEditor({ strings, onEvent }) {
         return true;
     }
 
-    function createTableElement(options) {
-        const template = document.createElement('template');
-        template.innerHTML = createTableHtml(options);
-        return template.content.firstElementChild;
-    }
-
     function ensureSpacerAfter(element) {
         const next = element.nextElementSibling;
         if (!next || ['P', 'DIV', 'TABLE', 'HR', 'UL', 'OL', 'BLOCKQUOTE', 'PRE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(next.tagName)) {
@@ -1447,8 +1451,35 @@ export function initEditor({ strings, onEvent }) {
     }
 
     function insertTableFromOptions(options) {
-        const table = createTableElement(options);
-        if (!insertBlockAtSelection(table)) return;
+        editor.focus();
+        restoreEditorSelection();
+
+        // Prefer execCommand('insertHTML') so the browser's own undo stack
+        // covers the insertion; fall back to a direct DOM insert (jsdom,
+        // unsupported engines) where the command is a no-op.
+        const html = createTableHtml(options);
+        const existingTables = new Set(editor.querySelectorAll('table'));
+        try {
+            document.execCommand('insertHTML', false, html);
+        } catch {
+            /* fall through to the range-based insert */
+        }
+        let table = [...editor.querySelectorAll('table')].find((t) => !existingTables.has(t)) || null;
+
+        if (!table) {
+            const template = document.createElement('template');
+            template.innerHTML = html;
+            table = template.content.firstElementChild;
+            if (!insertBlockAtSelection(table)) return;
+        } else if (table.parentNode !== editor || closestTableCell(table)) {
+            // Browser heuristics can leave the new table inside a block or a
+            // cell; keep it a top-level sibling so the grid stays sound.
+            const holder = table.parentNode;
+            const nestingCell = closestTableCell(table);
+            if (nestingCell) nestingCell.closest('table').after(table);
+            else holder?.after(table);
+        }
+
         ensureSpacerAfter(table);
         const firstCell = table.querySelector('td, th');
         if (firstCell) placeCaretInCell(firstCell, { atStart: true });
@@ -1675,6 +1706,16 @@ export function initEditor({ strings, onEvent }) {
         if (!table) {
             setToolbarContext('base');
             return;
+        }
+
+        // Actions that act on the whole selection (merge, alignment, shading)
+        // must read the pre-click rectangle. Clicking a toolbar button moves
+        // focus there and collapses the live selection, so bring back the
+        // range saved by selectionchange/pointerdown first.
+        const RECT_ACTIONS = ['merge', 'align-left', 'align-center', 'align-right', 'cell-colour'];
+        if (RECT_ACTIONS.includes(action)) {
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed) restoreEditorSelection();
         }
 
         switch (action) {

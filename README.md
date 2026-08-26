@@ -176,6 +176,9 @@ the same selection-friendly pattern future contexts will use:
 - move rows and delete the whole table (with confirmation)
 - right-click context menu with the same actions
 - `Tab` / `Shift+Tab` walk cells; `Tab` from the last cell appends a row
+- inserted tables go through `execCommand('insertHTML')`, so `Ctrl+Z` undoes
+  the insertion; a new table never nests inside a cell (it lands beside the
+  current table)
 
 Everything stays in the browser. Tables survive local backups, HTML and NPad
 JSON exports, and are serialised to GFM pipe tables in Markdown, real
@@ -190,7 +193,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-250+ assertions covering:
+283 assertions covering:
 
 | Suite | What it proves |
 |---|---|
