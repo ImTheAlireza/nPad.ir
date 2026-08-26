@@ -2,4 +2,6 @@
 deployment:
   tasks:
     - export DEPLOYPATH=/home/gniwvzcf/public_html/
-    - "/bin/rsync -av --exclude='.git*' --exclude='.cpanel.yml' --exclude='config.php' . $DEPLOYPATH"
+    - /bin/cp -a $DEPLOYPATH/config.php /home/gniwvzcf/config_backup.php 2>/dev/null || true
+    - /bin/cp -R * $DEPLOYPATH
+    - /bin/cp -a /home/gniwvzcf/config_backup.php $DEPLOYPATH/config.php 2>/dev/null || true
