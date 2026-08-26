@@ -252,6 +252,7 @@ return [
         'toolbar_label' => 'ابزارهای تصویر',
         'context_menu'  => 'منوی تصویر',
         'group_size'    => 'اندازه تصویر',
+        'group_layout'  => 'پیچیدن متن و لایه‌بندی',
         'group_edit'    => 'گزینه‌های تصویر',
         'size_small'    => 'کوچک (۲۵٪)',
         'size_medium'   => 'متوسط (۵۰٪)',

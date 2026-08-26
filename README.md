@@ -224,6 +224,19 @@ same bounded, local-first rules as the rest of the app:
     reference (never pixels, never free-form CSS) and maps to DOCX on export:
     `a:srcRect` crop, `rot`, `behindDoc`/`wrapSquare`/`wrapTopAndBottom`
     anchors with page/paragraph offsets, grayscale and opacity
+- hands-on object editing (Word/Google-Docs flow):
+  - click an image → it is **selected as an object**: outline + four corner
+    resize handles overlay, image toolbar stays; Escape deselects,
+    `Delete` removes it, arrow keys nudge a floating object (Shift = 10 px)
+  - drag a **corner handle** to resize — width scales live, aspect stays
+    locked (Shift = free size in the properties dialog)
+  - drag the **image body to move it anywhere**: an inline/wrapped image is
+    automatically promoted to a floating object (keeping its on-screen
+    position) and follows the pointer, anchored to its paragraph; Escape
+    during a drag cancels it
+  - quick layout buttons: **Inline · Wrap · Break (text in two pieces) ·
+    In front · Behind · Fixed**; fixed is page-anchored, the rest move with
+    text — all persisted and mapped to DOCX on export
 - captions become `<figure>/<figcaption>` and stay editable; alt text is
   preserved for accessibility; missing payloads show a clear placeholder
 - exports embed the images (HTML, Markdown and NPad JSON as data URIs; DOCX
@@ -239,7 +252,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-327 assertions covering:
+332 assertions covering:
 
 | Suite | What it proves |
 |---|---|

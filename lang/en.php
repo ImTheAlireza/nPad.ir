@@ -252,6 +252,7 @@ return [
         'toolbar_label' => 'Image tools',
         'context_menu'  => 'Image menu',
         'group_size'    => 'Image size',
+        'group_layout'  => 'Text wrapping and layering',
         'group_edit'    => 'Image options',
         'size_small'    => 'Small (25%)',
         'size_medium'   => 'Medium (50%)',

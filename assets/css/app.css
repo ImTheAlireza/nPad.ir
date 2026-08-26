@@ -1902,6 +1902,39 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     margin: 0;
 }
 
+/* Object selection chrome: outline + corner resize handles overlay.
+   Fixed-position (window coordinates), outside the contenteditable so it can
+   never be typed into, deleted or saved. */
+.npad-object-overlay {
+    position: fixed;
+    z-index: 70;
+    pointer-events: none;
+    border: 2px solid var(--accent-ring);
+    box-sizing: border-box;
+}
+
+.npad-object-overlay[hidden] { display: none; }
+
+.npad-object-overlay__handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    padding: 0;
+    border: 2px solid var(--accent);
+    border-radius: 2px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+    pointer-events: auto;
+    touch-action: none;
+}
+
+.npad-object-overlay__handle--nw { left: 0; top: 0; transform: translate(-50%, -50%); }
+.npad-object-overlay__handle--ne { right: 0; top: 0; transform: translate(50%, -50%); }
+.npad-object-overlay__handle--sw { left: 0; bottom: 0; transform: translate(-50%, 50%); }
+.npad-object-overlay__handle--se { right: 0; bottom: 0; transform: translate(50%, 50%); }
+
+.npad-object-overlay__handle:hover { background: var(--accent-soft); }
+
 /* Image properties dialog. */
 .image-props__section {
     margin: 0 0 var(--space-4);
@@ -3461,6 +3494,7 @@ body.focus-mode .focus-exit { display: inline-flex; }
     .findbar,
     .focus-exit,
     .spell-tip,
+    .npad-object-overlay,
     .dialog,
     .content,
     .footer,

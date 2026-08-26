@@ -599,6 +599,91 @@ export default async function run(check, group) {
         assert.match(figure.getAttribute('style'), /top:\s*-2px/);
     });
 
+    /* --------------------------------------------------------------------
+       Object selection, resize handles and free movement
+       -------------------------------------------------------------------- */
+
+    const handles = () => [...document.querySelectorAll('[data-image-handle]')];
+
+    await step('clicking an image shows object chrome with four corner handles', () => {
+        editor.innerHTML = '<p>Intro text.</p>'
+            + '<img data-npad-img="obj-test" alt="object">'
+            + '<p>Trailing text.</p>';
+        document.dispatchEvent(new window.Event('selectionchange'));
+        const img = editor.querySelector('img');
+        img.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }));
+        img.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        document.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+
+        assert.ok(img.classList.contains('npad-img-selected'), 'image not selected as object');
+        assert.ok(document.querySelector('.npad-object-overlay'), 'object overlay missing');
+        assert.equal(handles().length, 4, 'corner handles missing');
+        assert.equal(imagePane.hidden, false, 'image pane not shown');
+    });
+
+    await step('dragging the image body promotes it to floating and moves it anywhere', () => {
+        const img = editor.querySelector('img');
+        img.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }));
+        document.dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, cancelable: true, clientX: 150, clientY: 90 }));
+        document.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+
+        const props = JSON.parse(img.getAttribute('data-npad-props'));
+        assert.equal(props.layout, 'front', 'drag did not promote to a floating object');
+        assert.equal(props.pos.x, 100, 'x not moved');
+        assert.equal(props.pos.y, 40, 'y not moved');
+        assert.ok(img.closest('figure'), 'floating object lost its mount');
+    });
+
+    await step('corner handles resize the object with aspect preserved', () => {
+        const img = editor.querySelector('img');
+        const se = handles().find((h) => h.dataset.imageHandle === 'se');
+        img.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }));
+        se.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }));
+        document.dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, cancelable: true, clientX: 100, clientY: 70 }));
+        document.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+
+        const width = JSON.parse(img.getAttribute('data-npad-props')).width;
+        assert.ok(typeof width === 'string' && (width.endsWith('%') || width.endsWith('px')), `width not persisted: ${width}`);
+        assert.notEqual(width, '100%', 'resize did not change the width');
+    });
+
+    await step('layout quick buttons switch wrap/break/front/behind/fixed', () => {
+        const img = editor.querySelector('img');
+        img.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+        img.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+        const press = (action) => click(imagePane.querySelector(`[data-image-action="${action}"]`));
+
+        press('layout-break');
+        assert.equal(JSON.parse(img.getAttribute('data-npad-props')).layout, 'top-bottom', 'break not applied');
+        press('layout-inline');
+        assert.equal(JSON.parse(img.getAttribute('data-npad-props')).layout, 'inline', 'inline not applied');
+        press('layout-wrap');
+        assert.equal(JSON.parse(img.getAttribute('data-npad-props')).layout, 'wrap-right', 'wrap not applied');
+        press('layout-behind');
+        assert.equal(JSON.parse(img.getAttribute('data-npad-props')).layout, 'behind', 'behind not applied');
+        press('layout-front');
+        assert.equal(JSON.parse(img.getAttribute('data-npad-props')).layout, 'front', 'front not applied');
+        press('layout-fixed');
+        const fixedProps = JSON.parse(img.getAttribute('data-npad-props'));
+        assert.equal(fixedProps.layout, 'fixed', 'fixed not applied');
+        assert.equal(fixedProps.anchor, 'page', 'fixed should anchor to the page');
+    });
+
+    await step('Escape deselects and Delete removes the object', () => {
+        const img = editor.querySelector('img');
+        img.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+        img.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+        assert.ok(img.classList.contains('npad-img-selected'));
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.ok(!img.classList.contains('npad-img-selected'), 'Escape did not deselect');
+
+        img.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+        img.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+        assert.equal(editor.querySelector('img[data-npad-img]'), null, 'Delete did not remove the object');
+        assert.equal(imagePane.hidden, true, 'toolbar did not return to base');
+    });
+
     await step('no uncaught page errors', () => {
         assert.deepEqual(consoleErrors, [], consoleErrors[0]);
     });

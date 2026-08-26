@@ -810,6 +810,32 @@ $jsStrings = [
                     <?= icon('align-right') ?>
                 </button>
             </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_layout')) ?>">
+                <button type="button" class="toolbar__btn" data-image-action="layout-inline" aria-pressed="false"
+                        title="<?= e(t('image.layout_inline')) ?>" aria-label="<?= e(t('image.layout_inline')) ?>">
+                    <?= icon('image-inline') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="layout-wrap" aria-pressed="false"
+                        title="<?= e(t('image.layout_wrap')) ?>" aria-label="<?= e(t('image.layout_wrap')) ?>">
+                    <?= icon('layout') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="layout-break" aria-pressed="false"
+                        title="<?= e(t('image.layout_break')) ?>" aria-label="<?= e(t('image.layout_break')) ?>">
+                    <?= icon('image-break') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="layout-front" aria-pressed="false"
+                        title="<?= e(t('image.layout_front')) ?>" aria-label="<?= e(t('image.layout_front')) ?>">
+                    <?= icon('image-front') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="layout-behind" aria-pressed="false"
+                        title="<?= e(t('image.layout_behind')) ?>" aria-label="<?= e(t('image.layout_behind')) ?>">
+                    <?= icon('image-behind') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="layout-fixed" aria-pressed="false"
+                        title="<?= e(t('image.layout_fixed')) ?>" aria-label="<?= e(t('image.layout_fixed')) ?>">
+                    <?= icon('pin') ?>
+                </button>
+            </div>
             <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_edit')) ?>">
                 <button type="button" class="toolbar__btn" data-image-action="advanced"
                         title="<?= e(t('image.advanced')) ?>" aria-label="<?= e(t('image.advanced')) ?>">
@@ -818,10 +844,6 @@ $jsStrings = [
                 <button type="button" class="toolbar__btn" data-image-action="rotate-ccw"
                         title="<?= e(t('image.rotate')) ?>" aria-label="<?= e(t('image.rotate')) ?>">
                     <?= icon('rotate') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="layout-wrap"
-                        title="<?= e(t('image.layout_wrap')) ?>" aria-label="<?= e(t('image.layout_wrap')) ?>">
-                    <?= icon('layout') ?>
                 </button>
                 <button type="button" class="toolbar__btn" data-image-action="recolor-grayscale"
                         title="<?= e(t('image.recolor_grayscale_quick')) ?>" aria-label="<?= e(t('image.recolor_grayscale_quick')) ?>">

@@ -10,7 +10,10 @@ medium (1–2 weeks), **L** = large (a month+).
 > absent), 25 MB cap, raster-only whitelist (SVG rejected), paste/drag-drop/
 > Insert menu ingestion, data-URI archiving, remote images become links, an
 > image toolbar pane (size, alignment, rotate, wrap toggle, grayscale,
-> properties, replace, remove), figure/figcaption captions, orphan GC, and
+> properties, replace, remove), object selection chrome with corner resize
+> handles and free pointer movement (inline images auto-promote to floating,
+> Escape cancels a drag, arrows nudge, Delete removes), figure/figcaption
+> captions, orphan GC, and
 > exports that embed images (HTML/Markdown/JSON data URIs, DOCX media parts;
 > RTF keeps alt text). The image object model adds cropping (clip-frame
 > preview + ratio presets), size & rotation, margins from text, layout

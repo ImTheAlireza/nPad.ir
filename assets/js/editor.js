@@ -210,6 +210,7 @@ export function initEditor({ strings, onEvent }) {
     let activeImageUrls = [];
     let selectedImageEl = null;
     let imageResolveSeq = 0;
+    let imageDragState = null; // { type: 'move'|'resize', img, ... }
 
     /**
      * Editor HTML without transient spell-check marks, for storage and
@@ -1618,18 +1619,86 @@ export function initEditor({ strings, onEvent }) {
 
     /* --- Image selection state --- */
 
+    /* --- Object selection chrome: overlay with corner resize handles --- */
+
+    let objectOverlay = null;
+    let objectOverlayHandles = [];
+    let overlayFrame = 0;
+
+    function ensureObjectOverlay() {
+        if (objectOverlay?.isConnected) return objectOverlay;
+        objectOverlay = document.createElement('div');
+        objectOverlay.className = 'npad-object-overlay';
+        objectOverlay.setAttribute('aria-hidden', 'true');
+        objectOverlay.hidden = true;
+        const corners = [
+            ['nw', 'nwse-resize', -1, -1],
+            ['ne', 'nesw-resize', 1, -1],
+            ['sw', 'nesw-resize', -1, 1],
+            ['se', 'nwse-resize', 1, 1],
+        ];
+        objectOverlayHandles = corners.map(([suffix, cursor, xSign, ySign]) => {
+            const handle = document.createElement('button');
+            handle.type = 'button';
+            handle.className = `npad-object-overlay__handle npad-object-overlay__handle--${suffix}`;
+            handle.dataset.imageHandle = suffix;
+            handle.dataset.xSign = String(xSign);
+            handle.dataset.ySign = String(ySign);
+            handle.style.cursor = cursor;
+            handle.setAttribute('aria-label', `Resize image (${suffix})`);
+            handle.tabIndex = -1;
+            objectOverlay.appendChild(handle);
+            return handle;
+        });
+        objectOverlay.addEventListener('pointerdown', startImageResizePointer);
+        document.body.appendChild(objectOverlay);
+        return objectOverlay;
+    }
+
+    function positionObjectOverlay() {
+        if (!selectedImageEl?.isConnected) {
+            hideObjectOverlay();
+            return;
+        }
+        const overlay = ensureObjectOverlay();
+        overlay.hidden = false;
+        const rect = selectedImageEl.getBoundingClientRect();
+        if (!rect.width && !rect.height) return; // not laid out yet (jsdom)
+        overlay.style.left = `${rect.left || 0}px`;
+        overlay.style.top = `${rect.top || 0}px`;
+        overlay.style.width = `${rect.width || 0}px`;
+        overlay.style.height = `${rect.height || 0}px`;
+        overlay.hidden = false;
+    }
+
+    function scheduleObjectOverlayPosition() {
+        if (overlayFrame) return;
+        overlayFrame = window.requestAnimationFrame(() => {
+            overlayFrame = 0;
+            positionObjectOverlay();
+        });
+    }
+
+    function hideObjectOverlay() {
+        if (objectOverlay) objectOverlay.hidden = true;
+    }
+
+    window.addEventListener('scroll', scheduleObjectOverlayPosition, true);
+    window.addEventListener('resize', scheduleObjectOverlayPosition);
+
     function clearImageSelection() {
-        if (!selectedImageEl) return;
-        selectedImageEl.classList.remove('npad-img-selected');
-        selectedImageEl = null;
+        if (!selectedImageEl && objectOverlay?.hidden) return;
+        if (selectedImageEl) {
+            selectedImageEl.classList.remove('npad-img-selected');
+            selectedImageEl = null;
+        }
+        hideObjectOverlay();
     }
 
     function selectImageElement(img) {
         clearImageSelection();
         selectedImageEl = img;
         img.classList.add('npad-img-selected');
-        // Select the element natively too so Delete/Backspace removes it in
-        // engines that support table-element ranges.
         try {
             const range = document.createRange();
             range.selectNode(img);
@@ -1637,8 +1706,157 @@ export function initEditor({ strings, onEvent }) {
             selection.removeAllRanges();
             selection.addRange(range);
         } catch { /* visual selection state only */ }
+        positionObjectOverlay();
         setToolbarContext('image');
         syncImageToolbarState();
+    }
+
+    /* --- Object pointer interactions: resize handles + move body --- */
+
+    const floatLayout = (layout) => ['behind', 'front', 'fixed'].includes(layout);
+
+    function clampPx(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    /**
+     * Promote any image to a floating object so it can be moved anywhere,
+     * preserving its current on-screen position (Word/Google-Docs style).
+     */
+    function promoteToFloating(img) {
+        const props = readImageProps(img);
+        if (floatLayout(props.layout)) return props;
+        const figure = imageMount(img);
+        const anchorEl = img.closest('p, li, div, h1, h2, h3, h4, h5, h6, blockquote') || editor;
+        const imgRect = (figure || img).getBoundingClientRect();
+        const anchorRect = anchorEl.getBoundingClientRect();
+        const oldLayout = props.layout;
+        props.layout = oldLayout === 'behind' ? 'behind' : 'front';
+        props.anchor = 'paragraph';
+        props.pos = {
+            x: Math.round(imgRect.left - anchorRect.left),
+            y: Math.round(imgRect.top - anchorRect.top),
+        };
+        writePropsToImg(img, props);
+        rebuildImageMount(img, props);
+        return props;
+    }
+
+    function startImageObjectPointer(event) {
+        const img = event.target.closest?.('img[data-npad-img]');
+        if (!img || event.button !== 0) return;
+        event.preventDefault();
+        selectImageElement(img);
+        // Promote to floating (keeps position) so the object can move anywhere.
+        const props = promoteToFloating(img);
+        imageDragState = {
+            type: 'move',
+            img,
+            startX: event.clientX || 0,
+            startY: event.clientY || 0,
+            baseX: props.pos.x,
+            baseY: props.pos.y,
+            snapshot: JSON.stringify(props),
+            moved: false,
+        };
+    }
+
+    function startImageResizePointer(event) {
+        const handle = event.target.closest?.('[data-image-handle]');
+        const img = selectedImageEl?.isConnected ? selectedImageEl : null;
+        if (!handle || !img || event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const props = readImageProps(img);
+        const parent = img.parentElement;
+        const parentWidth = parent?.clientWidth || 1000;
+        const current = img.getBoundingClientRect();
+        const widthProp = props.width || '100%';
+        const isPercent = widthProp.endsWith('%');
+        const baseWidth = isPercent ? parseFloat(widthProp) : (current.width || 100);
+        imageDragState = {
+            type: 'resize',
+            img,
+            handle: handle.dataset.imageHandle,
+            xSign: Number(handle.dataset.xSign),
+            ySign: Number(handle.dataset.ySign),
+            startX: event.clientX || 0,
+            startY: event.clientY || 0,
+            baseWidth,
+            baseHeight: current.height || (baseWidth * 0.75),
+            isPercent,
+            parentWidth,
+            shift: event.shiftKey,
+            snapshot: JSON.stringify(props),
+        };
+    }
+
+    function moveImageObjectPointer(event) {
+        const state = imageDragState;
+        if (!state || !state.img.isConnected) {
+            imageDragState = null;
+            return;
+        }
+        const dx = (event.clientX || 0) - state.startX;
+        const dy = (event.clientY || 0) - state.startY;
+        state.moved = state.moved || Math.abs(dx) > 2 || Math.abs(dy) > 2;
+
+        if (state.type === 'move') {
+            const props = readImageProps(state.img);
+            props.pos.x = Math.round(state.baseX + dx);
+            props.pos.y = Math.round(state.baseY + dy);
+            writePropsToImg(state.img, props);
+            const figure = imageMount(state.img);
+            if (figure) {
+                figure.style.left = `${props.pos.x}px`;
+                figure.style.top = `${props.pos.y}px`;
+            }
+            scheduleObjectOverlayPosition();
+        } else {
+            const props = readImageProps(state.img);
+            // Corner handle: dominant delta scales width, aspect stays locked
+            // (Shift = free: height follows too).
+            const delta = (state.xSign * dx + state.ySign * dy) / 2;
+            if (state.isPercent) {
+                const newPct = clampPx(state.baseWidth + (delta / (state.parentWidth || 1000)) * 100, 5, 400);
+                props.width = `${Math.round(newPct * 10) / 10}%`;
+                props.height = state.shift ? null : null;
+            } else {
+                const newPx = clampPx(state.baseWidth + delta, 24, 4000);
+                props.width = `${Math.round(newPx)}px`;
+            }
+            writePropsToImg(state.img, props);
+            applyImagePropsCss(state.img, props);
+            scheduleObjectOverlayPosition();
+        }
+    }
+
+    function finishImageObjectPointer(event) {
+        const state = imageDragState;
+        if (!state) return;
+        imageDragState = null;
+        if (!state.img.isConnected) return;
+        if (state.moved && (event?.type === 'pointerup')) {
+            afterImageOp();
+            track('image_moved');
+        } else {
+            // No movement: keep the object selected (handled by pointerdown).
+        }
+        scheduleObjectOverlayPosition();
+    }
+
+    function cancelImageObjectInteraction() {
+        const state = imageDragState;
+        if (!state) return;
+        imageDragState = null;
+        if (state.img.isConnected) {
+            try {
+                writePropsToImg(state.img, JSON.parse(state.snapshot));
+                applyImagePropsCss(state.img, JSON.parse(state.snapshot));
+                rebuildImageMount(state.img, JSON.parse(state.snapshot));
+            } catch { /* ignore */ }
+            selectImageElement(state.img);
+        }
     }
 
     function imageMount(img) {
@@ -1692,6 +1910,7 @@ export function initEditor({ strings, onEvent }) {
         if (['behind', 'front', 'fixed'].includes(layout) && !props.width) props.width = '240px';
         if (['wrap-left', 'wrap-right', 'top-bottom'].includes(layout) && !props.width) props.width = '50%';
         if (layout === 'center' && !props.width) props.width = '50%';
+        writePropsToImg(img, props);
         rebuildImageMount(img, props);
         afterImageOp();
     }
@@ -1703,6 +1922,7 @@ export function initEditor({ strings, onEvent }) {
         props.layout = align === 'left' ? 'wrap-left'
             : align === 'right' ? 'wrap-right'
                 : align === 'center' ? 'center' : 'inline';
+        writePropsToImg(img, props);
         rebuildImageMount(img, props);
         afterImageOp();
     }
@@ -1788,6 +2008,19 @@ export function initEditor({ strings, onEvent }) {
         };
         const size = img ? imageSize(img) : '';
         const align = img ? imageAlign(img) : '';
+        const layout = img ? readImageProps(img).layout : '';
+        const layoutToBtn = {
+            inline: 'layout-inline',
+            'wrap-left': 'layout-wrap',
+            'wrap-right': 'layout-wrap',
+            'top-bottom': 'layout-break',
+            front: 'layout-front',
+            behind: 'layout-behind',
+            fixed: 'layout-fixed',
+        };
+        for (const [name, action] of Object.entries(layoutToBtn)) {
+            setPressed(action, layout === name);
+        }
         setPressed('size-small', size === 'small');
         setPressed('size-medium', size === 'medium');
         setPressed('size-large', size === 'large');
@@ -2147,9 +2380,35 @@ export function initEditor({ strings, onEvent }) {
                 applyImageProps(img, props);
                 break;
             }
-            case 'layout-wrap':
-                setImageLayout(img, readImageProps(img).layout === 'wrap-left' ? 'wrap-right' : 'wrap-left');
+            case 'layout-inline':
+                setImageLayout(img, 'inline');
                 break;
+            case 'layout-wrap': {
+                const current = readImageProps(img).layout;
+                // Toggle: inline -> wrap-left, wrap-left <-> wrap-right, else wrap-left.
+                if (current === 'wrap-right') setImageLayout(img, 'wrap-left');
+                else setImageLayout(img, current === 'wrap-left' || current === 'inline' ? 'wrap-right' : 'wrap-left');
+                break;
+            }
+            case 'layout-break':
+                setImageLayout(img, 'top-bottom');
+                break;
+            case 'layout-front':
+                setImageLayout(img, 'front');
+                break;
+            case 'layout-behind':
+                setImageLayout(img, 'behind');
+                break;
+            case 'layout-fixed': {
+                const props = readImageProps(img);
+                props.layout = 'fixed';
+                props.anchor = 'page';
+                if (!props.width) props.width = '240px';
+                writePropsToImg(img, props);
+                rebuildImageMount(img, props);
+                afterImageOp();
+                break;
+            }
             case 'recolor-grayscale': {
                 const props = readImageProps(img);
                 props.recolor = props.recolor === 'grayscale' ? 'none' : 'grayscale';
@@ -2238,62 +2497,57 @@ export function initEditor({ strings, onEvent }) {
     });
 
     document.addEventListener('pointerdown', (event) => {
-        if (!event.target.closest?.('[data-image-action], img[data-npad-img], #toolbarPaneImage')) {
+        if (!event.target.closest?.('[data-image-action], img[data-npad-img], [data-image-handle], .npad-object-overlay, #toolbarPaneImage')) {
             clearImageSelection();
         }
     }, true);
 
-    /* --- Dragging floating (behind/front/fixed) images --- */
+    /* --- Object interactions: select, resize (corner handles), move --- */
 
-    let imageDrag = null;
-
-    function startImageDrag(event) {
-        const img = event.target.closest?.('img[data-npad-img]');
-        if (!img) return;
-        const props = readImageProps(img);
-        if (!['behind', 'front', 'fixed'].includes(props.layout)) return;
-        event.preventDefault();
-        selectImageElement(img);
-        imageDrag = {
-            img,
-            startX: event.clientX || 0,
-            startY: event.clientY || 0,
-            posX: props.pos.x,
-            posY: props.pos.y,
-        };
-    }
-
-    function moveImageDrag(event) {
-        if (!imageDrag || !imageDrag.img.isConnected) {
-            imageDrag = null;
-            return;
-        }
-        if (!imageDrag.img.classList.contains('npad-img-selected')) selectImageElement(imageDrag.img);
-        const props = readImageProps(imageDrag.img);
-        props.pos.x = Math.round(imageDrag.posX + (event.clientX || 0) - imageDrag.startX);
-        props.pos.y = Math.round(imageDrag.posY + (event.clientY || 0) - imageDrag.startY);
-        writePropsToImg(imageDrag.img, props);
-        const figure = imageMount(imageDrag.img);
-        if (figure) {
-            figure.style.left = `${props.pos.x}px`;
-            figure.style.top = `${props.pos.y}px`;
-        }
-        scheduleSave();
-    }
-
-    function endImageDrag() {
-        if (!imageDrag) return;
-        imageDrag = null;
-        if (selectedImageEl) rememberEditorSelection();
-    }
-
-    editor.addEventListener('pointerdown', startImageDrag);
-    document.addEventListener('pointermove', moveImageDrag);
-    document.addEventListener('pointerup', endImageDrag);
-    document.addEventListener('pointercancel', endImageDrag);
-    // Native HTML drag of a floating image would fight the pointer drag.
+    editor.addEventListener('pointerdown', startImageObjectPointer);
+    document.addEventListener('pointermove', moveImageObjectPointer);
+    document.addEventListener('pointerup', (event) => {
+        finishImageObjectPointer(event);
+    });
+    document.addEventListener('pointercancel', finishImageObjectPointer);
     editor.addEventListener('dragstart', (event) => {
         if (event.target.closest?.('img')) event.preventDefault();
+    });
+
+    // Object keyboard: Delete the selection, Escape deselects (or cancels a
+    // drag), arrow keys nudge a floating object.
+    document.addEventListener('keydown', (event) => {
+        if (!selectedImageEl?.isConnected) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            cancelImageObjectInteraction();
+            clearImageSelection();
+            updateToolbarContext();
+            return;
+        }
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault();
+            removeImage(selectedImageEl);
+            return;
+        }
+        const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+        if (arrows[event.key] && floatLayout(readImageProps(selectedImageEl).layout)) {
+            event.preventDefault();
+            const [dx, dy] = arrows[event.key];
+            const step = event.shiftKey ? 10 : 1;
+            const props = readImageProps(selectedImageEl);
+            props.pos.x += dx * step;
+            props.pos.y += dy * step;
+            writePropsToImg(selectedImageEl, props);
+            const figure = imageMount(selectedImageEl);
+            if (figure) {
+                figure.style.left = `${props.pos.x}px`;
+                figure.style.top = `${props.pos.y}px`;
+            }
+            scheduleObjectOverlayPosition();
+            afterImageOp();
+            track('image_moved');
+        }
     });
 
     /* ---------------------------------------------------------------------
