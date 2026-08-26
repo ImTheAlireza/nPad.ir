@@ -265,6 +265,10 @@ $jsStrings = [
     'imageLayoutStart'  => t('image.layout_start'),
     'imageLayoutCenter' => t('image.layout_center'),
     'imageLayoutEnd'    => t('image.layout_end'),
+    'imageWrap'         => t('image.wrap'),
+    'imageLayoutWrapStart' => t('image.layout_wrap_start'),
+    'imageLayoutWrapEnd' => t('image.layout_wrap_end'),
+    'imageWrapHint'     => t('image.wrap_hint'),
     'imageDescribeTitle' => t('image.describe_title'),
     'imageDetailsTitle' => t('image.details_title'),
     'imageAlt'          => t('image.alt'),
@@ -864,6 +868,10 @@ $jsStrings = [
         <button type="button" class="image-block-toolbar__btn" data-image-action="size"
                 title="<?= e(t('image.size')) ?>" aria-label="<?= e(t('image.size')) ?>">
             <?= icon('image-size') ?>
+        </button>
+        <button type="button" class="image-block-toolbar__btn" data-image-action="wrap"
+                title="<?= e(t('image.wrap')) ?>" aria-label="<?= e(t('image.wrap')) ?>">
+            <?= icon('wrap-text') ?>
         </button>
         <button type="button" class="image-block-toolbar__btn" data-image-action="details"
                 title="<?= e(t('image.edit')) ?>" aria-label="<?= e(t('image.edit')) ?>">

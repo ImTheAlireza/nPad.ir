@@ -41,7 +41,7 @@ const SAFE_URL = /^(https?:|mailto:|tel:|#|\/)/i;
 const SAFE_IMAGE_DATA = /^data:image\/(png|jpeg|gif|webp|avif|bmp);base64,[a-z0-9+/=\s]+$/i;
 const TEMP_IMAGE_STYLES = new Set([
     'display', 'position', 'top', 'left', 'height', 'max-height', 'overflow',
-    'aspect-ratio', 'object-fit', 'object-position',
+    'aspect-ratio', 'object-fit', 'object-position', 'float', 'margin', 'clear',
 ]);
 
 function sanitiseStyle(value, { allowImageLayout = false } = {}) {

@@ -537,6 +537,12 @@ function exportStyle(block, direction = 'ltr') {
         start: rtl ? 'display:block;margin-left:auto;margin-right:0;text-align:right' : 'display:block;margin-left:0;margin-right:auto',
         center: 'display:block;margin-left:auto;margin-right:auto;text-align:center',
         end: rtl ? 'display:block;margin-left:0;margin-right:auto' : 'display:block;margin-left:auto;margin-right:0;text-align:right',
+        'wrap-start': rtl
+            ? 'display:block;float:right;margin:0 0 1em 1em'
+            : 'display:block;float:left;margin:0 1em 1em 0',
+        'wrap-end': rtl
+            ? 'display:block;float:left;margin:0 1em 1em 0'
+            : 'display:block;float:right;margin:0 0 1em 1em',
     }[block.display.layout] || 'display:block';
     return `${align};width:${block.display.widthPercent}%`;
 }

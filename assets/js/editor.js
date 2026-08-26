@@ -1901,7 +1901,10 @@ export function initEditor({ strings, onEvent }) {
                         ${choice('start', strings.imageLayoutStart)}
                         ${choice('center', strings.imageLayoutCenter)}
                         ${choice('end', strings.imageLayoutEnd)}
+                        ${choice('wrap-start', strings.imageLayoutWrapStart)}
+                        ${choice('wrap-end', strings.imageLayoutWrapEnd)}
                     </div>
+                    <p class="image-details__hint">${escapeHtml(strings.imageWrapHint)}</p>
                 </fieldset>
                 <label class="field">
                     <span class="field__label">${escapeHtml(strings.imageWidth)} <span class="field__hint">${escapeHtml(strings.imageWidthUnit)}</span></span>
@@ -1921,9 +1924,11 @@ export function initEditor({ strings, onEvent }) {
                 { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
                 { label: strings.imageSaveDetails, action: 'save-image-details', variant: 'btn--primary' },
             ],
-            initialFocus: (body) => focusField === 'width'
-                ? body.querySelector('[data-image-width]')
-                : body.querySelector('[data-image-alt]'),
+            initialFocus: (body) => {
+                if (focusField === 'width') return body.querySelector('[data-image-width]');
+                if (focusField === 'layout') return body.querySelector('input[name="image-layout"]:checked');
+                return body.querySelector('[data-image-alt]');
+            },
             onOpen: (body) => {
                 const alt = body.querySelector('[data-image-alt]');
                 const decorative = body.querySelector('[data-image-decorative]');
@@ -2208,6 +2213,7 @@ export function initEditor({ strings, onEvent }) {
         if (action === 'replace') openImageFilePicker({ replace: true });
         else if (action === 'details') void openImageDetails(figure);
         else if (action === 'size') void openImageDetails(figure, { focusField: 'width' });
+        else if (action === 'wrap') void openImageDetails(figure, { focusField: 'layout' });
         else if (action === 'crop') void openImageCropper(figure);
         else if (action === 'remove') removeImageBlock(figure);
         else if (action.startsWith('layout-')) {

@@ -63,9 +63,13 @@ export default async function run(check, group) {
         assert.deepEqual(decorative.alt, { kind: 'decorative', text: '' });
     });
 
-    check('normalises quarter turns and rotates crop coordinates with the source', () => {
+    check('normalises quarter turns, bounded wrapping, and crop coordinates', () => {
         const block = schema.normaliseImageBlock({ assetId: 'asset-12345678', rotation: 90 });
         assert.equal(block.rotation, 90);
+        const wrap = schema.normaliseImageBlock({
+            assetId: 'asset-12345678', display: { layout: 'wrap-start', widthPercent: 100 },
+        });
+        assert.deepEqual(wrap.display, { layout: 'wrap-start', widthPercent: 60 });
         assert.equal(schema.normaliseImageBlock({ assetId: 'asset-12345678', rotation: 45 }).rotation, 0);
         assert.deepEqual(
             schema.rotateImageCrop({ x: 10, y: 20, width: 30, height: 40 }, 'cw'),
@@ -205,11 +209,12 @@ export default async function run(check, group) {
     });
 
     await (async () => {
-        const start = { ...block, display: { layout: 'start', widthPercent: 50 } };
-        const rtlFigure = blocks.createImageBlockElement(start, { asset });
+        const wrap = { ...block, display: { layout: 'wrap-start', widthPercent: 60 } };
+        const rtlFigure = blocks.createImageBlockElement(wrap, { asset });
         const portable = await blocks.embedImageBlocksAsDataUris(rtlFigure.outerHTML, async () => asset, { direction: 'rtl' });
-        check('portable start/end alignment follows RTL document direction', () => {
-            assert.match(portable, /margin-left:auto;\s*margin-right:0/);
+        check('portable text wrapping follows RTL document direction', () => {
+            assert.match(portable, /float:right/);
+            assert.match(portable, /margin:0 0 1em 1em/);
         });
     })();
 

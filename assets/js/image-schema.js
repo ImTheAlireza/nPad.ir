@@ -7,7 +7,7 @@
  */
 
 export const IMAGE_BLOCK_VERSION = 1;
-export const IMAGE_LAYOUTS = new Set(['block', 'start', 'center', 'end']);
+export const IMAGE_LAYOUTS = new Set(['block', 'start', 'center', 'end', 'wrap-start', 'wrap-end']);
 export const IMAGE_ALT_KINDS = new Set(['pending', 'informative', 'decorative']);
 export const MIN_IMAGE_WIDTH_PERCENT = 10;
 export const MAX_IMAGE_WIDTH_PERCENT = 100;
@@ -104,11 +104,14 @@ export function normaliseImageBlock(raw) {
         ? value.display
         : {};
     const layout = IMAGE_LAYOUTS.has(sourceDisplay.layout) ? sourceDisplay.layout : 'block';
+    // A wide float produces unreadably narrow text columns. Keep wrapping
+    // deliberate and bounded; non-wrapping layouts may still use full width.
+    const maxWidth = layout.startsWith('wrap-') ? 60 : MAX_IMAGE_WIDTH_PERCENT;
     const widthPercent = Math.round(number(
         sourceDisplay.widthPercent,
-        100,
+        Math.min(100, maxWidth),
         MIN_IMAGE_WIDTH_PERCENT,
-        MAX_IMAGE_WIDTH_PERCENT,
+        maxWidth,
     ) * 100) / 100;
     const rotation = [0, 90, 180, 270].includes(Number(value.rotation))
         ? Number(value.rotation)

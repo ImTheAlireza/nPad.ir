@@ -473,6 +473,25 @@ export default async function run(check, group) {
         await flush();
         assert.equal(JSON.parse(figure.getAttribute('data-npad-image')).display.widthPercent, 75, 'custom width was not saved');
 
+        click(imageToolbar.querySelector('[data-image-action="wrap"]'));
+        assert.equal(document.activeElement, dialog.querySelector('input[name="image-layout"]:checked'));
+        const wrapStart = dialog.querySelector('input[name="image-layout"][value="wrap-start"]');
+        wrapStart.checked = true;
+        dialog.querySelector('[data-image-width]').value = '100';
+        click(dialog.querySelector('[data-action="save-image-details"]'));
+        await flush();
+        let wrapped = JSON.parse(figure.getAttribute('data-npad-image'));
+        assert.deepEqual(wrapped.display, { layout: 'wrap-start', widthPercent: 60 });
+
+        // Return to a non-wrapping wide layout before exercising crop/resize.
+        click(imageToolbar.querySelector('[data-image-action="layout-center"]'));
+        click(imageToolbar.querySelector('[data-image-action="size"]'));
+        dialog.querySelector('[data-image-width]').value = '75';
+        click(dialog.querySelector('[data-action="save-image-details"]'));
+        await flush();
+        wrapped = JSON.parse(figure.getAttribute('data-npad-image'));
+        assert.deepEqual(wrapped.display, { layout: 'center', widthPercent: 75 });
+
         assert.ok(figure.hasAttribute('data-npad-image-selected'), 'image selection was lost before crop');
         click(imageToolbar.querySelector('[data-image-action="crop"]'));
         assert.equal(dialog.open, true, `crop dialog not opened: ${document.getElementById('toastRegion')?.textContent || ''}`);

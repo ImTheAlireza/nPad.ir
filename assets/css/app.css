@@ -1857,6 +1857,7 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 .editor figure[data-npad-image-block='1'] {
     --npad-image-width: 100%;
     display: block;
+    clear: both;
     box-sizing: border-box;
     width: min(var(--npad-image-width), 100%);
     max-width: 100%;
@@ -1877,6 +1878,43 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     margin-inline-end: 0;
     text-align: end;
 }
+
+/* Text wrapping is intentionally narrow and bounded. It is a float only on
+   wide screens; on a phone the same document remains a normal readable block. */
+.editor figure[data-npad-image-block='1'][data-npad-image-layout='wrap-start'],
+.editor figure[data-npad-image-block='1'][data-npad-image-layout='wrap-end'] {
+    clear: none;
+    width: min(var(--npad-image-width), 60%);
+    max-width: 60%;
+    margin-block: 0 var(--space-3);
+}
+
+html:not([dir='rtl']) .editor figure[data-npad-image-block='1'][data-npad-image-layout='wrap-start'] {
+    float: left;
+    margin-right: var(--space-4);
+}
+
+html:not([dir='rtl']) .editor figure[data-npad-image-block='1'][data-npad-image-layout='wrap-end'] {
+    float: right;
+    margin-left: var(--space-4);
+}
+
+html[dir='rtl'] .editor figure[data-npad-image-block='1'][data-npad-image-layout='wrap-start'] {
+    float: right;
+    margin-left: var(--space-4);
+}
+
+html[dir='rtl'] .editor figure[data-npad-image-block='1'][data-npad-image-layout='wrap-end'] {
+    float: left;
+    margin-right: var(--space-4);
+}
+
+.editor > :is(table, h1, h2, h3, h4, h5, h6, blockquote, pre, ul, ol, hr),
+.editor figure[data-npad-image-block='1']:not([data-npad-image-layout^='wrap-']) {
+    clear: both;
+}
+
+.editor::after { content: ''; display: block; clear: both; }
 
 .editor figure[data-npad-image-block='1'][data-npad-image-selected] {
     outline: 3px solid var(--accent-ring);
@@ -2029,7 +2067,7 @@ html[dir='rtl'] .image-block-toolbar__btn[data-image-action='layout-end'] .icon 
 
 .image-details__layout {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-2);
     margin-bottom: var(--space-3);
 }
@@ -2126,6 +2164,13 @@ html[dir='rtl'] .image-block-toolbar__btn[data-image-action='layout-end'] .icon 
 @media (max-width: 640px) {
     .image-details__layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .image-cropper__stage { min-height: 180px; }
+    .editor figure[data-npad-image-block='1'][data-npad-image-layout^='wrap-'] {
+        float: none;
+        clear: both;
+        width: min(var(--npad-image-width), 100%);
+        max-width: 100%;
+        margin-inline: 0;
+    }
 }
 
 @media (max-width: 640px) {

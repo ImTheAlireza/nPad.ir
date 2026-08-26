@@ -1,9 +1,9 @@
 # Image editor restart plan
 
-**Status:** implemented through the safe block, layout/resize, crop, and
-non-destructive rotation scope in NPad 2.15.0. Wrapping, linking, filters,
-galleries, an asset library, and transaction-level image undo remain deliberately
-deferred.
+**Status:** implemented through the safe block, layout/resize, constrained
+responsive text wrapping, crop, and non-destructive rotation scope in NPad
+2.15.0. Linking, filters, galleries, an asset library, and transaction-level
+image undo remain deliberately deferred.
 
 **Research completed:** 26 August 2026
 
@@ -264,7 +264,9 @@ data in note HTML.
 
 ### Phase 2 — layout and resizing
 
-- [x] Block/start/center/end layouts; no absolute placement.
+- [x] Block/start/center/end layouts plus wrap-start/wrap-end; no absolute
+  placement. Wrap is capped at 60% width and becomes a normal block on narrow
+  screens.
 - [x] Custom width, corner handles on fine pointers, and complete keyboard/touch
   alternatives through the Size dialog.
 - [x] RTL, narrow viewport, dark theme, print, and automated editor-flow tests.
@@ -288,9 +290,9 @@ keyboard paths are covered by the image-block and awaited editor-flow tests.
 
 ### Phase 4 — only evidence-based additions
 
-Consider wrapping text, linking a block, image optimization, filters, galleries,
-or an advanced asset manager only after real user evidence. “Behind text”,
-“in front of text”, page-fixed placement, free dragging, arbitrary CSS filters,
+Consider linking a block, image optimization, filters, galleries, or an advanced
+asset manager only after real user evidence. “Behind text”, “in front of text”,
+page-fixed placement, free dragging, arbitrary CSS filters,
 and a drawing canvas are explicitly out of scope until a separate design review.
 
 ## 8. Test plan
@@ -323,8 +325,9 @@ The first release fixes the initially open product decisions deliberately:
 2. **Portability:** HTML, Markdown, JSON, DOCX, and RTF have an explicit local
    export path; document readers that cannot render a format retain the
    alternative text/caption fallback.
-3. **Layout:** semantic block/start/center/end alignment ships first. Text wrap
-   is not implied by alignment and remains a separate product decision.
+3. **Layout:** semantic block/start/center/end alignment and explicit
+   wrap-start/wrap-end ship. Wrapping is capped at 60% and becomes a normal
+   block on narrow screens; it is never implied by ordinary alignment.
 4. **Ownership:** assets are note-owned for normal editing, but garbage
    collection retains references used by copies and recovery snapshots.
 5. **Crop and rotation:** the release ships a pointer frame, exact keyboard

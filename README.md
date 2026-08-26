@@ -213,8 +213,10 @@ uses the same local-first pipeline:
   Replace, alignment, Size, details, Crop, and Delete. The primary text toolbar
   stays stable. Corner resizing is available on fine pointers; the Size dialog
   provides the same keyboard and touch path.
-- **Safe layouts:** block/start/center/end alignment only. There is no free
-  dragging, fixed-page placement, behind-text layering, or arbitrary filters.
+- **Safe layouts:** block/start/center/end alignment plus constrained
+  wrap-start/wrap-end. Wrapped blocks are capped at 60% width and render as
+  normal blocks on narrow screens. There is no free dragging, fixed-page
+  placement, behind-text layering, or arbitrary filters.
 - **Crop and rotation:** the dedicated Crop dialog has a visible crop frame,
   Original/1:1/4:3/16:9 presets, exact keyboard-editable values, Rotate left /
   Rotate right controls, and explicit Cancel/Apply. Both transforms are
