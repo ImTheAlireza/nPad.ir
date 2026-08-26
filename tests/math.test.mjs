@@ -241,16 +241,15 @@ export default async function run(check, group) {
         editor.remove();
     });
 
-    await step('typing the closing $ creates an inline formula', () => {
+    await step('typing a single $ pair stays plain text', () => {
         const { editor, api } = makeEditor('<p>Euler: </p>');
         const p = editor.querySelector('p');
-        p.firstChild.nodeValue = 'Euler: $e^{i\\pi}+1=0$';
+        p.firstChild.nodeValue = 'Euler: $e^{' + String.fromCharCode(92) + 'pi}+1=0$';
         caretIn(p.firstChild, p.firstChild.length);
         editor.dispatchEvent(new window.InputEvent('input', { data: '$', inputType: 'insertText', bubbles: true }));
-
-        const el = editor.querySelector('math-inline');
-        assert.ok(el, 'inline formula not created');
-        assert.equal(el.textContent, 'e^{i\\pi}+1=0');
+        assert.equal(editor.querySelector('math-inline'), null, 'single-$ converted');
+        assert.equal(editor.querySelector('math-block'), null, 'single-$ converted');
+        assert.equal(p.textContent.includes('$e^{' + String.fromCharCode(92) + 'pi}'), true, 'prose was mutated');
         editor.remove();
     });
 

@@ -161,7 +161,6 @@ export default async function run(check, group) {
         assert.ok(dialog.querySelector('[data-math-preview] .katex'), 'preview did not render');
         assert.equal(dialog.querySelector('[data-math-error]').hidden, true, 'error shown for valid input');
 
-        click(dialog.querySelector('[data-math-mode="block"]'));
         await tick();
         click(dialog.querySelector('[data-action="apply"]'));
         await tick();
@@ -198,19 +197,18 @@ export default async function run(check, group) {
         assert.ok(!storedHtml.includes('katex'), 'KaTeX markup leaked into storage');
     });
 
-    await step('magic typing converts $x^2$ inline', async () => {
-        editor.innerHTML = '<p squared="">Euler said </p>';
-        editor.querySelector('p').removeAttribute('squared');
+    await step('magic typing converts $$x^2$$ into a block formula', () => {
+        editor.innerHTML = '<p>Euler said </p>';
         const p = editor.querySelector('p');
-        p.firstChild.nodeValue = 'Euler said $e^{i\\pi}+1=0$';
+        p.firstChild.nodeValue = 'Euler said $$x^2$$';
         putCaret(p.firstChild, p.firstChild.length);
         editor.dispatchEvent(new window.InputEvent('input', {
             data: '$', inputType: 'insertText', bubbles: true,
         }));
 
-        const el = editor.querySelector('math-inline');
-        assert.ok(el, 'inline formula not created');
-        assert.equal(el.textContent, 'e^{i\\pi}+1=0', 'wrong source');
+        const el = editor.querySelector('math-block');
+        assert.ok(el, 'block formula not created');
+        assert.equal(el.textContent, 'x^2', 'wrong source');
         assert.ok(tracked.includes('math_inserted'), 'not tracked');
     });
 
@@ -225,8 +223,8 @@ export default async function run(check, group) {
         assert.equal(editor.querySelector('math-inline'), null, 'money converted');
     });
 
-    await step('double-click opens the edit dialog and applies changes', async () => {
-        editor.innerHTML = '<math-inline>a^2 + b^2</math-inline>';
+    await step('double-click edits a legacy inline formula into a block', async () => {
+        editor.innerHTML = '<p>text <math-inline>a^2 + b^2</math-inline> more</p>';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         await tick();
         const el = editor.querySelector('math-inline');
@@ -242,32 +240,26 @@ export default async function run(check, group) {
         click(dialog.querySelector('[data-action="apply"]'));
         await tick();
 
-        const updated = editor.querySelector('math-inline');
-        assert.ok(updated, 'formula lost');
+        const updated = editor.querySelector('math-block');
+        assert.ok(updated, 'block formula missing');
         assert.equal(updated.dataset.tex, 'a^2 + b^2 = c^2', 'edit not applied');
+        assert.equal(updated.parentNode.tagName, 'DIV', 'block should sit outside the paragraph');
         await tick();
         assert.ok(updated.querySelector('.katex'), 'edited formula not painted');
         assert.ok(tracked.includes('math_edited'), 'math_edited not tracked');
     });
 
-    await step('inline insertion survives a dropped selection', async () => {
+    await step('block insertion survives a dropped selection', async () => {
         // Firefox and Safari drop the editor selection when a modal takes
-        // focus; the captured range must still place the formula.
-        editor.innerHTML = '<p>before </p><p><br></p>';
-        const p = editor.querySelector('p');
-        const range = document.createRange();
-        range.setStart(p.firstChild, p.firstChild.length);
-        range.collapse(true);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
+        // focus; the editor's remembered range must still place it.
+        editor.innerHTML = '<p>before</p><p><br></p>';
+        putCaret(editor.querySelector('p:last-child'));
         document.dispatchEvent(new window.Event('selectionchange'));
-
         clickMenuItem('insert-math');
         await tick();
         assert.equal(dialog.open, true, 'dialog did not open');
-        // Simulate the engine dropping the selection while the modal is open.
-        selection.removeAllRanges();
+        const selection = window.getSelection();
+        selection.removeAllRanges(); // the engine dropped it mid-dialog
         const texField = dialog.querySelector('[data-math-tex]');
         texField.value = 'e = mc^2';
         texField.dispatchEvent(new window.Event('input', { bubbles: true }));
@@ -275,10 +267,10 @@ export default async function run(check, group) {
         click(dialog.querySelector('[data-action="apply"]'));
         await tick();
 
-        const el = editor.querySelector('math-inline');
-        assert.ok(el, 'inline formula not inserted');
+        const el = editor.querySelector('math-block');
+        assert.ok(el, 'block formula not inserted');
         assert.equal(el.textContent, 'e = mc^2', 'wrong source');
-        assert.equal(el.parentNode, p, 'formula not placed at the captured range');
+        assert.equal(el.parentNode, editor, 'formula not placed at the remembered range');
     });
 
     await step('the formula keyboard inserts at the textarea caret', async () => {
@@ -289,6 +281,9 @@ export default async function run(check, group) {
         const texField = dialog.querySelector('[data-math-tex]');
         const keys = [...dialog.querySelectorAll('[data-math-key]')];
         assert.ok(keys.length >= 20, 'keyboard keys missing');
+        const sqrtKey = keys.find((k) => k.dataset.mathKey.includes('sqrt'));
+        assert.equal(sqrtKey.textContent, String.fromCharCode(8730), 'label not rendered as a symbol');
+        assert.ok(!keys.some((k) => k.textContent.includes('%')), 'percent-escaped label found');
         const fracKey = keys.find((k) => (k.dataset.mathKey || '').includes('frac'));
 
         assert.ok(fracKey, 'frac key missing');

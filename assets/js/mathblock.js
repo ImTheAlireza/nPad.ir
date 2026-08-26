@@ -42,41 +42,41 @@ const DELETE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 
 /* Formula keyboard: [label, snippet] — "|" marks the caret stop. */
 const KEYS = [
-    ['x/y', '\\frac{|}{}'],
-    ['\\sqrt', '\\sqrt{|}'],
+    ['a/b', '\\frac{|}{}'],
+    ['√', '\\sqrt{|}'],
     ['x²', '^{|}'],
     ['x₂', '_{|}'],
     ['()', '\\left(|\\right)'],
     ['[]', '\\left[|\\right]'],
-    ['\\sum', '\\sum_{i=1}^{|}'],
-    ['\\int', '\\int_{|}^{}'],
+    ['∑', '\\sum_{i=1}^{|}'],
+    ['∫', '\\int_{|}^{}'],
     ['lim', '\\lim_{|}'],
-    ['\\pm', '\\pm'],
-    ['\\times', '\\times'],
-    ['\\cdot', '\\cdot'],
-    ['\\div', '\\div'],
-    ['\\leq', '\\leq'],
-    ['\\geq', '\\geq'],
-    ['\\neq', '\\neq'],
-    ['\\approx', '\\approx'],
-    ['\\infty', '\\infty'],
-    ['\\to', '\\to'],
-    ['\\in', '\\in'],
-    ['\\emptyset', '\\emptyset'],
-    ['\\alpha', '\\alpha'],
-    ['\\beta', '\\beta'],
-    ['\\gamma', '\\gamma'],
-    ['\\delta', '\\delta'],
-    ['\\theta', '\\theta'],
-    ['\\lambda', '\\lambda'],
-    ['\\mu', '\\mu'],
-    ['\\pi', '\\pi'],
-    ['\\sigma', '\\sigma'],
-    ['\\phi', '\\phi'],
-    ['\\omega', '\\omega'],
-    ['\\Delta', '\\Delta'],
-    ['\\Omega', '\\Omega'],
-    ['aligned', '\\begin{aligned}\n| &= \\\\\n&= \n\\end{aligned}'],
+    ['±', '\\pm'],
+    ['×', '\\times'],
+    ['·', '\\cdot'],
+    ['÷', '\\div'],
+    ['≤', '\\leq'],
+    ['≢', '\\geq'],
+    ['≠', '\\neq'],
+    ['≈', '\\approx'],
+    ['∞', '\\infty'],
+    ['→', '\\to'],
+    ['∈', '\\in'],
+    ['∅', '\\emptyset'],
+    ['α', '\\alpha'],
+    ['β', '\\beta'],
+    ['γ', '\\gamma'],
+    ['δ', '\\delta'],
+    ['θ', '\\theta'],
+    ['λ', '\\lambda'],
+    ['μ', '\\mu'],
+    ['π', '\\pi'],
+    ['σ', '\\sigma'],
+    ['φ', '\\phi'],
+    ['ω', '\\omega'],
+    ['Δ', '\\Delta'],
+    ['Ω', '\\Omega'],
+    ['aligned', '\\begin{aligned}\\n| &= \\\\\\n&= \\n\\end{aligned}'],
 ];
 
 /** Fetch a formula's LaTeX source wherever the element currently keeps it. */
@@ -458,22 +458,14 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         const text = node.nodeValue || '';
         const before = text.slice(0, offset);
 
-        // Block first: $$…$$ hugging the caret.
-        let match = before.match(/\$\$([^$\n]+)\$\$$/);
-        let isBlock = true;
-        if (!match) {
-            match = before.match(/(^|[^\\$])\$([^$\n]+)\$/);
-            isBlock = false;
-            if (!match) return false;
-            // The opening $ must not itself be the tail of a $$ pair.
-            const opening = before.length - match[2].length - 2;
-            if (opening > 0 && before[opening - 1] === '$') return false;
-        }
-        const content = isBlock ? match[1] : match[2];
-        if (!isPlausibleMath(content)) return false;
+        // $$…$$ hugging the caret becomes a block formula; single $ pairs
+        // stay prose (inline mode is gone, and money text is safer this way).
+        const match = before.match(/\$\$([^$\n]+)\$\$/);
+        if (!match || !isPlausibleMath(match[1])) return false;
+        const content = match[1];
 
-        const start = offset - content.length - (isBlock ? 4 : 2);
-        const el = document.createElement(isBlock ? BLOCK_TAG : INLINE_TAG);
+        const start = offset - content.length - 4;
+        const el = document.createElement(BLOCK_TAG);
         el.textContent = content;
 
         const range = document.createRange();
@@ -596,11 +588,6 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         const selected = selection && !selection.isCollapsed && editor.contains(selection.anchorNode)
             ? selection.toString()
             : '';
-        // Firefox and Safari drop a text selection when focus enters a modal
-        // dialog, so the live range cannot be trusted at apply time.
-        const openingRange = selection && selection.rangeCount && editor.contains(selection.anchorNode)
-            ? selection.getRangeAt(0).cloneRange()
-            : null;
 
         const state = {
             tex: existing ? sourceOf(existing) : selected.slice(0, 500),
@@ -627,7 +614,7 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
                     <div class="math-builder__pad" role="group" aria-label="${escapeAttr(strings.mathKeyboard || 'Symbol keyboard')}">
                         ${KEYS.map(([label, snippet]) => (
                             `<button type="button" class="math-builder__key" data-math-key="${escapeAttr(snippet)}"`
-                            + ` title="${escapeAttr(snippet)}" aria-label="${escapeAttr(snippet)}">${escape(label)}</button>`
+                            + ` title="${escapeAttr(snippet)}" aria-label="${escapeAttr(snippet)}">${escapeHtml(label)}</button>`
                         )).join('')}
                     </div>
                     <div class="math-builder__preview" data-math-preview aria-hidden="true"></div>
@@ -682,38 +669,19 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         });
 
         if (action !== 'apply' || !state.tex.trim()) return null;
-        return { ...state, openingRange };
+        return { ...state };
     }
 
     async function insertMath() {
         const built = await openMathDialog(null);
         if (!built) return;
 
-        const el = document.createElement(built.mode === 'block' ? BLOCK_TAG : INLINE_TAG);
+        const el = document.createElement(BLOCK_TAG);
         el.textContent = built.tex.trim();
 
-        // Prefer the live selection; engines that dropped it when the modal
-        // opened get back exactly the range captured then.
-        editor.focus();
-        const selection = window.getSelection();
-        // A selection anchored on the editor host itself (jsdom focus, some
-        // engines after the modal) carries no caret position.
-        const live = selection.rangeCount && editor.contains(selection.anchorNode)
-            && selection.anchorNode !== editor;
-        if (!live && built.openingRange) {
-            selection.removeAllRanges();
-            selection.addRange(built.openingRange);
-        }
-        if (built.mode === 'block' && dropBlock) {
-            if (!dropBlock(el)) return;
-        } else if (live || built.openingRange) {
-            const range = selection.getRangeAt(0);
-            range.deleteContents();
-            range.insertNode(el);
-        } else {
-            return;
-        }
+        if (!dropBlock || !dropBlock(el)) return;
 
+        const selection = window.getSelection();
         const caret = document.createRange();
         caret.setStart(el, 0);
         caret.collapse(true);
@@ -734,11 +702,20 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         const built = await openMathDialog(el);
         if (!built) return;
 
-        const replacement = document.createElement(built.mode === 'block' ? BLOCK_TAG : INLINE_TAG);
+        const replacement = document.createElement(BLOCK_TAG);
         replacement.textContent = built.tex.trim();
         if (activeEl === el) activeEl = replacement;
-        el.replaceWith(replacement);
+        const parent = el.parentElement;
+        if (parent && parent !== editor && (parent.tagName === 'P' || parent.tagName === 'DIV')) {
+            // A legacy inline formula living in a paragraph moves out of it —
+            // blocks never nest inside paragraphs.
+            parent.after(replacement);
+            el.remove();
+        } else {
+            el.replaceWith(replacement);
+        }
         paint(replacement);
+        mountChrome(replacement);
         edited();
         track('math_edited');
     }

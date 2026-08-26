@@ -1966,10 +1966,9 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 .editor math-block {
     position: relative;
     display: block;
-    margin: 0 0 0.75em;
+    margin: 0 0 0.5em;
     padding: var(--space-3);
     background: var(--surface-sunken);
-    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     overflow-x: auto;
     direction: ltr;
@@ -2046,7 +2045,6 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     text-align: left;
     color: var(--code-text);
     background: var(--code-bg);
-    border-color: var(--code-border);
 }
 
 .editor math-inline.math--editing {
@@ -2126,9 +2124,6 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
     gap: 4px;
-    max-height: 112px;
-    padding: 2px;
-    overflow-y: auto;
 }
 
 .math-builder__key {
@@ -3772,11 +3767,9 @@ body.focus-mode .focus-exit { display: inline-flex; }
     .editor math-block.math--editing,
     .editor math-inline.math--editing {
         --code-bg: #f6f8fa;
-        --code-border: #d0d7e2;
         --code-text: #24292f;
         color: #24292f;
         background: #f6f8fa;
-        border-color: #d0d7e2;
     }
 
     .editor math-block { break-inside: avoid; }

@@ -208,8 +208,9 @@ The stored note keeps the LaTeX source as plain text inside
 stripped before every save and export, exactly like the code-block tokens.
 Markdown pairs through delimiters: `$…$` and `$$…$$` convert on import and
 export, gated by the same plausibility heuristics that keep prose about
-money ("I paid $5 and $10") as prose. Typing the closing delimiter in the
-editor converts on the fly. While the caret is inside a formula it shows
+money ("I paid $5 and $10") as prose. Typing the closing `$$` delimiter in
+the editor converts on the fly (formulas are blocks; inline math exists only
+as a legacy rendering path). While the caret is inside a formula it shows
 raw LaTeX in monospace (always LTR); on leaving it re-renders. Enter at the
 end of a block formula hands the caret to the next paragraph, Backspace on
 an emptied formula removes it, and double-click reopens the dialog.
