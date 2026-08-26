@@ -80,6 +80,11 @@ import {
 } from './formats.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
+import { initCodeblocks, detectLanguage } from './codeblock.js';
+import { initMath } from './mathblock.js';
+import { initOutline } from './outline.js';
+import { initChecklist } from './checklist.js';
+import { detectDirection, isolate } from './bidi.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -119,6 +124,9 @@ export function initEditor({ strings, onEvent }) {
     const notesSearch = document.getElementById('notesSearch');
     const notesEmpty = document.getElementById('notesEmpty');
     const noteTitleInput = document.getElementById('noteTitle');
+    if (noteTitleInput) {
+        noteTitleInput.addEventListener('input', () => updateDocumentTitle());
+    }
     const documentTabs = document.getElementById('documentTabs');
     const documentTabTemplate = document.getElementById('documentTabTemplate');
     const noteFolderTrigger = document.getElementById('noteFolder');
@@ -167,6 +175,58 @@ export function initEditor({ strings, onEvent }) {
     /* Custom spell checker (self-contained module). */
     const spell = initSpellcheck({ editor, strings, onEvent: track });
 
+    /* Syntax-highlighted code blocks (self-contained module). */
+    const code = initCodeblocks({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+    });
+
+    /* Math typesetting (self-contained module). */
+    const math = initMath({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+        placeBlock: insertBlockAtSelection,
+    });
+
+    /* Collapsible sections + outline navigator (self-contained module). */
+    const outline = initOutline({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+        placeBlock: insertBlockAtSelection,
+    });
+
+    /* Checklists + task overview (self-contained module). */
+    const checklist = initChecklist({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+        placeBlock: insertBlockAtSelection,
+        getNotes: () => notes.map((note) => (
+            note.id === activeNoteId ? { ...note, html: cleanHtml() } : note
+        )),
+        updateNoteTask,
+        jumpToTask: openTaskInNote,
+    });
+
     /* The toolbar swaps to table tools when the caret is inside a table cell. */
     const toolbarPaneBase = document.getElementById('toolbarPaneBase');
     const toolbarPaneTable = document.getElementById('toolbarPaneTable');
@@ -188,6 +248,11 @@ export function initEditor({ strings, onEvent }) {
         });
         // The caret highlight is a runtime-only affordance: it never persists.
         clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
+        // Code blocks keep only their plain stored form: token spans and the
+        // language/copy chrome are runtime paint, exactly like search marks.
+        code.stripRuntime(clone);
+        // Math keeps its LaTeX source; KaTeX output is runtime paint.
+        math.stripRuntime(clone);
         return clone.innerHTML;
     }
 
@@ -224,6 +289,18 @@ export function initEditor({ strings, onEvent }) {
                     if (child.tagName === 'BR') {
                         out += '\n';
                         continue;
+                    }
+                    if (child.tagName === 'MATH-INLINE' || child.tagName === 'MATH-BLOCK') {
+                        // The LaTeX source between its delimiters.
+                        const tex = (child.dataset?.tex ?? child.textContent ?? '').trim();
+                        out += child.tagName === 'MATH-BLOCK' ? `$$${tex}$$` : `$${tex}$`;
+                        continue;
+                    }
+                    if (child.tagName === 'INPUT') continue;
+                    if (child.tagName === 'LI' && child.parentElement?.classList.contains('checklist')) {
+                        const done = child.classList.contains('task-checked')
+                            || !!child.querySelector('input:checked');
+                        out += done ? '[x] ' : '[ ] ';
                     }
                     const isBlock = BLOCKS.has(child.tagName);
                     if (isBlock && out && !out.endsWith('\n')) out += '\n';
@@ -303,7 +380,9 @@ export function initEditor({ strings, onEvent }) {
             main.tabIndex = active ? 0 : -1;
             main.title = unsaved ? `${title} — ${strings.noteUnsavedTab}` : title;
             main.setAttribute('aria-label', unsaved ? `${title}, ${strings.noteUnsavedTab}` : title);
-            tab.querySelector('.document-tab__title').textContent = title;
+            const tabTitle = tab.querySelector('.document-tab__title');
+            tabTitle.textContent = title;
+            tabTitle.dir = 'auto';
 
             const close = tab.querySelector('[data-tab-action="close"]');
             close.dataset.noteId = id;
@@ -474,8 +553,12 @@ export function initEditor({ strings, onEvent }) {
             const open = item.querySelector('[data-note-action="open"]');
             open.dataset.noteId = note.id;
             open.setAttribute('aria-current', note.id === activeNoteId ? 'true' : 'false');
-            item.querySelector('.note-item__title').textContent = displayTitle(note);
-            item.querySelector('.note-item__preview').textContent = notePreview(note);
+            const itemTitle = item.querySelector('.note-item__title');
+            itemTitle.textContent = displayTitle(note);
+            itemTitle.dir = 'auto';
+            const itemPreview = item.querySelector('.note-item__preview');
+            itemPreview.textContent = notePreview(note);
+            itemPreview.dir = 'auto';
             item.querySelector('.note-item__time').textContent = noteTime(note);
             const metadata = item.querySelector('.note-item__metadata');
             const folder = folderById(note.folderId);
@@ -690,6 +773,12 @@ export function initEditor({ strings, onEvent }) {
         setActiveNoteId(note.id);
         editor.innerHTML = sanitizeHtml(note.html || '');
         normaliseTables(editor);
+        code.refreshAll();
+        math.refreshAll();
+        checklist.normalise(editor);
+        outline.refresh();
+        applyNoteDir();
+        updateDocumentTitle();
         // The new note's caret is empty: reset contextual table controls.
         markActiveCell(null);
         setToolbarContext('base');
@@ -1357,6 +1446,12 @@ export function initEditor({ strings, onEvent }) {
         if (!clean) return false;
         insertHtml(clean);
         normaliseTables(editor);
+        code.refreshAll();
+        math.refreshAll();
+        checklist.normalise(editor);
+        outline.refresh();
+        // Code pasted into a plain code block gets a language guess.
+        code.autodetectCaretBlock();
         scheduleSave();
         updateCounts();
         spell.refresh();
@@ -1593,6 +1688,49 @@ export function initEditor({ strings, onEvent }) {
         selection.addRange(range);
         scheduleSave();
         updateCounts();
+    }
+
+    function insertCodeBlock() {
+        editor.focus();
+        // A live selection inside the editor is the truth (it survives the
+        // menu click); the remembered range is only a fallback for engines
+        // that drop the selection when focus moved to the menu.
+        let selection = window.getSelection();
+        if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) {
+            restoreEditorSelection();
+            selection = window.getSelection();
+        }
+        const selected = selection && selection.rangeCount && !selection.isCollapsed
+            && editor.contains(selection.anchorNode)
+            ? selection.toString()
+            : '';
+
+        const pre = document.createElement('pre');
+        const codeEl = document.createElement('code');
+        if (selected) {
+            codeEl.textContent = selected;
+            // Best-effort language guess so the chip labels it immediately.
+            const detected = detectLanguage(selected);
+            if (detected) codeEl.className = `language-${detected}`;
+        }
+        pre.appendChild(codeEl);
+
+        if (!insertBlockAtSelection(pre)) return;
+        ensureSpacerAfter(pre);
+
+        const range = document.createRange();
+        range.selectNodeContents(codeEl);
+        range.collapse(selected ? false : true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        code.refreshAll();
+        rememberEditorSelection();
+        scheduleSave();
+        updateCounts();
+        spell.refresh();
+        track('code_block_inserted');
+        if (strings.codeInserted) toast(strings.codeInserted, 'success');
     }
 
     function insertDateTime() {
@@ -2643,6 +2781,57 @@ export function initEditor({ strings, onEvent }) {
         await createNewNote();
     }
 
+    async function updateNoteTask(noteId, index, checked) {
+        if (noteId === activeNoteId) {
+            const item = editor.querySelectorAll('ul.checklist > li, ol.checklist > li')[index];
+            if (!item) return;
+            const input = item.querySelector('input[type="checkbox"]');
+            if (input) {
+                input.checked = checked;
+                if (checked) input.setAttribute('checked', '');
+                else input.removeAttribute('checked');
+            }
+            item.classList.toggle('task-checked', checked);
+            scheduleSave();
+            updateCounts();
+            return;
+        }
+        const note = notes.find((item) => item.id === noteId);
+        if (!note) return;
+        const holder = document.createElement('template');
+        holder.innerHTML = sanitizeHtml(note.html || '');
+        const item = holder.content.querySelectorAll('ul.checklist > li, ol.checklist > li')[index];
+        if (!item) return;
+        const input = item.querySelector('input[type="checkbox"]');
+        if (input) {
+            input.checked = checked;
+            if (checked) input.setAttribute('checked', '');
+            else input.removeAttribute('checked');
+        }
+        item.classList.toggle('task-checked', checked);
+        note.html = holder.innerHTML;
+        note.updatedAt = Date.now();
+        await saveNote(note);
+        renderNotes();
+    }
+
+    async function openTaskInNote(noteId, index) {
+        document.getElementById('appDialog')?.close();
+        await switchNote(noteId, { focusEditor: false });
+        const item = editor.querySelectorAll('ul.checklist > li, ol.checklist > li')[index];
+        if (!item) return;
+        item.scrollIntoView({ block: 'center' });
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(item);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        item.classList.add('task-flash');
+        window.setTimeout(() => item.classList.remove('task-flash'), 1500);
+        track('task_jumped');
+    }
+
     async function importNotes(imported, fallbackTitle) {
         const prepared = [];
         let organizationChanged = false;
@@ -2675,7 +2864,7 @@ export function initEditor({ strings, onEvent }) {
             }
             prepared.push({
                 title: item.title.trim().slice(0, 120) || fallbackTitle,
-                html: sanitizeHtml(item.html),
+                html: code.autodetectHtml(sanitizeHtml(item.html)),
                 pinned: !!item.pinned,
                 folderId,
                 tags: [...new Set(tagIds)],
@@ -3675,10 +3864,40 @@ ${exportHtml()}
         if (rtlBtn) rtlBtn.setAttribute('aria-pressed', String(dir === 'rtl'));
     }
 
+    // Direction is per-note: the toolbar buttons write it onto the active
+    // note (persisted with it), and notes without an explicit direction are
+    // auto-detected from their first strong character.
     function applyDir(dir) {
         editor.setAttribute('dir', dir);
+        if (noteTitleInput) noteTitleInput.setAttribute('dir', dir);
         syncDirButtons(dir);
         remember('npad.editorDir', dir);
+        const note = activeNote();
+        if (note) {
+            note.dir = dir;
+            scheduleSave();
+        }
+        updateDocumentTitle();
+    }
+
+    function applyNoteDir() {
+        const explicit = activeNote()?.dir;
+        const dir = explicit === 'ltr' || explicit === 'rtl'
+            ? explicit
+            : (detectDirection(editor.textContent || '')
+                || document.documentElement.getAttribute('dir')
+                || 'ltr');
+        editor.setAttribute('dir', dir);
+        if (noteTitleInput) noteTitleInput.setAttribute('dir', dir);
+        syncDirButtons(dir);
+    }
+
+    let initialDocumentTitle = null;
+    function updateDocumentTitle() {
+        if (initialDocumentTitle === null) initialDocumentTitle = document.title;
+        const note = activeNote();
+        const title = (noteTitleInput?.value || (note ? displayTitle(note) : '') || '').trim();
+        document.title = title ? `${isolate(title)} — NPad` : initialDocumentTitle;
     }
 
     const actions = {
@@ -3708,6 +3927,12 @@ ${exportHtml()}
         'find-replace': () => openFind(true),
         'insert-table': openTableDialog,
         'insert-hr': insertHorizontalRule,
+        'insert-code': insertCodeBlock,
+        'insert-math': () => math.insertMath(),
+        'insert-section': () => outline.insertSection(),
+        'insert-checklist': () => checklist.insertChecklist(),
+        'outline': () => outline.togglePanel(),
+        'tasks-overview': () => checklist.openTasks(),
         'insert-datetime': insertDateTime,
         'insert-link': () => promptForLink(),
         'manage-note-tags': manageCurrentTags,
@@ -3735,6 +3960,13 @@ ${exportHtml()}
         event.preventDefault();
         actions[el.dataset.action]();
     });
+
+    // Inside a code block Tab indents and Enter breaks a line instead of
+    // splitting blocks; inside a formula the same capture keeps raw LaTeX
+    // editable and lets Enter leave. This wins over the table cell walk.
+    editor.addEventListener('keydown', (event) => {
+        if (code.insertKeydown(event) || math.insertKeydown(event)) return;
+    }, true);
 
     document.addEventListener('keydown', (event) => {
         const mod = event.ctrlKey || event.metaKey;

@@ -35,8 +35,16 @@ const suites = [
     ['sanitize', './sanitize.test.mjs'],
     ['table', './table.test.mjs'],
     ['formats', './formats.test.mjs'],
+    ['codeblocks', './codeblocks.test.mjs'],
     ['storage', './storage.test.mjs'],
     ['render', './render.test.mjs'],
+    // codeblocks-ui boots its own jsdom page; like tables-ui it must run
+    // before the behaviour suite, which closes its window with timers pending.
+    ['codeblocks-ui', './codeblocks-ui.test.mjs'],
+    ['math', './math.test.mjs'],
+    ['math-ui', './math-ui.test.mjs'],
+    ['structure', './structure.test.mjs'],
+    ['structure-ui', './structure-ui.test.mjs'],
     // tables-ui boots its own jsdom page and must run before the behaviour
     // suite: the behaviour page closes its window with timers still pending
     // (a jsdom quirk), and a timer firing after that close crashes the

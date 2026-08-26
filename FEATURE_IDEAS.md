@@ -5,7 +5,10 @@ Tailored to nPad.ir's existing architecture: PHP front-end, local-only storage
 third-party requests, and a strict CSP. Effort: **S** = small (days), **M** =
 medium (1–2 weeks), **L** = large (a month+).
 
-> **Implemented 2026-08:** item 2 (Tables) is shipped.
+> **Implemented 2026-08:** items 2 (Tables), 4 (Code blocks with syntax
+> highlighting), 5 (Math typesetting), 6 (Collapsible sections & outline
+> navigator), 7 (Checklists & task aggregation) and 8 (Per-note RTL/LTR
+> control) are shipped.
 >
 > **Reset 2026-08:** the previous image/attachment implementation was removed
 > deliberately. It had accumulated a large object model and competing editing

@@ -110,6 +110,7 @@ function normaliseNote(record = {}) {
         id: String(record.id || newId()),
         title: String(record.title || ''),
         html: String(record.html ?? record.content ?? ''),
+        dir: ['ltr', 'rtl'].includes(record.dir) ? record.dir : null,
         pinned: !!record.pinned,
         folderId: record.folderId ? String(record.folderId) : null,
         tags: [...new Set(Array.isArray(record.tags) ? record.tags.map(String).filter(Boolean) : [])],

@@ -25,6 +25,11 @@ return [
         'edit'        => 'Edit',
         'insert'      => 'Insert',
         'table'       => 'Table…',
+        'code_block'  => 'Code block',
+        'math'        => 'Math…',
+        'section'     => 'Collapsible section',
+        'checklist'   => 'Checklist',
+        'tasks'       => 'Tasks…',
         'horizontal_rule' => 'Horizontal rule',
         'date_time'   => 'Date and time',
         'link'        => 'Link…',
@@ -145,6 +150,7 @@ return [
     ],
 
     'toolbar' => [
+        'outline'     => 'Outline',
         'font'          => 'Font',
         'font_search'   => 'Search fonts…',
         'fonts_persian' => 'Persian fonts',
@@ -252,6 +258,64 @@ return [
         'ignore'         => 'Ignore',
         'no_suggestions' => 'No suggestions',
         'suggestions_for' => 'Spelling suggestions for “{word}”',
+    ],
+
+    'codeblock' => [
+        'copy'              => 'Copy code',
+        'copied'            => 'Code copied',
+        'copy_failed'       => 'Copying is blocked here',
+        'inserted'          => 'Code block added',
+        'plain_text'        => 'Plain text',
+        'lang_chip'         => 'Language: {lang}',
+        'lang_change'       => 'Change language',
+        'delete'            => 'Delete code block',
+        'delete_title'      => 'Delete this code block?',
+        'delete_body'       => 'The code and its language setting will be removed.',
+        'language_title'    => 'Code language',
+        'language_label'    => 'Highlighting language',
+        'language_hint'     => 'The language is kept in the note and in Markdown exports. Unknown languages stay plain monospace.',
+        'group_web'         => 'Web',
+        'group_data'        => 'Data and configuration',
+        'group_apps'        => 'Programming languages',
+    ],
+
+    'outline' => [
+        'title'    => 'Outline',
+        'empty'    => 'No headings or sections yet.',
+        'untitled' => 'Untitled',
+    ],
+
+    'section' => [
+        'summary'  => 'Summary',
+        'inserted' => 'Section added',
+    ],
+
+    'checklist' => [
+        'task'     => 'Task',
+        'inserted' => 'Checklist added',
+    ],
+
+    'tasks' => [
+        'title' => 'Tasks',
+        'open'  => 'Open tasks',
+        'done'  => 'Completed',
+        'empty' => 'No tasks yet — add a checklist from the Insert menu.',
+        'jump'  => 'Show in note',
+    ],
+
+    'mathform' => [
+        'dialog_title' => 'Math formula',
+        'edit_title'   => 'Edit formula',
+        'source'       => 'LaTeX source',
+        'insert'       => 'Insert formula',
+        'inserted'     => 'Formula added',
+        'hint'         => 'Written in KaTeX/LaTeX. The source stays in the note and is re-rendered everywhere; PDF export prints the rendered formula.',
+        'keyboard'     => 'Symbol keyboard',
+        'delete'       => 'Delete formula',
+        'delete_title' => 'Delete this formula?',
+        'delete_body'  => 'The formula will be removed from the note.',
+        'error'        => 'KaTeX could not parse this:',
+        'offline'      => 'KaTeX could not be loaded right now.',
     ],
 
     'editor' => [

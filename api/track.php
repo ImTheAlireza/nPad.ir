@@ -97,6 +97,16 @@ const ALLOWED_EVENTS = [
     'spell_add_word',
     'table_inserted',
     'table_tool_used',
+    'code_block_inserted',
+    'code_copied',
+    'math_inserted',
+    'math_edited',
+    'section_inserted',
+    'outline_used',
+    'checklist_inserted',
+    'tasks_opened',
+    'task_toggled',
+    'task_jumped',
 ];
 
 $event = trim((string) ($_POST['event'] ?? ''));

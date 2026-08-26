@@ -72,6 +72,14 @@ const PAIRS = [
     ['strong border on sunken', '--border-strong', '--surface-sunken', 3.0],
     ['subtle border on page',   '--border-subtle', '--surface-page',   1.25],
     ['subtle border on raised', '--border-subtle', '--surface-raised', 1.25],
+    ['code text on code bg',    '--code-text',     '--code-bg',        4.5],
+    ['code comment on code bg', '--code-comment',  '--code-bg',        4.5],
+    ['code keyword on code bg', '--code-keyword',  '--code-bg',        4.5],
+    ['code tag on code bg',     '--code-tag',      '--code-bg',        4.5],
+    ['code number on code bg',  '--code-number',   '--code-bg',        4.5],
+    ['code string on code bg',  '--code-string',   '--code-bg',        4.5],
+    ['code function on code bg', '--code-function', '--code-bg',       4.5],
+    ['code variable on code bg', '--code-variable', '--code-bg',       4.5],
 ];
 
 export default function run(check, group) {

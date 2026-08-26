@@ -226,6 +226,44 @@ $jsStrings = [
     'spellIgnore'       => t('spell.ignore'),
     'spellNoSuggestions' => t('spell.no_suggestions'),
     'spellSuggestionsFor' => t('spell.suggestions_for'),
+    'codeCopy'          => t('codeblock.copy'),
+    'codeCopied'        => t('codeblock.copied'),
+    'codeCopyFailed'    => t('codeblock.copy_failed'),
+    'codeInserted'      => t('codeblock.inserted'),
+    'codePlainText'     => t('codeblock.plain_text'),
+    'codeLangChip'      => t('codeblock.lang_chip'),
+    'codeLangChange'    => t('codeblock.lang_change'),
+    'codeDelete'        => t('codeblock.delete'),
+    'codeDeleteTitle'   => t('codeblock.delete_title'),
+    'codeDeleteBody'    => t('codeblock.delete_body'),
+    'mathDialogTitle'   => t('mathform.dialog_title'),
+    'mathEditTitle'     => t('mathform.edit_title'),
+    'mathSource'        => t('mathform.source'),
+    'mathInsert'        => t('mathform.insert'),
+    'mathInserted'      => t('mathform.inserted'),
+    'mathHint'          => t('mathform.hint'),
+    'mathError'         => t('mathform.error'),
+    'mathOffline'       => t('mathform.offline'),
+    'outlineUntitled'   => t('outline.untitled'),
+    'sectionSummary'    => t('section.summary'),
+    'sectionInserted'   => t('section.inserted'),
+    'checklistTask'     => t('checklist.task'),
+    'checklistInserted' => t('checklist.inserted'),
+    'tasksTitle'        => t('tasks.title'),
+    'tasksOpen'         => t('tasks.open'),
+    'tasksDone'         => t('tasks.done'),
+    'tasksEmpty'        => t('tasks.empty'),
+    'tasksJump'         => t('tasks.jump'),
+    'mathKeyboard'      => t('mathform.keyboard'),
+    'mathDelete'        => t('mathform.delete'),
+    'mathDeleteTitle'   => t('mathform.delete_title'),
+    'mathDeleteBody'    => t('mathform.delete_body'),
+    'codeLangDialogTitle' => t('codeblock.language_title'),
+    'codeLangLabel'     => t('codeblock.language_label'),
+    'codeLangHint'      => t('codeblock.language_hint'),
+    'codeGroupWeb'      => t('codeblock.group_web'),
+    'codeGroupData'     => t('codeblock.group_data'),
+    'codeGroupApps'     => t('codeblock.group_apps'),
     'tableToolbarLabel' => t('table.toolbar_label'),
     'tableCellColour'   => t('table.cell_colour'),
     'tableDialogTitle'  => t('table.dialog_title'),
@@ -580,6 +618,10 @@ $jsStrings = [
                     title="<?= e(t('toolbar.find_replace')) ?>" aria-label="<?= e(t('toolbar.find_replace')) ?>">
                 <?= icon('find-replace') ?>
             </button>
+            <button type="button" class="toolbar__btn" data-action="outline" aria-pressed="false"
+                    title="<?= e(t('toolbar.outline')) ?>" aria-label="<?= e(t('toolbar.outline')) ?>">
+                <?= icon('outline', ['class' => 'icon']) ?>
+            </button>
             <button type="button" class="toolbar__btn" data-action="toggle-spellcheck" aria-pressed="true"
                     title="<?= e(t('toolbar.spellcheck')) ?>" aria-label="<?= e(t('toolbar.spellcheck')) ?>">
                 <?= icon('spellcheck') ?>
@@ -775,6 +817,11 @@ $jsStrings = [
                 <?= e(t('find.replace_all')) ?>
             </button>
         </div>
+    </div>
+
+    <div class="outline-panel" id="outlinePanel" role="region" aria-label="<?= e(t('outline.title')) ?>" hidden>
+        <p class="outline-panel__empty" data-outline-empty hidden><?= e(t('outline.empty')) ?></p>
+        <div class="outline-panel__list" data-outline-list></div>
     </div>
 
     <div id="editor"

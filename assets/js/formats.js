@@ -38,6 +38,30 @@ function htmlBody(html) {
 }
 
 /* -------------------------------------------------------------------------
+   Math delimiters ($…$ inline, $$…$$ block)
+   ------------------------------------------------------------------------- */
+
+const CURRENCY_LIKE = /^[\d\s.,'’-]+$/;
+const MATHISH = /[\\^_{}=+\-*/<>|]/;
+
+/**
+ * Heuristic gate before a `$…$` span becomes math. Mirrors the editor's
+ * typing rules: the content must hug both delimiters, must not look like
+ * money ("I paid $5 and $10") and must actually be present.
+ * @returns {boolean}
+ */
+export function isPlausibleMath(content) {
+    const tex = String(content ?? '');
+    if (!tex.trim()) return false;
+    if (/^\s|\s$/.test(tex)) return false;
+    if (CURRENCY_LIKE.test(tex)) return false;
+    // One math-ish character keeps prose ("10 for lunch.") out of formulas;
+    // anything a user really means as math has at least one of these.
+    if (!MATHISH.test(tex)) return false;
+    return true;
+}
+
+/* -------------------------------------------------------------------------
    Markdown
    ------------------------------------------------------------------------- */
 
@@ -60,8 +84,29 @@ function nodeToMarkdown(node, depth = 0) {
     if (tag === 'em' || tag === 'i') return `*${content}*`;
     if (tag === 'u') return `<u>${content}</u>`;
     if (tag === 's' || tag === 'del' || tag === 'strike') return `~~${content}~~`;
-    if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${node.textContent.replace(/`/g, '\\`')}\``;
-    if (tag === 'pre') return `\`\`\`\n${node.textContent.replace(/\n+$/, '')}\n\`\`\`\n\n`;
+    if (tag === 'math-inline') {
+        const tex = (node.dataset.tex || node.textContent || '').trim();
+        if (!tex) return '';
+        // A formula sitting directly in the document (not inside a
+        // paragraph) still needs its own line in Markdown.
+        const standalone = !node.parentElement?.closest('p, div, li, td, th, blockquote, h1, h2, h3, h4, h5, h6');
+        return standalone ? `$${tex}$\n\n` : `$${tex}$`;
+    }
+    if (tag === 'math-block') {
+        const tex = (node.dataset.tex || node.textContent || '').trim();
+        // Leading newline so an inline formula's closing $$ can never
+        // fuse with the block's opening $$; the assembly collapses runs.
+        return tex ? `\n$$\n${tex}\n$$\n\n` : '';
+    }
+if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${node.textContent.replace(/`/g, '\\`')}\``;
+    if (tag === 'pre') {
+        // Carry the highlight language into the fence so a Markdown round
+        // trip keeps code blocks highlighted.
+        const codeEl = node.querySelector('code');
+        const info = (codeEl?.getAttribute('class') || '').match(/language-([a-z0-9_+.#-]{1,24})/i);
+        const lang = info && info[1].toLowerCase() !== 'plain' ? info[1].toLowerCase() : '';
+        return `\`\`\`${lang}\n${node.textContent.replace(/\n+$/, '')}\n\`\`\`\n\n`;
+    }
     if (tag === 'hr') return '---\n\n';
     if (tag === 'table') {
         const rows = [...node.rows].filter((row) => row.closest('table') === node);
@@ -109,6 +154,23 @@ function nodeToMarkdown(node, depth = 0) {
         const href = node.getAttribute('href') || '';
         return href ? `[${content || markdownText(href)}](${href.replace(/[()\s]/g, (c) => encodeURIComponent(c))})` : content;
     }
+    if (tag === 'details') {
+        // No Markdown equivalent — pass the section through as raw HTML,
+        // like headerless tables.
+        return `\n${node.outerHTML}\n\n`;
+    }
+    if (tag === 'ul' && (node.classList?.contains('checklist') || node.querySelector('input[type="checkbox"]'))) {
+        const items = [...node.children].filter((child) => child.tagName === 'LI');
+        if (!items.length) return '';
+        const body = items.map((item) => {
+            const done = item.classList.contains('task-checked') || !!item.querySelector('input:checked');
+            const clone = item.cloneNode(true);
+            [...clone.querySelectorAll('input')].forEach((input) => input.remove());
+            const line = [...clone.childNodes].map((child) => nodeToMarkdown(child, depth + 1)).join('').trim();
+            return `${'  '.repeat(depth)}- [${done ? 'x' : ' '}] ${line}`;
+        }).join('\n');
+        return `${body}\n\n`;
+    }
     if (tag === 'ul' || tag === 'ol') {
         const ordered = tag === 'ol';
         return `${[...node.children].filter((child) => child.tagName === 'LI').map((item, index) => {
@@ -148,6 +210,13 @@ function inlineMarkdown(value) {
     // Markdown has no native underline syntax, so accept only this narrow,
     // safely escaped inline-HTML extension (also emitted by htmlToMarkdown).
     out = out.replace(/<u>([^<>]*)<\/u>/gi, (_match, text) => token(`<u>${escapeHtml(text)}</u>`));
+    // Inline math $…$ — same plausibility gate as the editor's typing rules,
+    // so prose about money survives the round trip unchanged.
+    out = out.replace(/(?<![\\$])\$([^$\n]+?)(?<!\s)\$(?!\d)/g, (_match, tex) => (
+        isPlausibleMath(tex)
+            ? token(`<math-inline>${escapeHtml(tex)}</math-inline>`)
+            : _match
+    ));
     out = out.replace(/`([^`]+)`/g, (_match, code) => token(`<code>${escapeHtml(code)}</code>`));
     out = escapeHtml(out);
     out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, rawHref) => {
@@ -199,11 +268,38 @@ export function markdownToHtml(markdown) {
         const fence = line.match(/^\s*(```|~~~)/);
         if (fence) {
             const marker = fence[1];
+            // First token of the info string is the language (` ```js `).
+            const info = line.slice(line.indexOf(marker) + marker.length)
+                .trim()
+                .match(/^[A-Za-z0-9_+.#-]{1,24}/);
+            const lang = info ? ` class="language-${info[0].toLowerCase()}"` : '';
             const code = [];
             index += 1;
             while (index < lines.length && !lines[index].trim().startsWith(marker)) code.push(lines[index++]);
             if (index < lines.length) index += 1;
-            blocks.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+            blocks.push(`<pre><code${lang}>${escapeHtml(code.join('\n'))}</code></pre>`);
+            continue;
+        }
+
+        // Block math: a $$…$$ fence on one line, or opening/closing lines.
+        const blockMath = line.match(/^\s*\$\$\s*(.*)$/);
+        if (blockMath) {
+            let tex = blockMath[1];
+            if (/\$\$\s*$/.test(tex) && tex.trim() !== '$$') {
+                // Single-line $$…$$
+                tex = tex.replace(/\$\$\s*$/, '');
+                if (isPlausibleMath(tex)) blocks.push(`<math-block>${escapeHtml(tex)}</math-block>`);
+                else blocks.push(`<p>${escapeHtml(`$$${tex}$$`)}</p>`);
+                index += 1;
+                continue;
+            }
+            const inner = [];
+            index += 1;
+            while (index < lines.length && !/^\s*\$\$\s*$/.test(lines[index])) inner.push(lines[index++]);
+            if (index < lines.length) index += 1;
+            const source = inner.join('\n');
+            if (source.trim()) blocks.push(`<math-block>${escapeHtml(source)}</math-block>`);
+            else blocks.push(`<p>${escapeHtml('$$')}</p>`);
             continue;
         }
 
@@ -221,10 +317,11 @@ export function markdownToHtml(markdown) {
         }
 
         // Raw HTML table block (emitted for headerless tables to stay faithful).
-        if (/^\s*<table[\s>]/i.test(line)) {
+        if (/^\s*<table[\s>]/i.test(line) || /^\s*<details[\s>]/i.test(line)) {
+            const tag = /^\s*<table[\s>]/i.test(line) ? 'table' : 'details';
             const raw = [line];
             index += 1;
-            while (index < lines.length && !/<\/table\s*>/i.test(lines[index])) raw.push(lines[index++]);
+            while (index < lines.length && !new RegExp('</' + tag + '\\s*>', 'i').test(lines[index])) raw.push(lines[index++]);
             if (index < lines.length) raw.push(lines[index++]);
             blocks.push(raw.join('\n'));
             continue;
@@ -281,13 +378,23 @@ export function markdownToHtml(markdown) {
         if (list) {
             const ordered = /^\d/.test(list[1]);
             const items = [];
+            let tasks = 0;
             while (index < lines.length) {
                 const match = lines[index].match(/^\s*([-+*]|\d+[.)])\s+(.+)$/);
                 if (!match || /^\d/.test(match[1]) !== ordered) break;
-                items.push(`<li>${inlineMarkdown(match[2])}</li>`);
+                // GFM task item: "- [ ] " / "- [x] " opens a checklist.
+                const task = match[2].match(/^\[([ xX])\]\s+(.*)$/);
+                if (task) {
+                    tasks += 1;
+                    const done = task[1].toLowerCase() === 'x';
+                    items.push(`<li${done ? ' class="task-checked"' : ''}><input type="checkbox"${done ? ' checked' : ''}>${inlineMarkdown(task[2])}</li>`);
+                } else {
+                    items.push(`<li>${inlineMarkdown(match[2])}</li>`);
+                }
                 index += 1;
             }
-            blocks.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
+            const listClass = tasks && !ordered ? ' class="checklist"' : '';
+            blocks.push(`<${ordered ? 'ol' : 'ul'}${listClass}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
             continue;
         }
 
@@ -319,6 +426,7 @@ export function noteToJson(note, organization = { folders: [], tags: [] }) {
         note: {
             title: String(note.title || ''),
             html: String(note.html || ''),
+            dir: ['ltr', 'rtl'].includes(note.dir) ? note.dir : null,
             pinned: !!note.pinned,
             folder: folder ? { name: folder.name } : null,
             tags,
@@ -354,6 +462,7 @@ export function parseNoteJson(json) {
         return {
             title: String(note.title || ''),
             html,
+            dir: ['ltr', 'rtl'].includes(note.dir) ? note.dir : null,
             pinned: !!note.pinned,
             folder,
             tags,
@@ -394,6 +503,7 @@ function nodeToRtf(node) {
     if (tag === 'u' || tag === 'a') return `{\\ul ${content}}`;
     if (tag === 's' || tag === 'del' || tag === 'strike') return `{\\strike ${content}}`;
     if (tag === 'br') return '\\line ';
+    if (tag === 'math-inline' || tag === 'math-block') return `{\\f1 $${rtfEscape(node.textContent)}$}`;
     if (tag === 'code') return `{\\f1 ${content}}`;
     if (tag === 'pre') return `{\\f1 ${rtfEscape(node.textContent)}}\\par\n`;
     if (/^h[1-6]$/.test(tag)) return `{\\b\\fs${Math.max(24, 42 - Number(tag[1]) * 4)} ${content}}\\par\n`;
@@ -740,7 +850,8 @@ function htmlNodeToWord(node, inherited = {}) {
         italic: inherited.italic || tag === 'i' || tag === 'em',
         underline: inherited.underline || tag === 'u' || tag === 'a',
         strike: inherited.strike || ['s', 'strike', 'del'].includes(tag),
-        code: inherited.code || tag === 'code' || tag === 'pre',
+        code: inherited.code || tag === 'code' || tag === 'pre'
+            || tag === 'math-inline' || tag === 'math-block',
     };
     if (tag === 'br') return '<w:r><w:br/></w:r>';
     return [...node.childNodes].map((child) => htmlNodeToWord(child, style)).join('');

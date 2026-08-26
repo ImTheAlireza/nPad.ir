@@ -49,11 +49,17 @@ $editItems = [
     ['action' => 'find',        'icon' => 'search',     'label' => t('menu.find'),        'shortcut' => 'Ctrl+F'],
     ['action' => 'find-replace','icon' => 'find-replace','label' => t('menu.find_replace'), 'shortcut' => 'Ctrl+H'],
     ['separator' => true],
+    ['action' => 'tasks-overview', 'icon' => 'check-square', 'label' => t('menu.tasks')],
+    ['separator' => true],
     ['action' => 'select-all',  'icon' => 'select-all', 'label' => t('menu.select_all'),  'shortcut' => 'Ctrl+A'],
 ];
 
 $insertItems = [
     ['action' => 'insert-table', 'icon' => 'table', 'label' => t('menu.table')],
+    ['action' => 'insert-code',  'icon' => 'code',  'label' => t('menu.code_block')],
+    ['action' => 'insert-math',  'icon' => 'sigma', 'label' => t('menu.math')],
+    ['action' => 'insert-section', 'icon' => 'section', 'label' => t('menu.section')],
+    ['action' => 'insert-checklist', 'icon' => 'check-square', 'label' => t('menu.checklist')],
     ['separator' => true],
     ['action' => 'insert-hr',     'icon' => 'hr',    'label' => t('menu.horizontal_rule')],
     ['action' => 'insert-datetime', 'icon' => 'calendar', 'label' => t('menu.date_time')],

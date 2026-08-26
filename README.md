@@ -48,8 +48,14 @@ Live: <https://npad.ir>
 │     ├─ analytics.js     Anonymous event reporting
 │     ├─ dashboard.js     Admin charts
 │     ├─ spellcheck.js    Local spell checker with tap/keyboard corrections
+│     ├─ codeblock.js     Code blocks: highlighting, language chip, copy button
+│     ├─ mathblock.js     Math typesetting: KaTeX paint, dialog, magic typing
+│     ├─ outline.js       Collapsible sections + outline navigator
+│     ├─ checklist.js     Checklists + cross-note task overview
+│     ├─ bidi.js          Direction detection + Unicode isolate helper
+│     ├─ caret.js         Caret boundary helpers shared by code/math modules
 │     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
-│     └─ vendor/          Self-hosted Chart.js 4.5.1
+│     └─ vendor/          Self-hosted Chart.js 4.5.1 + Prism 1.30.0 + KaTeX 0.18.4
 │
 ├─ fonts/                 Self-hosted Inter + Vazirmatn (WOFF2, ~96 KB)
 ├─ api/track.php          Event collector
@@ -162,6 +168,93 @@ opens its accessible correction dialog; arrow keys move through suggestions and
 Escape returns focus to the word. Coarse-pointer layouts provide 44 px correction
 targets. The dictionary and custom words remain entirely on the device.
 
+## Code blocks
+
+The **Insert** menu adds a code block: a monospace, always-LTR surface with a
+language chip, a copy button and a delete button. Languages are highlighted by
+a self-hosted Prism bundle (26 common languages, ~76 KB, lazy-loaded the first
+time a note actually contains a highlighted block — no CDN, no request
+otherwise). The language is stored on the block, so Markdown export writes
+fenced code with the info string (```` ```js ````) and import reads it back.
+
+The language is guessed where it helps and never where it hurts: code selected
+before Insert, code pasted into a plain block, and plain fenced blocks in
+imported files all go through a heuristic detector; an explicit class or an
+explicit "Plain text" choice always wins. Inside a block, `Tab` indents,
+`Enter` breaks a line — and at the very end of the block it hands the caret to
+the next paragraph (`Shift+Enter` always breaks a line). Backspace on an
+emptied block removes it, and at the block edges it refuses to merge the code
+with neighbouring paragraphs.
+
+The stored note keeps the plain form (`<pre><code class="language-js">`),
+while token spans and the block chrome are runtime paint — stripped again
+before every save and export, the same transient-paint rule as search
+highlights. The chip's label is a CSS `attr()` value rather than a text node,
+so word counts, find, spellcheck and TXT export see only the code itself.
+Every syntax colour is a design token verified at WCAG AA against the code
+background in both themes (and in print, where the light palette is forced).
+
+## Math typesetting
+
+The **Insert** menu adds a math formula: a dialog with a LaTeX field, an
+inline/block toggle, a symbol keyboard (fractions, roots, sums, integrals,
+Greek letters — inserts at the caret with cursor stops) and a live KaTeX
+preview with parse errors shown inline. Formulas carry a delete button in
+their corner (with confirmation), removed again before saving like all
+runtime paint.
+Formulas are self-hosted KaTeX 0.18.4 (no CDN), lazy-loaded with a
+woff2-only stylesheet the first time a note actually contains one; KaTeX
+renders visible HTML plus hidden MathML, so screen readers get real math.
+
+The stored note keeps the LaTeX source as plain text inside
+`<math-inline>`/`<math-block>` tags, while KaTeX output is runtime paint —
+stripped before every save and export, exactly like the code-block tokens.
+Markdown pairs through delimiters: `$…$` and `$$…$$` convert on import and
+export, gated by the same plausibility heuristics that keep prose about
+money ("I paid $5 and $10") as prose. Typing the closing `$$` delimiter in
+the editor converts on the fly (formulas are blocks; inline math exists only
+as a legacy rendering path). While the caret is inside a formula it shows
+raw LaTeX in monospace (always LTR); on leaving it re-renders. Enter at the
+end of a block formula hands the caret to the next paragraph, Backspace on
+an emptied formula removes it, and double-click reopens the dialog.
+DOCX/RTF keep the LaTeX source in monospace; PDF export prints the
+rendered formula for free.
+
+## Collapsible sections, outline and checklists
+
+The **Insert** menu adds collapsible sections and checklists; the toolbar
+gains an **Outline** panel.
+
+Sections are native `<details>/<summary>`: the stored note keeps the source
+*and* each section's open/collapsed state, clicking the summary toggles it
+(the one deterministic behaviour across engines), printing expands every
+section and restores it after, and Markdown passes sections through as raw
+HTML blocks. The **Outline** panel lists the note's H1–H6 headings and
+section summaries indented by level — click to jump, `Esc` to close, rebuilt
+live while typing.
+
+Checklists are GFM-compatible: `- [ ]` / `- [x]` round-trip through Markdown,
+items are real checkboxes (toggle with the mouse or Space), checked items
+dim with a strike-through, and the checked state persists in the note. The
+sanitizer admits checkbox inputs only inside checklist lists.
+
+**Edit → Tasks…** aggregates every checklist task across all notes into one
+dialog — open and completed sections, live counts, toggling a row updates
+the source note (the live editor for the active note, storage for the rest),
+and each row carries a jump link that opens the note and scrolls to the task.
+
+Keyboard behaviour matches plain text: Enter opens the next item (Enter on
+an empty item leaves the list), Backspace on an emptied item removes it, and
+inside sections Backspace on a cleared line removes it — the last one removes
+the section — instead of stranding the caret.
+
+**Direction is per note.** The toolbar LTR/RTL buttons write the direction
+onto the active note (persisted with it and restored on switch); notes
+without an override are auto-detected from their first strong character
+(`assets/js/bidi.js`), and mixed-language titles and previews render with
+`dir="auto"` plus Unicode FSI…PDI isolates where text leaves the DOM
+(document title).
+
 ## Tables
 
 The **Insert** menu (next to Edit) adds a table through a settings dialog:
@@ -211,10 +304,14 @@ Automated coverage includes:
 | `sanitize` | XSS vectors neutralised (including table tags/attrs); spans bounded; formatting preserved |
 | `table` | Grid model: creation, row/column inserts and deletes around spans, merge/split, headers, shading, width, borders, captions, move row, Tab navigation, paste normalisation |
 | `formats` | Markdown/JSON/RTF round trips; GFM pipe tables and DOCX `w:tbl` + merge spans; valid DOCX ZIPs; PDF stream and Unicode-map extraction |
+| `codeblocks` | Sanitiser bounds on `language-*` classes; Markdown fence round trips; language autodetection; the runtime module against the real Prism bundle: chrome, highlight/unhighlight cycles, normalisation, the full keyboard model (Tab, Enter/Shift+Enter, Backspace/Delete edges), copy, spellcheck skip |
 | `storage` | Legacy migration, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
 | `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes; spelling corrections; autosave; Insert menu, table dialog, contextual toolbar, cell control |
 | `tables-ui` | Full awaited end-to-end flow: Insert menu → settings dialog → live table → row/column/merge/split/header tools → properties → delete → context menu |
+| `codeblocks-ui` | Full awaited end-to-end flow: Insert menu → block with chrome → language dialog → Prism highlight → copy → Tab → autosave stores the plain form → markdown paste |
+| `math` / `math-ui` | Sanitiser bounds on the math tags; `$$…$$` round trips incl. money heuristics; the runtime module against the real KaTeX: paint/strip cycles, edit mode, keyboard model, magic typing; awaited end-to-end dialog flow, autosave, double-click edit |
+| `structure` / `structure-ui` | Sanitiser bounds for sections/checklists (`open`, bounded input attrs, checklist-only inputs); Markdown round trips for task lists and raw details; outline build + jump; checklist normalisation; cross-note task scan; awaited end-to-end flows for sections, outline, checklist toggle and the Tasks dialog across notes |
 
 ## Notable decisions
 
@@ -270,4 +367,7 @@ every page view.
 
 - Inter — SIL Open Font License 1.1 (`fonts/LICENSE-Inter.txt`)
 - Vazirmatn — SIL Open Font License 1.1 (`fonts/LICENSE-Vazirmatn.txt`)
-- Chart.js 4.5.1 — MIT
+- Chart.js 4.5.1 — MIT (`assets/js/vendor/LICENSE-chartjs.md`)
+- Prism 1.30.0 — MIT (`assets/js/vendor/LICENSE-prism.md`)
+- KaTeX 0.18.4 — MIT; bundled KaTeX typefaces under SIL OFL 1.1
+  (`assets/js/vendor/LICENSE-katex.md`)

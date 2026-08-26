@@ -249,6 +249,10 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         const walker = document.createTreeWalker(editor, SHOW_TEXT);
         let node;
         while ((node = walker.nextNode())) {
+            // Code is literal content: highlighting spans and the block chrome
+            // are never prose, and flagging keywords as typos is noise.
+            const parent = node.parentElement;
+            if (parent?.closest('pre, code, math-inline, math-block, [data-codeblock-chrome]')) continue;
             if (node.nodeValue) textNodes.push(node);
         }
         for (const textNode of textNodes) wrapNode(textNode);
