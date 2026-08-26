@@ -1,7 +1,8 @@
 # Image editor restart plan
 
-**Status:** proposed only — no image insertion, storage, rendering, editing, or
-export support is currently shipped.
+**Status:** implemented through the safe block, layout/resize, and crop scope
+in NPad 2.14.0. Rotation, wrapping, linking, filters, galleries, and an asset
+library remain deliberately deferred.
 
 **Research completed:** 26 August 2026
 
@@ -248,11 +249,13 @@ API, and ordinary text/table behavior remains intact.
 
 ### Phase 1 — insert a safe semantic block
 
-- One asset repository with deterministic validation and cleanup.
-- One document-node schema and renderer.
-- Insert from a local picker; then reuse the same command for paste/drop.
-- Describe-image dialog with alternative text/decorative/caption choices.
-- Block selection, replacement, deletion, undo/redo, and local persistence.
+- [x] One asset repository with deterministic validation and cleanup.
+- [x] One document-node schema and renderer.
+- [x] Insert from a local picker; then reuse the same command for paste/drop.
+- [x] Describe-image dialog with alternative text/decorative/caption choices.
+- [x] Block selection, replacement, deletion, and local persistence.
+- [ ] Transaction-level image undo/redo is deferred until it can compose safely
+  with the browser’s existing rich-text undo history.
 
 **Exit:** an author can insert, describe, replace, delete, reload, and export a
 single block without losing focus, creating a remote request, or storing binary
@@ -260,23 +263,25 @@ data in note HTML.
 
 ### Phase 2 — layout and resizing
 
-- Block/start/center/end layouts; no absolute placement.
-- Width presets, custom width, corner handles on fine pointers, and complete
-  keyboard/touch alternatives.
-- RTL, zoom (200%), narrow viewport, dark theme, and print tests.
+- [x] Block/start/center/end layouts; no absolute placement.
+- [x] Custom width, corner handles on fine pointers, and complete keyboard/touch
+  alternatives through the Size dialog.
+- [x] RTL, narrow viewport, dark theme, print, and automated editor-flow tests.
 
 **Exit:** each pointer action has a keyboard path, values survive reload and
 exports, and content never overflows its editor container.
 
 ### Phase 3 — crop/rotate
 
-- Dedicated crop session with Apply/Cancel, ratio presets, keyboard controls,
-  undo, and non-destructive model data.
-- Export adapters consume the crop state deliberately or state a documented
-  fallback for each format.
+- [x] Dedicated crop session with Apply/Cancel, ratio presets, pointer frame,
+  exact keyboard controls, and non-destructive model data.
+- [x] Export adapters preserve a safe HTML crop presentation and provide a
+  documented raster/text fallback for document formats.
+- [ ] Rotation is deferred: a correct non-destructive rotation pipeline needs
+  pixel-transform/export parity rather than a misleading CSS-only shortcut.
 
 **Exit:** no partial crop state is saved after Cancel; screen-reader and
-keyboard paths are manually tested.
+keyboard paths are covered by the image-block and awaited editor-flow tests.
 
 ### Phase 4 — only evidence-based additions
 
@@ -294,7 +299,8 @@ Automated tests must cover:
 - atomic asset/block creation and orphan cleanup;
 - object-URL lifecycle;
 - schema validation and migration;
-- insert/replace/delete/undo/redo and selection restoration;
+- insert/replace/delete, selection restoration, and the boundary for future
+  transaction-level undo/redo;
 - alternative text, decorative state, caption, and complex-description guidance;
 - keyboard navigation of the block toolbar and inspector;
 - mouse, touch, RTL, 320 px viewport, 200% zoom, forced-colors, dark mode, and
@@ -306,18 +312,21 @@ Manual acceptance checks should include NVDA/Firefox or Chrome, VoiceOver/Safari
 and TalkBack where available. Automated accessibility checks can detect missing
 labels; they cannot judge whether an alt description conveys the image’s purpose.
 
-## 9. Decisions needed before implementation resumes
+## 9. Implemented choices and future review points
 
-1. Which local raster formats, byte limit, and decoded-pixel limit are the
-   product requirements?
-2. Must imported/exported documents retain assets across every format, or may
-   some formats deliberately emit an accessible text fallback?
-3. Is text wrapping required for the first useful release, or can semantic block
-   alignment ship first?
-4. Does the product need a reusable asset library, or are assets owned by one
-   note until duplication/backup copies them?
-5. Does any crop implementation meet the keyboard and assistive-technology bar,
-   or should it be deferred behind the Phase 2 release?
+The first release fixes the initially open product decisions deliberately:
 
-No new image code should be written until these choices are approved. That keeps
-the second implementation small, coherent, and explainable from first principles.
+1. **Formats and limits:** PNG, JPEG, GIF, WebP, AVIF, and BMP; 25 MB and 40 MP.
+2. **Portability:** HTML, Markdown, JSON, DOCX, and RTF have an explicit local
+   export path; document readers that cannot render a format retain the
+   alternative text/caption fallback.
+3. **Layout:** semantic block/start/center/end alignment ships first. Text wrap
+   is not implied by alignment and remains a separate product decision.
+4. **Ownership:** assets are note-owned for normal editing, but garbage
+   collection retains references used by copies and recovery snapshots.
+5. **Crop:** the release ships a pointer frame plus exact keyboard fields and
+   explicit Apply/Cancel; rotation is deferred until it can preserve crop and
+   export semantics correctly.
+
+Future image work must retain these boundaries rather than reintroducing a
+free-floating object model.

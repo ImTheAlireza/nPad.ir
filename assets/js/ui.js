@@ -149,9 +149,10 @@ function renderFooter(buttons) {
  * @param {string} [options.bodyHtml]  Trusted markup (built from translations)
  * @param {Array}  [options.buttons]   [{ label, action, variant }]
  * @param {Function} [options.onOpen]  Called with the body element
+ * @param {Function|string|HTMLElement} [options.initialFocus] Focus target after the dialog opens
  * @returns {Promise<string|null>} the chosen action, or null if dismissed
  */
-export function showDialog({ title, bodyHtml = '', buttons = [], onOpen } = {}) {
+export function showDialog({ title, bodyHtml = '', buttons = [], onOpen, initialFocus } = {}) {
     const dialog = dialogEl();
     if (!dialog) return Promise.resolve(null);
 
@@ -206,8 +207,11 @@ export function showDialog({ title, bodyHtml = '', buttons = [], onOpen } = {}) 
 
         dialog.showModal();
 
-        const autofocus = bodyEl.querySelector('[autofocus], input, select');
-        if (autofocus) autofocus.focus();
+        const requestedFocus = typeof initialFocus === 'function'
+            ? initialFocus(bodyEl)
+            : (typeof initialFocus === 'string' ? bodyEl.querySelector(initialFocus) : initialFocus);
+        const autofocus = requestedFocus || bodyEl.querySelector('[autofocus], input, select, textarea');
+        if (autofocus?.focus) autofocus.focus();
         else {
             const primary = footerEl.querySelector('.btn--primary');
             if (primary) primary.focus();

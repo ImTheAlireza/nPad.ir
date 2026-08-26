@@ -194,6 +194,37 @@ JSON exports, and are serialised to GFM pipe tables in Markdown, real
 Excel, Word or the web are normalised (nested tables lifted, spans bounded)
 before they enter the grid model.
 
+## Image blocks
+
+Images are semantic document blocks, not floating page objects. Use
+**Insert → Image…**, paste a local image, or drop one into a note. Every route
+uses the same local-first pipeline:
+
+- **Allowed input:** PNG, JPEG, GIF, WebP, AVIF, and BMP only. Files are checked
+  against their signature, decoded dimensions, a 25 MB byte cap, and a 40 MP
+  pixel cap. SVG and remote image URLs are not accepted.
+- **Private storage:** source bytes are stored as local assets in IndexedDB
+  (`imageAssets`); localStorage is only a bounded fallback. Note HTML contains
+  a validated asset reference, never image bytes, object URLs, or arbitrary CSS.
+- **Accessible insertion:** NPad immediately asks for alternative text or an
+  explicit decorative-image choice. A pending-description badge remains visible
+  until the author makes that choice. Captions are separate visible prose.
+- **Predictable editing:** click a block for a compact contextual toolbar:
+  Replace, alignment, Size, details, Crop, and Delete. The primary text toolbar
+  stays stable. Corner resizing is available on fine pointers; the Size dialog
+  provides the same keyboard and touch path.
+- **Safe layouts:** block/start/center/end alignment only. There is no free
+  dragging, fixed-page placement, behind-text layering, or arbitrary filters.
+- **Crop:** the dedicated Crop dialog has a visible crop frame, Original/1:1/
+  4:3/16:9 presets, exact keyboard-editable values, and explicit Cancel/Apply.
+  Cropping is non-destructive.
+- **Portable export:** HTML, Markdown, NPad JSON, DOCX, and RTF export image
+  fallbacks locally. HTML/Markdown/JSON embed safe raster data for portability;
+  DOCX writes compatible media parts (or an accessible text fallback); RTF retains descriptive text and captions.
+
+Assets follow note copies and recovery snapshots. Garbage collection only removes
+an asset when neither a live note nor a recovery snapshot references it.
+
 ## Tests
 
 ```bash
@@ -208,13 +239,14 @@ Automated coverage includes:
 | `static` | PHP + JS parse; no CDN, geo-IP, `php_value` or `console.log` regressions; fonts, icons and service-worker precache all resolve; client/server event lists agree |
 | `contrast` | Every token pair meets WCAG AA (4.5:1 text, 3:1 controls) in both themes |
 | `lang` | `en.php` and `fa.php` expose identical key structures |
-| `sanitize` | XSS vectors neutralised (including table tags/attrs); spans bounded; formatting preserved |
+| `sanitize` | XSS vectors neutralised; typed image-block markup and transient data-image boundaries validated; table spans bounded |
+| `image-blocks` | Image schema, file signature/dimension guards, semantic markup, temporary URLs, portable export, and asset remapping |
 | `table` | Grid model: creation, row/column inserts and deletes around spans, merge/split, headers, shading, width, borders, captions, move row, Tab navigation, paste normalisation |
-| `formats` | Markdown/JSON/RTF round trips; GFM pipe tables and DOCX `w:tbl` + merge spans; valid DOCX ZIPs; PDF stream and Unicode-map extraction |
-| `storage` | Legacy migration, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
+| `formats` | Markdown/JSON/RTF image fallbacks; GFM pipe tables and DOCX `w:tbl`/media parts; valid DOCX ZIPs; PDF stream and Unicode-map extraction |
+| `storage` | Legacy migration, local image assets, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
 | `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes; spelling corrections; autosave; Insert menu, table dialog, contextual toolbar, cell control |
-| `tables-ui` | Full awaited end-to-end flow: Insert menu → settings dialog → live table → row/column/merge/split/header tools → properties → delete → context menu |
+| `tables-ui` | Awaited editor flows: table controls plus image picker, semantic insertion, description, roving toolbar, keyboard size, crop cancel/apply, resize, Escape, persistence, and delete |
 
 ## Notable decisions
 

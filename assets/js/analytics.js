@@ -43,6 +43,12 @@ const ALLOWED = new Set([
     'spell_add_word',
     'table_inserted',
     'table_tool_used',
+    'image_inserted',
+    'image_replaced',
+    'image_removed',
+    'image_resized',
+    'image_cropped',
+    'image_details_saved',
 ]);
 
 let enabled = true;

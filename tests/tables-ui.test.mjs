@@ -1,6 +1,7 @@
 /**
- * End-to-end coverage for the table feature: Insert menu -> settings dialog
- * -> table in the editor -> contextual toolbar -> full cell control.
+ * Awaited end-to-end editor coverage: table interactions plus the semantic
+ * image-block workflow (local insertion, description, contextual toolbar,
+ * keyboard sizing, crop, resizing, and deletion).
  *
  * The behaviour suite loads the same page but its checks are synchronous, so
  * the asynchronous dialog continuations (promise resolutions) cannot be
@@ -56,6 +57,11 @@ function installEnvironment(dom) {
     }
     window.navigator.sendBeacon = () => true;
     document.execCommand = document.execCommand || (() => true);
+    window.URL = window.URL || {};
+    window.URL.createObjectURL = () => 'blob:https://npad.ir/mock-image';
+    window.URL.revokeObjectURL = () => {};
+    global.URL = window.URL;
+    global.createImageBitmap = async () => ({ width: 1, height: 1, close() {} });
 }
 
 export default async function run(check, group) {
@@ -145,7 +151,7 @@ export default async function run(check, group) {
         } catch (err) {
             stepFailures.push(name);
             console.log(`  FAIL  ${name}`);
-            console.log(`        ${String(err.message).split('\n')[0]}`);
+            console.log(`        ${String(err.message).replace(/\n/g, '\n        ')}`);
         }
     };
 
@@ -360,10 +366,160 @@ export default async function run(check, group) {
         assert.equal(contextMenu.hidden, true, 'Escape did not close the menu');
     });
 
-    await step('retired media controls are absent from the rendered editor', () => {
-        assert.equal(document.querySelector('[data-action="insert-image"]'), null);
-        assert.equal(document.getElementById('toolbarPaneImage'), null);
-        assert.equal(document.getElementById('imageContextMenu'), null);
+    /* --------------------------------------------------------------------
+       Image block: insertion, selection, keyboard-safe details and crop
+       -------------------------------------------------------------------- */
+
+    const pngBytes = Uint8Array.from(Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64',
+    ));
+    const imageFile = () => {
+        const blob = new Blob([pngBytes], { type: 'image/png' });
+        Object.defineProperty(blob, 'name', { value: 'diagram.png' });
+        return blob;
+    };
+    const pointerEvent = (type, pointerId, clientX, clientY) => {
+        const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY });
+        Object.defineProperty(event, 'pointerId', { value: pointerId });
+        return event;
+    };
+
+    await step('Insert menu opens a local raster-only picker', () => {
+        let accept = '';
+        const nativeClick = window.HTMLInputElement.prototype.click;
+        window.HTMLInputElement.prototype.click = function () {
+            if (this.type === 'file') accept = this.accept;
+            else nativeClick.call(this);
+        };
+        clickMenu('insert-image');
+        window.HTMLInputElement.prototype.click = nativeClick;
+        assert.match(accept, /image\/png/);
+        assert.match(accept, /image\/avif/);
+        assert.ok(!accept.includes('image/svg+xml'));
+    });
+
+    await step('Insert menu uses a semantic local image block and asks for a description', async () => {
+        editor.innerHTML = '<p>before</p><p><br></p>';
+        putCaretInCell(editor.querySelector('p:last-child'));
+        const file = imageFile();
+        const paste = new window.Event('paste', { bubbles: true, cancelable: true });
+        Object.defineProperty(paste, 'clipboardData', {
+            value: { getData: () => '', files: [file], items: [{ type: 'image/png', getAsFile: () => file }] },
+        });
+        editor.dispatchEvent(paste);
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+
+        const figure = editor.querySelector('figure[data-npad-image-block="1"]');
+        assert.ok(figure, 'semantic figure missing');
+        const image = figure.querySelector('img[data-npad-image-asset]');
+        assert.ok(image, 'asset reference missing');
+        assert.ok(image.getAttribute('data-npad-image-asset').startsWith('asset-'));
+        assert.equal(image.getAttribute('src'), 'blob:https://npad.ir/mock-image');
+        assert.equal(document.getElementById('toolbar').dataset.toolbarContext, 'base', 'main text toolbar was replaced');
+        assert.equal(dialog.open, true, 'description dialog did not open');
+
+        dialog.querySelector('[data-image-alt]').value = 'Blue diagram';
+        dialog.querySelector('[data-image-caption]').value = 'Figure one';
+        dialog.querySelector('[data-image-width]').value = '50';
+        click(dialog.querySelector('[data-action="save-image-details"]'));
+        await flush();
+
+        const props = JSON.parse(figure.getAttribute('data-npad-image'));
+        assert.deepEqual(props.alt, { kind: 'informative', text: 'Blue diagram' });
+        assert.equal(props.caption, 'Figure one');
+        assert.equal(props.display.widthPercent, 50);
+        assert.equal(figure.querySelector('figcaption').textContent, 'Figure one');
+
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        const saved = JSON.parse(localStorage.getItem('npad:notes')).notes
+            .find((note) => note.id === localStorage.getItem('npad:active-note'))?.html || '';
+        assert.match(saved, /data-npad-image-block/);
+        assert.ok(!/\ssrc=|npad-image-block--selected/.test(saved), saved);
+    });
+
+    await step('selection keeps the main toolbar stable and exposes a roving contextual toolbar', () => {
+        const figure = editor.querySelector('figure[data-npad-image-block="1"]');
+        figure.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        const imageToolbar = document.getElementById('imageBlockToolbar');
+        assert.equal(imageToolbar.hidden, false, 'image toolbar not shown');
+        assert.equal(imageToolbar.getAttribute('role'), 'toolbar');
+        assert.equal(document.getElementById('toolbar').dataset.toolbarContext, 'base');
+        const controls = [...imageToolbar.querySelectorAll('button')];
+        assert.equal(controls.filter((button) => button.tabIndex === 0).length, 1, 'toolbar needs one tab stop');
+        controls[0].focus();
+        imageToolbar.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        assert.notEqual(document.activeElement, controls[0], 'arrow navigation did not move in contextual toolbar');
+    });
+
+    await step('layout, keyboard size fields and crop apply through explicit dialogs', async () => {
+        const figure = editor.querySelector('figure[data-npad-image-block="1"]');
+        const imageToolbar = document.getElementById('imageBlockToolbar');
+        click(imageToolbar.querySelector('[data-image-action="layout-center"]'));
+        assert.equal(JSON.parse(figure.getAttribute('data-npad-image')).display.layout, 'center', 'center layout was not saved');
+
+        click(imageToolbar.querySelector('[data-image-action="size"]'));
+        assert.equal(dialog.open, true, 'size dialog did not open');
+        assert.equal(document.activeElement, dialog.querySelector('[data-image-width]'),
+            `size dialog focus landed on ${document.activeElement?.outerHTML || document.activeElement?.tagName}`);
+        click(dialog.querySelector('[data-image-width-preset="75"]'));
+        assert.equal(dialog.querySelector('[data-image-width]').value, '75');
+        dialog.querySelector('[data-image-width]').value = '75';
+        click(dialog.querySelector('[data-action="save-image-details"]'));
+        await flush();
+        assert.equal(JSON.parse(figure.getAttribute('data-npad-image')).display.widthPercent, 75, 'custom width was not saved');
+
+        click(imageToolbar.querySelector('[data-image-action="crop"]'));
+        assert.equal(dialog.open, true, 'crop dialog not opened');
+        dialog.querySelector('[data-crop-field="x"]').value = '20';
+        dialog.querySelector('[data-crop-field="x"]').dispatchEvent(new window.Event('input', { bubbles: true }));
+        click(dialog.querySelector('[data-action="cancel"]'));
+        await flush();
+        assert.equal(JSON.parse(figure.getAttribute('data-npad-image')).crop, null, 'Cancel persisted a crop');
+
+        click(imageToolbar.querySelector('[data-image-action="crop"]'));
+        assert.equal(dialog.open, true, 'crop dialog did not reopen');
+        dialog.querySelector('[data-crop-field="x"]').value = '10';
+        dialog.querySelector('[data-crop-field="x"]').dispatchEvent(new window.Event('input', { bubbles: true }));
+        dialog.querySelector('[data-crop-field="width"]').value = '80';
+        dialog.querySelector('[data-crop-field="width"]').dispatchEvent(new window.Event('input', { bubbles: true }));
+        click(dialog.querySelector('[data-action="apply-crop"]'));
+        await flush();
+        const crop = JSON.parse(figure.getAttribute('data-npad-image')).crop;
+        assert.equal(crop.x, 10);
+        assert.equal(crop.width, 80);
+
+        click(imageToolbar.querySelector('[data-image-action="details"]'));
+        const decorative = dialog.querySelector('[data-image-decorative]');
+        decorative.checked = true;
+        decorative.dispatchEvent(new window.Event('change', { bubbles: true }));
+        assert.equal(dialog.querySelector('[data-image-alt]').disabled, true, 'decorative choice did not disable alt input');
+        click(dialog.querySelector('[data-action="cancel"]'));
+        await flush();
+    });
+
+    await step('desktop resize handles update width and Escape returns to ordinary editing', () => {
+        const figure = editor.querySelector('figure[data-npad-image-block="1"]');
+        const canvas = figure.querySelector('[data-npad-image-canvas]');
+        editor.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 500, right: 500, bottom: 500 });
+        canvas.getBoundingClientRect = () => ({ left: 20, top: 40, width: 300, height: 160, right: 320, bottom: 200 });
+        figure.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        const handle = document.querySelector('[data-image-resize-handle="se"]');
+        assert.ok(handle, 'resize handle missing');
+        handle.dispatchEvent(pointerEvent('pointerdown', 7, 100, 100));
+        document.dispatchEvent(pointerEvent('pointermove', 7, 150, 100));
+        document.dispatchEvent(pointerEvent('pointerup', 7, 150, 100));
+        assert.ok(JSON.parse(figure.getAttribute('data-npad-image')).display.widthPercent > 75, 'resize did not increase width');
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(document.getElementById('imageBlockToolbar').hidden, true, 'Escape did not dismiss image selection');
+    });
+
+    await step('Delete removes only the selected image block and its text flow remains editable', () => {
+        const figure = editor.querySelector('figure[data-npad-image-block="1"]');
+        figure.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+        assert.equal(editor.querySelector('figure[data-npad-image-block="1"]'), null);
+        assert.ok(editor.textContent.includes('before'));
     });
 
     await step('no uncaught page errors', () => {

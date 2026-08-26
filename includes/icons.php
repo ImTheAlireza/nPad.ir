@@ -102,6 +102,12 @@ function npad_icon_paths(): array
         'sort-asc'        => '<path d="M8 5v14"/><path d="m4 9 4-4 4 4"/><path d="M16 6h4M16 10h4M16 14h3"/>',
         'sort-desc'       => '<path d="M8 5v14"/><path d="m4 15 4 4 4-4"/><path d="M16 6h3M16 10h4M16 14h4"/>',
         'more'        => '<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>',
+        /* Image blocks */
+        'image'         => '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 15-4-4-9 9"/>',
+        'image-replace' => '<path d="M20 11a8 8 0 0 0-14-4L4 9"/><path d="M4 5v4h4"/><path d="M4 13a8 8 0 0 0 14 4l2-2"/><path d="M20 19v-4h-4"/>',
+        'image-size'    => '<rect x="3" y="5" width="14" height="14" rx="2"/><path d="M21 9v-3l-3 3"/><path d="M18 6h3v3"/><path d="M9 22h5"/>',
+        'image-alt'     => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 13h6M7 16h10"/>',
+        'crop'          => '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/>',
         'hr'          => '<path d="M3 12h18"/><path d="M6 9v6M18 9v6" stroke-width="1.6"/>',
         'calendar'    => '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
         'arrow-down'  => '<path d="M12 5v14"/><path d="m5 12 7 7 7-7"/>',

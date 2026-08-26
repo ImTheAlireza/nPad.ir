@@ -33,6 +33,15 @@ const tableDocxHtml = await formats.docxToHtml(formats.htmlToDocx(tableHtml));
 const mergedTableDocxHtml = await formats.docxToHtml(formats.htmlToDocx(
     '<table><tbody><tr><td rowspan="2" colspan="2">big</td></tr><tr></tr></tbody></table>',
 ));
+const IMAGE_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const imageFigureHtml = `<figure><img src="${IMAGE_DATA_URI}" alt="Diagram"><figcaption>A caption</figcaption></figure>`;
+const imageMarkdown = formats.htmlToMarkdown(imageFigureHtml);
+const imageMarkdownHtml = formats.markdownToHtml(imageMarkdown);
+const [imageJsonNote] = formats.parseNoteJson({ title: 'Diagram', html: imageFigureHtml });
+const imageDocx = formats.htmlToDocx(imageFigureHtml);
+const imageDocxText = new TextDecoder().decode(imageDocx);
+const imageDocxHtml = await formats.docxToHtml(imageDocx);
+const imageRtf = formats.htmlToRtf(imageFigureHtml);
 
 function testCrc32(bytes) {
     let crc = 0xffffffff;
@@ -174,6 +183,12 @@ export default function run(check, group) {
         assert.match(back, /<table><tbody><tr><td>x<\/td><td>y<\/td><\/tr><\/tbody><\/table>/);
     });
 
+    check('Markdown keeps portable raster images and captions', () => {
+        assert.match(imageMarkdown, /!\[Diagram\]\(data:image\/png;base64,/);
+        assert.match(imageMarkdown, /\*A caption\*/);
+        assert.match(imageMarkdownHtml, /<img src="data:image\/png;base64,[^"]+" alt="Diagram">/);
+    });
+
     check('NPad JSON round-trips metadata and sanitizes HTML', () => {
         const json = formats.noteToJson({
             title: 'Portable', html: '<p>Hi</p>', pinned: true, folderId: 'f1', tags: ['t1'],
@@ -244,15 +259,14 @@ export default function run(check, group) {
         assert.match(html, /1/);
     });
 
-    check('format codecs discard retired media markup but retain caption prose', () => {
-        const retired = '<figure><img src="data:image/png;base64,iVBORw0KGgo=" alt="old"><figcaption>Useful caption</figcaption></figure>';
-        const markdown = formats.htmlToMarkdown(retired);
-        const [note] = formats.parseNoteJson({ title: 'Legacy', html: retired });
-        const docxText = new TextDecoder().decode(formats.htmlToDocx(retired));
-        assert.match(markdown, /Useful caption/);
-        assert.match(note.html, /Useful caption/);
-        assert.ok(!/<img|<figure|data:image/i.test(note.html), note.html);
-        assert.ok(!docxText.includes('word/media/'), 'retired media leaked into DOCX');
+    check('JSON, DOCX and RTF retain a portable image fallback', () => {
+        assert.match(imageJsonNote.html, /src="data:image\/png;base64,/);
+        assert.match(imageJsonNote.html, /A caption/);
+        assert.ok(imageDocxText.includes('word/media/image1.png'), 'DOCX media part missing');
+        assert.ok(imageDocxText.includes('rIdImg1'), 'DOCX image relationship missing');
+        assert.match(imageDocxHtml, /src="data:image\/png;base64,/);
+        assert.match(imageRtf, /Diagram/);
+        assert.match(imageRtf, /A caption/);
     });
 
     check('PDF importer inflates streams and follows Unicode font maps', () => {
