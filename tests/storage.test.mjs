@@ -138,5 +138,49 @@ export default async function run(check, group) {
         assert.equal(backups.length, 0);
     });
 
+    group('storage: image attachments (localStorage fallback)');
+
+    const attachmentBlob = () => new window.Blob(
+        [Uint8Array.from([0x89, 0x50, 0x4e, 0x47])],
+        { type: 'image/png' },
+    );
+    const imgA = { id: `img-${second.id}-aa`, noteId: second.id, blob: attachmentBlob(), type: 'image/png', size: 4, name: 'a.png', createdAt: 1 };
+    const imgB = { id: `img-${second.id}-bb`, noteId: second.id, blob: attachmentBlob(), type: 'image/png', size: 4, name: 'b.png', createdAt: 2 };
+    const imgC = { id: `img-${migrated[0].id}-cc`, noteId: migrated[0].id, blob: attachmentBlob(), type: 'image/png', size: 4, name: 'c.png', createdAt: 3 };
+
+    // Sequential awaits: the harness check() is synchronous, so every async
+    // persistence step completes before its assertion runs.
+    await storage.saveImage(imgA);
+    await storage.saveImage(imgB);
+    await storage.saveImage(imgC);
+    const loadedA = await storage.loadImage(imgA.id);
+    const ownedSecond = (await storage.listImagesByNote(second.id)).map((record) => record.id).sort();
+
+    check('images persist in the fallback and load per note', () => {
+        assert.ok(loadedA, 'image A missing');
+        assert.equal(loadedA.type, 'image/png');
+        assert.deepEqual(ownedSecond, [imgA.id, imgB.id].sort());
+    });
+
+    await storage.deleteImagesByNote(second.id);
+    const aAfterNote = await storage.loadImage(imgA.id);
+    const bAfterNote = await storage.loadImage(imgB.id);
+    const cAfterNote = await storage.loadImage(imgC.id);
+
+    check('deleteImagesByNote removes only that note\'s images', () => {
+        assert.equal(aAfterNote, null);
+        assert.equal(bAfterNote, null);
+        assert.ok(cAfterNote, 'other note image removed');
+    });
+
+    await storage.clearImages();
+    const cAfterClear = await storage.loadImage(imgC.id);
+    const remaining = await storage.listImagesByNote(migrated[0].id);
+
+    check('clearImages removes every attachment', () => {
+        assert.equal(cAfterClear, null);
+        assert.equal(remaining.length, 0);
+    });
+
     dom.window.close();
 }

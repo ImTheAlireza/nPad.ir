@@ -10,10 +10,10 @@
  */
 
 const ALLOWED_TAGS = new Set([
-    'A', 'B', 'BLOCKQUOTE', 'BR', 'CAPTION', 'CODE', 'DIV', 'EM', 'FONT', 'H1', 'H2',
-    'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'LI', 'MARK', 'OL', 'P', 'PRE', 'S',
-    'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'TABLE', 'TBODY', 'TD', 'TFOOT',
-    'TH', 'THEAD', 'TR', 'U', 'UL',
+    'A', 'B', 'BLOCKQUOTE', 'BR', 'CAPTION', 'CODE', 'DIV', 'EM', 'FIGCAPTION',
+    'FIGURE', 'FONT', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'LI',
+    'MARK', 'OL', 'P', 'PRE', 'S', 'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP',
+    'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'U', 'UL',
 ]);
 
 const ALLOWED_ATTRS = {
@@ -21,6 +21,8 @@ const ALLOWED_ATTRS = {
     FONT: new Set(['color', 'face', 'size']),
     TD: new Set(['colspan', 'rowspan']),
     TH: new Set(['colspan', 'rowspan', 'scope']),
+    IMG: new Set(['data-npad-img', 'alt', 'title']),
+    FIGURE: new Set(['data-npad-figure']),
     '*': new Set(['style', 'align', 'dir']),
 };
 
@@ -34,6 +36,9 @@ const ALLOWED_STYLES = new Set([
 ]);
 
 const SAFE_URL = /^(https?:|mailto:|tel:|#|\/)/i;
+
+/** Raster data-URI images only: no SVG (script vector), no remote fetch. */
+const SAFE_IMAGE_DATA = /^data:image\/(png|jpeg|gif|webp|avif|bmp);base64,[a-z0-9+/=\s]+$/i;
 
 function sanitiseStyle(value) {
     return value
@@ -50,7 +55,7 @@ function sanitiseStyle(value) {
         .join('; ');
 }
 
-function cleanElement(el) {
+function cleanElement(el, options = {}) {
     const tag = el.tagName;
 
     // Unwrap unknown elements but keep their text, so pasting from Word or
@@ -65,7 +70,9 @@ function cleanElement(el) {
 
     for (const attr of Array.from(el.attributes)) {
         const name = attr.name.toLowerCase();
+        const srcAllowed = name === 'src' && tag === 'IMG' && !!options.dataImages;
         const permitted =
+            srcAllowed ||
             (ALLOWED_ATTRS[tag] && ALLOWED_ATTRS[tag].has(name)) ||
             ALLOWED_ATTRS['*'].has(name);
 
@@ -76,6 +83,14 @@ function cleanElement(el) {
 
         if (name === 'href') {
             if (!SAFE_URL.test(attr.value.trim())) el.removeAttribute(attr.name);
+            continue;
+        }
+
+        // Transient data-URI sources survive only the import path (JSON/HTML
+        // files); the editor extracts them into the attachment store before
+        // the content is persisted, where only data-npad-img may live.
+        if (name === 'src' && tag === 'IMG') {
+            if (!SAFE_IMAGE_DATA.test(attr.value.trim())) el.removeAttribute(attr.name);
             continue;
         }
 
@@ -103,6 +118,15 @@ function cleanElement(el) {
         }
     }
 
+    // Notes store image references, never their bytes: an IMG without an
+    // attachment id (and not in transient data-URI import mode) is broken
+    // and would render an empty icon forever.
+    if (tag === 'IMG' && !el.getAttribute('data-npad-img')
+        && !(options.dataImages && el.getAttribute('src'))) {
+        el.remove();
+        return;
+    }
+
     // Any link that opens a new tab must not hand over window.opener.
     if (tag === 'A' && el.getAttribute('target') === '_blank') {
         el.setAttribute('rel', 'noopener noreferrer');
@@ -111,9 +135,13 @@ function cleanElement(el) {
 
 /**
  * @param {string} dirty
+ * @param {object} [options]
+ * @param {boolean} [options.dataImages] Allow transient data-URI image src
+ *   (import path only — the editor archives them into the attachment store
+ *   before content is persisted).
  * @returns {string} sanitised HTML
  */
-export function sanitizeHtml(dirty) {
+export function sanitizeHtml(dirty, options = {}) {
     if (!dirty) return '';
 
     // <template> parses without executing scripts or loading resources.
@@ -126,7 +154,7 @@ export function sanitizeHtml(dirty) {
 
     // Walk a static list bottom-up so unwrapping never invalidates iteration.
     const elements = Array.from(template.content.querySelectorAll('*')).reverse();
-    elements.forEach(cleanElement);
+    elements.forEach((element) => cleanElement(element, options));
 
     return template.innerHTML;
 }

@@ -16,7 +16,10 @@ import {
     saveNote,
     saveNoteSync,
     deleteNote,
-    clearNotes,
+    deleteImages,
+    deleteImagesByNote,
+    listImagesByNote,
+    clearImages,
     getActiveNoteId,
     setActiveNoteId,
     getOpenNoteIds,
@@ -29,7 +32,25 @@ import {
     saveOrganization,
     createFolderRecord,
     createTagRecord,
+    loadImage,
+    saveImage,
 } from './storage.js';
+import {
+    MAX_IMAGE_BYTES,
+    isSupportedImageFile,
+    imageTooLarge,
+    newImageId,
+    dataUriToBlob,
+    imageHtml,
+    collectImageIds,
+    remapImageIds,
+    extractImagesFromHtml,
+    resolveImageReferences,
+    revokeImageUrls,
+    stripImageSources,
+    isImageElement,
+    embedImagesAsDataUrls,
+} from './attachments.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
 import {
     MAX_ROWS as TABLE_MAX_ROWS,
@@ -169,12 +190,20 @@ export function initEditor({ strings, onEvent }) {
     const spell = initSpellcheck({ editor, strings, onEvent: track });
 
     /* Contextual toolbar panes: the toolbar swaps to table tools when the
-       caret is inside a table cell (the "selection friendly" toolbar). */
+       caret is inside a table cell, and to image tools when an attached
+       image is selected (the "selection friendly" toolbar). */
     const toolbarPaneBase = document.getElementById('toolbarPaneBase');
     const toolbarPaneTable = document.getElementById('toolbarPaneTable');
+    const toolbarPaneImage = document.getElementById('toolbarPaneImage');
     const tableContextMenu = document.getElementById('tableContextMenu');
+    const imageContextMenu = document.getElementById('imageContextMenu');
     const TOOLBAR_LABEL_BASE = toolbar?.getAttribute('aria-label') || '';
     let toolbarContext = 'base';
+
+    /* Active-note image state. */
+    let activeImageUrls = [];
+    let selectedImageEl = null;
+    let imageResolveSeq = 0;
 
     /**
      * Editor HTML without transient spell-check marks, for storage and
@@ -190,6 +219,8 @@ export function initEditor({ strings, onEvent }) {
         });
         // The caret highlight is a runtime-only affordance: it never persists.
         clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
+        // Image sources are resolved object URLs: never saved or exported.
+        stripImageSources(clone);
         return clone.innerHTML;
     }
 
@@ -214,6 +245,7 @@ export function initEditor({ strings, onEvent }) {
         const BLOCKS = new Set([
             'P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
             'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL', 'TABLE', 'TD', 'TH', 'CAPTION',
+            'FIGURE', 'FIGCAPTION',
         ]);
 
         let out = '';
@@ -357,6 +389,7 @@ export function initEditor({ strings, onEvent }) {
             await saveBackup(previousHasContent ? previous : snapshot);
         }
         const ok = await saveNote(snapshot);
+        if (ok) gcNoteImages(snapshot.id, snapshot.html);
         if (activeNoteId === savingId) {
             const changedWhileSaving = (noteTitleInput?.value.trim() || '') !== snapshot.title
                 || cleanHtml() !== snapshot.html;
@@ -693,9 +726,11 @@ export function initEditor({ strings, onEvent }) {
         editor.innerHTML = sanitizeHtml(note.html || '');
         normaliseTables(editor);
         // The new note's caret is empty: force the base toolbar back even if
-        // the previous note ended with the caret inside a table.
+        // the previous note ended with the caret inside a table or on an image.
         markActiveCell(null);
+        clearImageSelection();
         setToolbarContext('base');
+        resolveEditorImages();
         if (noteTitleInput) noteTitleInput.value = displayTitle(note);
         lastSavedAt = note.updatedAt || 0;
         dirty = false;
@@ -867,6 +902,7 @@ export function initEditor({ strings, onEvent }) {
         const closingIndex = openNoteIds.indexOf(id);
         await saveBackup(note, { reason: 'deleted', force: true });
         await deleteNote(id);
+        await deleteImagesByNote(id);
         notes = notes.filter((item) => item.id !== id);
         openNoteIds = openNoteIds.filter((noteId) => noteId !== id);
         setOpenNoteIds(openNoteIds);
@@ -1349,6 +1385,541 @@ export function initEditor({ strings, onEvent }) {
     }
 
     /* ---------------------------------------------------------------------
+       Images & attachments: archive, paste/drop, toolbar pane, dialogs
+       --------------------------------------------------------------------- */
+
+    /** Object URLs for the active note are revoked on switch and re-resolve. */
+    function revokeActiveImageUrls() {
+        revokeImageUrls(activeImageUrls);
+        activeImageUrls = [];
+    }
+
+    async function resolveEditorImages() {
+        const seq = (imageResolveSeq += 1);
+        revokeActiveImageUrls();
+        const { urls } = await resolveImageReferences(editor, loadImage);
+        if (seq !== imageResolveSeq) {
+            // A newer note/interaction won the race: discard stale URLs.
+            revokeImageUrls(urls);
+            return;
+        }
+        activeImageUrls = urls;
+    }
+
+    /** Archive a pasted/dropped/imported file; returns the reference id. */
+    async function archiveImageFile(file, noteId) {
+        if (imageTooLarge(file)) {
+            toast(strings.imageTooLarge, 'error');
+            return null;
+        }
+        if (!isSupportedImageFile(file)) {
+            toast(strings.imageUnsupported, 'error');
+            return null;
+        }
+        const id = newImageId(noteId);
+        const saved = await saveImage({
+            id,
+            noteId,
+            blob: file,
+            type: file.type,
+            size: file.size,
+            name: file.name || '',
+            createdAt: Date.now(),
+        });
+        if (!saved) {
+            toast(strings.imageStorageFailed, 'error');
+            return null;
+        }
+        return id;
+    }
+
+    /** Archive a data-URI source found in pasted/imported HTML. */
+    async function archiveImageDataUri(dataUri, noteId) {
+        const parsed = dataUriToBlob(dataUri);
+        if (!parsed) return null;
+        if (parsed.size > MAX_IMAGE_BYTES) {
+            toast(strings.imageTooLarge, 'error');
+            return null;
+        }
+        const id = newImageId(noteId);
+        const saved = await saveImage({
+            id,
+            noteId,
+            blob: parsed.blob,
+            type: parsed.type,
+            size: parsed.size,
+            name: '',
+            createdAt: Date.now(),
+        });
+        return saved ? id : null;
+    }
+
+    function imageFilesFrom(data) {
+        const files = [];
+        const seen = new Set();
+        const push = (file) => {
+            if (file && !seen.has(file)) {
+                seen.add(file);
+                files.push(file);
+            }
+        };
+        if (data && data.files) for (const file of data.files) push(file);
+        if (data && data.items) {
+            for (const item of data.items) {
+                const file = typeof item.getAsFile === 'function' ? item.getAsFile() : null;
+                push(file);
+            }
+        }
+        return files.filter((file) => (file.type || '').toLowerCase().startsWith('image/'));
+    }
+
+    async function insertImageFile(file) {
+        const noteId = activeNoteId || 'note';
+        const id = await archiveImageFile(file, noteId);
+        if (!id) return false;
+        editor.focus();
+        restoreEditorSelection();
+        insertHtml(imageHtml(id, { alt: file.name || '' }));
+        scheduleSave();
+        updateCounts();
+        spell.refresh();
+        track('image_inserted');
+        resolveEditorImages();
+        return true;
+    }
+
+    /**
+     * Unified paste/drop path: archive image files and data-URI images, keep
+     * the rest of the clipboard text (sanitised) and leave remote images as
+     * links — NPad never fetches third-party content.
+     */
+    async function handleContentData(data, { asFile = true } = {}) {
+        const noteId = activeNoteId || 'note';
+        const html = typeof data?.getData === 'function' ? data.getData('text/html') : '';
+        const text = typeof data?.getData === 'function' ? data.getData('text/plain') : '';
+        const files = asFile ? imageFilesFrom(data) : [];
+        let changed = false;
+
+        if (html) {
+            const { html: extracted } = await extractImagesFromHtml(html, async (uri) => {
+                const id = await archiveImageDataUri(uri, noteId);
+                return id ? imageHtml(id, { alt: '' }) : null;
+            });
+            const clean = sanitizeHtml(extracted);
+            if (clean) {
+                insertHtml(clean);
+                normaliseTables(editor);
+                changed = true;
+            }
+        } else if (text) {
+            insertHtml(textToHtml(text));
+            changed = true;
+        }
+
+        for (const file of files) {
+            editor.focus();
+            restoreEditorSelection();
+            if (await insertImageFile(file)) changed = true;
+        }
+        if (changed) {
+            scheduleSave();
+            updateCounts();
+            resolveEditorImages();
+        }
+        return changed;
+    }
+
+    /** Orphan attachment GC: blobs not referenced by the note are removed. */
+    async function gcNoteImages(noteId, html) {
+        if (!noteId || noteId === 'note') return;
+        const keep = new Set(collectImageIds(html));
+        const stored = await listImagesByNote(noteId);
+        const orphans = stored
+            .filter((record) => !keep.has(record.id))
+            .map((record) => record.id);
+        if (orphans.length) await deleteImages(orphans);
+    }
+
+    /** Copy a note's images to new ids (backup restore), returning remapped HTML. */
+    async function rehomeNoteImages(html, sourceNoteId, targetNoteId) {
+        const ids = collectImageIds(html);
+        const map = new Map();
+        for (const id of ids) {
+            try {
+                const blob = await loadImage(id);
+                if (!blob) continue;
+                const targetId = newImageId(targetNoteId);
+                const saved = await saveImage({
+                    id: targetId,
+                    noteId: targetNoteId,
+                    blob,
+                    type: blob.type || 'image/png',
+                    size: blob.size || 0,
+                    name: '',
+                    createdAt: Date.now(),
+                });
+                if (saved) map.set(id, targetId);
+            } catch { /* keep the old reference */ }
+        }
+        return remapImageIds(html, map);
+    }
+
+    function insertImageFromPicker() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp';
+        input.multiple = true;
+        input.addEventListener('change', async () => {
+            editor.focus();
+            rememberEditorSelection();
+            for (const file of [...(input.files || [])]) {
+                await insertImageFile(file);
+            }
+            resolveEditorImages();
+        });
+        input.click();
+    }
+
+    /* --- Image selection state --- */
+
+    function clearImageSelection() {
+        if (!selectedImageEl) return;
+        selectedImageEl.classList.remove('npad-img-selected');
+        selectedImageEl = null;
+    }
+
+    function selectImageElement(img) {
+        clearImageSelection();
+        selectedImageEl = img;
+        img.classList.add('npad-img-selected');
+        // Select the element natively too so Delete/Backspace removes it in
+        // engines that support table-element ranges.
+        try {
+            const range = document.createRange();
+            range.selectNode(img);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } catch { /* visual selection state only */ }
+        setToolbarContext('image');
+        syncImageToolbarState();
+    }
+
+    function imageMount(img) {
+        return img.closest('figure');
+    }
+
+    function figureCaption(figure) {
+        return figure?.querySelector('figcaption');
+    }
+
+    function imageAlign(img) {
+        const figure = imageMount(img);
+        const style = figure ? (figure.getAttribute('style') || '') : '';
+        if (/text-align\s*:\s*center/i.test(style)) return 'center';
+        if (/float\s*:\s*left/i.test(style)) return 'left';
+        if (/float\s*:\s*right/i.test(style)) return 'right';
+        return '';
+    }
+
+    function imageSize(img) {
+        const width = ((img.getAttribute('style') || '').match(/width\s*:\s*([^;]+)/i) || [])[1]?.trim();
+        if (width === '25%') return 'small';
+        if (width === '50%') return 'medium';
+        if (width === '75%') return 'large';
+        return 'original';
+    }
+
+    function setImageStyle(img, prop, value) {
+        const decls = (img.getAttribute('style') || '')
+            .split(';')
+            .map((decl) => decl.trim())
+            .filter((decl) => decl && decl.split(':')[0].trim() !== prop);
+        if (value) decls.push(`${prop}:${value}`);
+        if (decls.length) img.setAttribute('style', decls.join(';'));
+        else img.removeAttribute('style');
+    }
+
+    function setImageAlign(img, align, caption) {
+        let figure = imageMount(img);
+        if (!figure && align) {
+            figure = document.createElement('figure');
+            figure.setAttribute('data-npad-figure', '');
+            img.before(figure);
+            figure.appendChild(img);
+        }
+        if (!figure) return;
+        const styleBits = [];
+        if (align === 'center') styleBits.push('text-align:center');
+        if (align === 'left') styleBits.push('float:left;margin:0 0.75em 0.75em 0');
+        if (align === 'right') styleBits.push('float:right;margin:0 0 0.75em 0.75em');
+        if (styleBits.length) figure.setAttribute('style', styleBits.join(';'));
+        else figure.removeAttribute('style');
+        if (!caption && !figure.getAttribute('style')) {
+            figure.replaceWith(img);
+        }
+    }
+
+    function syncImageToolbarState() {
+        if (!toolbarPaneImage) return;
+        const img = selectedImageEl?.isConnected ? selectedImageEl : null;
+        const setPressed = (action, on) => {
+            const button = toolbarPaneImage.querySelector(`[data-image-action="${action}"]`);
+            if (button) button.setAttribute('aria-pressed', String(!!on));
+        };
+        const size = img ? imageSize(img) : '';
+        const align = img ? imageAlign(img) : '';
+        setPressed('size-small', size === 'small');
+        setPressed('size-medium', size === 'medium');
+        setPressed('size-large', size === 'large');
+        setPressed('size-original', size === 'original');
+        setPressed('align-left', align === 'left');
+        setPressed('align-center', align === 'center');
+        setPressed('align-right', align === 'right');
+    }
+
+    function afterImageOp() {
+        rememberEditorSelection();
+        scheduleSave();
+        updateCounts();
+        track('image_tool_used');
+        if (selectedImageEl?.isConnected) selectImageElement(selectedImageEl);
+        else updateToolbarContext();
+    }
+
+    async function openImageDialog(img) {
+        const startFigure = imageMount(img);
+        const captionEl = figureCaption(startFigure);
+        const size = imageSize(img);
+        const align = imageAlign(img);
+        const sizeOptions = [
+            ['original', strings.imageSizeOriginal],
+            ['small', strings.imageSizeSmall],
+            ['medium', strings.imageSizeMedium],
+            ['large', strings.imageSizeLarge],
+        ].map(([value, label]) =>
+            `<option value="${value}" ${value === size ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+        const alignOptions = [
+            ['', strings.imageAlignNone],
+            ['left', strings.imageAlignLeft],
+            ['center', strings.imageAlignCenter],
+            ['right', strings.imageAlignRight],
+        ].map(([value, label]) =>
+            `<option value="${value}" ${value === align ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+        const bodyHtml = `
+            <div class="image-properties">
+                <label class="table-builder__field">
+                    <span class="table-builder__field-label">${escapeHtml(strings.imageAlt)}</span>
+                    <input type="text" data-image-alt maxlength="200" value="${escapeHtml(img.getAttribute('alt') || '')}">
+                </label>
+                <label class="table-builder__field">
+                    <span class="table-builder__field-label">${escapeHtml(strings.imageCaption)}</span>
+                    <input type="text" data-image-caption maxlength="200" value="${escapeHtml(captionEl?.textContent || '')}">
+                </label>
+                <label class="table-builder__field">
+                    <span class="table-builder__field-label">${escapeHtml(strings.imageSize)}</span>
+                    <select data-image-size>${sizeOptions}</select>
+                </label>
+                <label class="table-builder__field">
+                    <span class="table-builder__field-label">${escapeHtml(strings.imageAlign)}</span>
+                    <select data-image-align>${alignOptions}</select>
+                </label>
+            </div>`;
+        const action = await showDialog({
+            title: strings.imageDialogTitle,
+            bodyHtml,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                { label: strings.apply, action: 'apply', variant: 'btn--primary' },
+            ],
+            onOpen: (body) => {
+                body.querySelector('[data-image-caption]').focus();
+            },
+        });
+        if (action !== 'apply') return;
+        const dialog = document.getElementById('appDialog');
+        const alt = (dialog.querySelector('[data-image-alt]')?.value || '').trim();
+        const caption = (dialog.querySelector('[data-image-caption]')?.value || '').trim();
+        const sizeValue = dialog.querySelector('[data-image-size]')?.value || 'original';
+        const alignValue = dialog.querySelector('[data-image-align]')?.value || '';
+
+        img.setAttribute('alt', alt);
+        setImageStyle(img, 'width', sizeValue === 'original' ? '' : sizeValue === 'small' ? '25%'
+            : sizeValue === 'medium' ? '50%' : '75%');
+
+        let figure = imageMount(img);
+        if (caption) {
+            if (!figure) {
+                figure = document.createElement('figure');
+                figure.setAttribute('data-npad-figure', '');
+                img.before(figure);
+                figure.appendChild(img);
+            }
+            let captionEl = figureCaption(figure);
+            if (!captionEl) {
+                captionEl = document.createElement('figcaption');
+                figure.appendChild(captionEl);
+            }
+            captionEl.textContent = caption;
+        } else {
+            const existing = figureCaption(figure);
+            if (existing) existing.remove();
+        }
+        setImageAlign(img, alignValue, caption);
+        afterImageOp();
+        track('image_tool_used');
+    }
+
+    async function replaceImage(img) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp';
+        input.addEventListener('change', async () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const noteId = activeNoteId || 'note';
+            const newId = await archiveImageFile(file, noteId);
+            if (!newId) return;
+            const oldId = img.getAttribute('data-npad-img');
+            img.setAttribute('data-npad-img', newId);
+            img.removeAttribute('src');
+            if (oldId) await deleteImages([oldId]);
+            selectImageElement(img);
+            resolveEditorImages();
+            afterImageOp();
+        });
+        input.click();
+    }
+
+    function removeImage(img) {
+        const mount = imageMount(img);
+        (mount || img).remove();
+        clearImageSelection();
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        track('image_removed');
+        updateToolbarContext();
+    }
+
+    function runImageAction(action) {
+        const img = selectedImageEl?.isConnected
+            ? selectedImageEl
+            : editor.querySelector('img.npad-img-selected');
+        if (!img) return;
+        switch (action) {
+            case 'alt-caption':
+                openImageDialog(img);
+                break;
+            case 'size-small':
+                setImageStyle(img, 'width', '25%');
+                afterImageOp();
+                break;
+            case 'size-medium':
+                setImageStyle(img, 'width', '50%');
+                afterImageOp();
+                break;
+            case 'size-large':
+                setImageStyle(img, 'width', '75%');
+                afterImageOp();
+                break;
+            case 'size-original':
+                setImageStyle(img, 'width', '');
+                afterImageOp();
+                break;
+            case 'align-left':
+            case 'align-center':
+            case 'align-right':
+                setImageAlign(img, action === 'align-left' ? 'left'
+                    : action === 'align-center' ? 'center' : 'right', figureCaption(imageMount(img))?.textContent || '');
+                afterImageOp();
+                break;
+            case 'replace-image':
+                replaceImage(img);
+                break;
+            case 'remove-image':
+                removeImage(img);
+                break;
+            default:
+                break;
+        }
+    }
+
+    document.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-image-action]');
+        if (!button) return;
+        if (imageContextMenu && !imageContextMenu.hidden) hideImageContextMenu();
+        runImageAction(button.dataset.imageAction);
+    });
+
+    /* --- Image context menu (right-click) --- */
+
+    function buildContextMenuFrom(pane, menuEl) {
+        menuEl.innerHTML = '';
+        const groups = [...pane.querySelectorAll('.toolbar__group, .menu__panel--table')]
+            .filter((group) => !group.closest('[hidden]'));
+        groups.forEach((group) => {
+            const buttons = [...group.querySelectorAll('[data-image-action], [data-table-action]')]
+                .filter((button) => !button.disabled);
+            if (!buttons.length) return;
+            const section = document.createElement('div');
+            section.className = 'table-context__group';
+            buttons.forEach((original) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'table-context__item';
+                const action = original.dataset.imageAction || original.dataset.tableAction;
+                if (original.dataset.imageAction) item.dataset.imageAction = action;
+                else item.dataset.tableAction = action;
+                item.setAttribute('role', 'menuitem');
+                const iconClone = original.querySelector('svg')?.cloneNode(true);
+                if (iconClone) item.appendChild(iconClone);
+                const label = document.createElement('span');
+                label.textContent = original.getAttribute('aria-label')
+                    || original.querySelector('span')?.textContent || '';
+                item.appendChild(label);
+                section.appendChild(item);
+            });
+            menuEl.appendChild(section);
+        });
+    }
+
+    function showImageContextMenu(x, y) {
+        if (!imageContextMenu) return;
+        syncImageToolbarState();
+        buildContextMenuFrom(toolbarPaneImage, imageContextMenu);
+        imageContextMenu.hidden = false;
+        const margin = 8;
+        const rect = imageContextMenu.getBoundingClientRect();
+        imageContextMenu.style.left = `${Math.min(x, Math.max(margin, window.innerWidth - rect.width - margin))}px`;
+        imageContextMenu.style.top = `${Math.min(y, Math.max(margin, window.innerHeight - rect.height - margin))}px`;
+    }
+
+    function hideImageContextMenu() {
+        if (imageContextMenu) imageContextMenu.hidden = true;
+    }
+
+    /* --- Image entry events --- */
+
+    editor.addEventListener('click', (event) => {
+        const img = event.target.closest?.('img[data-npad-img]');
+        if (img) {
+            event.preventDefault();
+            selectImageElement(img);
+            return;
+        }
+        if (selectedImageEl) clearImageSelection();
+    });
+
+    editor.addEventListener('input', () => {
+        clearImageSelection();
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+        if (!event.target.closest?.('[data-image-action], img[data-npad-img], #toolbarPaneImage')) {
+            clearImageSelection();
+        }
+    }, true);
+
+    /* ---------------------------------------------------------------------
        Tables: contextual toolbar, insert dialog, full cell control
        --------------------------------------------------------------------- */
 
@@ -1375,13 +1946,18 @@ export function initEditor({ strings, onEvent }) {
         toolbarContext = context;
         if (toolbarPaneBase) toolbarPaneBase.hidden = context !== 'base';
         if (toolbarPaneTable) toolbarPaneTable.hidden = context !== 'table';
+        if (toolbarPaneImage) toolbarPaneImage.hidden = context !== 'image';
         if (toolbar) {
             toolbar.dataset.toolbarContext = context;
-            toolbar.setAttribute('aria-label', context === 'table'
+            const label = context === 'table'
                 ? (strings.tableToolbarLabel || TOOLBAR_LABEL_BASE)
-                : TOOLBAR_LABEL_BASE);
+                : context === 'image'
+                    ? (strings.imageToolbarLabel || TOOLBAR_LABEL_BASE)
+                    : TOOLBAR_LABEL_BASE;
+            toolbar.setAttribute('aria-label', label);
         }
         if (context === 'table') syncTableToolbarState();
+        if (context === 'image') syncImageToolbarState();
     }
 
     function syncTableToolbarState() {
@@ -1469,6 +2045,14 @@ export function initEditor({ strings, onEvent }) {
     }
 
     function updateToolbarContext() {
+        // An explicitly selected attachment owns the toolbar until the user
+        // clicks elsewhere or edits.
+        if (selectedImageEl?.isConnected) {
+            markActiveCell(null);
+            setToolbarContext('image');
+            syncImageToolbarState();
+            return;
+        }
         const selection = window.getSelection();
         const table = contextTableFromSelection(selection);
         const collapsedInCell = !!(table && selection?.isCollapsed);
@@ -2585,43 +3169,33 @@ export function initEditor({ strings, onEvent }) {
        Paste — always sanitise, never trust clipboard HTML
        --------------------------------------------------------------------- */
 
+    // Paste and drop share one pipeline: archive every supported image
+    // (files and data-URI HTML), keep the sanitised text, never fetch remote
+    // images.
     editor.addEventListener('paste', (event) => {
         event.preventDefault();
-        const clipboard = event.clipboardData;
-        if (!clipboard) return;
-
-        const html = clipboard.getData('text/html');
-        const text = clipboard.getData('text/plain');
-
-        if (html) {
-            insertHtml(sanitizeHtml(html));
-            normaliseTables(editor);
-        } else if (text) insertHtml(textToHtml(text));
-
-        scheduleSave();
-        updateCounts();
+        if (!event.clipboardData) return;
+        handleContentData(event.clipboardData);
     });
 
     // Drag-and-drop is the same untrusted path as paste.
     editor.addEventListener('drop', (event) => {
-        const dt = event.dataTransfer;
-        if (!dt) return;
+        if (!event.dataTransfer) return;
         event.preventDefault();
-        const html = dt.getData('text/html');
-        const text = dt.getData('text/plain');
-        if (html) {
-            insertHtml(sanitizeHtml(html));
-            normaliseTables(editor);
-        } else if (text) insertHtml(textToHtml(text));
-        scheduleSave();
-        updateCounts();
+        handleContentData(event.dataTransfer);
     });
 
     function insertHtml(html) {
         editor.focus();
+        const before = editor.innerHTML;
         try {
             document.execCommand('insertHTML', false, html);
         } catch {
+            /* fall through to the range insert */
+        }
+        // Some webviews return success without mutating anything (and jsdom's
+        // execCommand stub does the same): insert the fragment directly.
+        if (editor.innerHTML === before) {
             const selection = window.getSelection();
             if (!selection || !selection.rangeCount) return;
             const range = selection.getRangeAt(0);
@@ -2669,9 +3243,16 @@ export function initEditor({ strings, onEvent }) {
                 }
                 tagIds.push(tag.id);
             }
+            // Imported documents may carry base64 images inside their HTML
+            // (NPad JSON/HTML exports, pasted corpora): archive them first
+            // under a shared "import" owner, then rehome per created note.
+            const extracted = await extractImagesFromHtml(item.html, async (uri) => {
+                const id = await archiveImageDataUri(uri, 'import');
+                return id ? imageHtml(id, { alt: '' }) : null;
+            });
             prepared.push({
                 title: item.title.trim().slice(0, 120) || fallbackTitle,
-                html: sanitizeHtml(item.html),
+                html: sanitizeHtml(extracted.html),
                 pinned: !!item.pinned,
                 folderId,
                 tags: [...new Set(tagIds)],
@@ -2685,7 +3266,13 @@ export function initEditor({ strings, onEvent }) {
             renderOrganization();
         }
         for (const note of prepared) {
-            await createNewNote({ ...note, focusTitle: false, report: false });
+            const created = await createNewNote({ ...note, focusTitle: false, report: false });
+            const rehomed = await rehomeNoteImages(created.html, 'import', created.id);
+            if (rehomed !== created.html) {
+                created.html = rehomed;
+                await saveNote(created);
+                showNote(created);
+            }
         }
     }
 
@@ -2738,7 +3325,12 @@ export function initEditor({ strings, onEvent }) {
                 if (extension === 'txt') {
                     imported = [{ title, html: textToHtml(await file.text()) }];
                 } else if (extension === 'html' || extension === 'htm') {
-                    imported = [{ title, html: sanitizeHtml(await file.text()) }];
+                    const raw = await file.text();
+                    const extracted = await extractImagesFromHtml(raw, async (uri) => {
+                        const id = await archiveImageDataUri(uri, 'import');
+                        return id ? imageHtml(id, { alt: '' }) : null;
+                    });
+                    imported = [{ title, html: sanitizeHtml(extracted.html) }];
                 } else if (extension === 'md' || extension === 'markdown') {
                     imported = [{ title, html: markdownToHtml(await file.text()) }];
                 } else if (extension === 'json') {
@@ -2795,41 +3387,51 @@ export function initEditor({ strings, onEvent }) {
         track('download_txt');
     }
 
-    function saveAsHtml() {
+    async function embeddedExportHtml() {
+        // Export formats are self-contained: references become data URIs.
+        return embedImagesAsDataUrls(cleanHtml(), loadImage);
+    }
+
+    async function saveAsHtml() {
         const doc = `<!DOCTYPE html>
 <html lang="${document.documentElement.lang || 'en'}" dir="${currentDir()}">
 <meta charset="utf-8">
 <title>NPad note — ${stamp()}</title>
-<style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}</style>
-${cleanHtml()}
+<style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}figure{margin:0 0 1em}figure img{max-width:100%;height:auto}figcaption{font-size:0.85em;color:#555}</style>
+${await embeddedExportHtml()}
 `;
         download(`${exportBaseName()}.html`, doc, 'text/html;charset=utf-8');
         track('download_html');
     }
 
-    function saveAsMarkdown() {
-        download(`${exportBaseName()}.md`, htmlToMarkdown(cleanHtml()), 'text/markdown;charset=utf-8');
+    async function saveAsMarkdown() {
+        const html = await embeddedExportHtml();
+        download(`${exportBaseName()}.md`, htmlToMarkdown(html), 'text/markdown;charset=utf-8');
         track('download_markdown');
     }
 
-    function saveAsJson() {
-        download(`${exportBaseName()}.json`, noteToJson(currentExportNote(), organization), 'application/json;charset=utf-8');
+    async function saveAsJson() {
+        const note = currentExportNote();
+        note.html = await embeddedExportHtml();
+        download(`${exportBaseName()}.json`, noteToJson(note, organization), 'application/json;charset=utf-8');
         track('download_json');
     }
 
-    function saveAsDocx() {
+    async function saveAsDocx() {
+        const html = await embeddedExportHtml();
         download(
             `${exportBaseName()}.docx`,
-            htmlToDocx(cleanHtml(), { direction: currentDir() }),
+            htmlToDocx(html, { direction: currentDir() }),
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         );
         track('download_docx');
     }
 
-    function saveAsRtf() {
+    async function saveAsRtf() {
+        const html = await embeddedExportHtml();
         download(
             `${exportBaseName()}.rtf`,
-            htmlToRtf(cleanHtml(), { direction: currentDir() }),
+            htmlToRtf(html, { direction: currentDir() }),
             'application/rtf;charset=utf-8',
         );
         track('download_rtf');
@@ -2986,7 +3588,9 @@ ${cleanHtml()}
         const folderId = folderById(backup.folderId) ? backup.folderId : null;
         const tags = backup.tags.filter((tagId) => !!tagById(tagId));
         closeBackupRecovery();
-        await createNewNote({
+        // Restoring creates a separate note, so its images are copied to fresh
+        // ids owned by the new note (the original note may still be alive).
+        const restored = await createNewNote({
             title: `${displayTitle(backup)} ${strings.backupRestoredSuffix}`.trim(),
             html: backup.html,
             focusTitle: false,
@@ -2995,6 +3599,12 @@ ${cleanHtml()}
             tags,
             pinned: backup.pinned,
         });
+        const rehomed = await rehomeNoteImages(restored.html, backup.noteId, restored.id);
+        if (rehomed !== restored.html) {
+            restored.html = rehomed;
+            await saveNote(restored);
+            showNote(restored);
+        }
         toast(strings.backupRestored, 'success');
         track('backup_restored');
     }
@@ -3055,6 +3665,7 @@ ${cleanHtml()}
         }
         window.clearTimeout(saveTimer);
         await clearNotes();
+        await clearImages();
         notes = [];
         openNoteIds = [];
         activeNoteId = null;
@@ -3094,13 +3705,41 @@ ${cleanHtml()}
         try {
             if (!plainOnly && navigator.clipboard && navigator.clipboard.read) {
                 const items = await navigator.clipboard.read();
+                const images = [];
                 for (const item of items) {
                     if (item.types.includes('text/html')) {
                         const blob = await item.getType('text/html');
-                        insertHtml(sanitizeHtml(await blob.text()));
+                        const source = await blob.text();
+                        const { html: extracted } = await extractImagesFromHtml(
+                            source,
+                            async (uri) => {
+                                const id = await archiveImageDataUri(uri, activeNoteId || 'note');
+                                return id ? imageHtml(id, { alt: '' }) : null;
+                            },
+                        );
+                        insertHtml(sanitizeHtml(extracted));
+                        normaliseTables(editor);
+                        resolveEditorImages();
                         finishPaste(plainOnly);
                         return;
                     }
+                    if (typeof item.getType === 'function') {
+                        for (const type of item.types) {
+                            if (type.startsWith('image/')) {
+                                const file = await item.getType(type);
+                                if (file) images.push(file);
+                            }
+                        }
+                    }
+                }
+                if (images.length) {
+                    for (const file of images) {
+                        rememberEditorSelection();
+                        await insertImageFile(file);
+                    }
+                    resolveEditorImages();
+                    finishPaste(plainOnly);
+                    return;
                 }
             }
             const text = await navigator.clipboard.readText();
@@ -3621,6 +4260,7 @@ ${cleanHtml()}
     window.addEventListener('beforeprint', () => {
         clearFindVisuals();
         hideTableContextMenu();
+        hideImageContextMenu();
     });
     window.addEventListener('afterprint', () => {
         if (findBar && !findBar.hidden) refreshFind(false);
@@ -3692,6 +4332,7 @@ ${cleanHtml()}
         find: () => openFind(false),
         'find-replace': () => openFind(true),
         'insert-table': openTableDialog,
+        'insert-image': insertImageFromPicker,
         'insert-hr': insertHorizontalRule,
         'insert-datetime': insertDateTime,
         'insert-link': () => promptForLink(),
@@ -3755,6 +4396,17 @@ ${cleanHtml()}
     // leave focus mode.
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return;
+        if (imageContextMenu && !imageContextMenu.hidden) {
+            event.preventDefault();
+            hideImageContextMenu();
+            return;
+        }
+        if (selectedImageEl) {
+            event.preventDefault();
+            clearImageSelection();
+            updateToolbarContext();
+            return;
+        }
         if (tableContextMenu && !tableContextMenu.hidden) {
             event.preventDefault();
             hideTableContextMenu();

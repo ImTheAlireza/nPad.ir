@@ -56,6 +56,12 @@ function installEnvironment(dom) {
     }
     window.navigator.sendBeacon = () => true;
     document.execCommand = document.execCommand || (() => true);
+    // Attachment rendering resolves Blobs to object URLs; give jsdom a stub.
+    window.URL = window.URL || {};
+    if (!window.URL.createObjectURL) {
+        window.URL.createObjectURL = () => 'blob:https://npad.ir/mock';
+        window.URL.revokeObjectURL = () => {};
+    }
 }
 
 export default async function run(check, group) {
@@ -358,6 +364,129 @@ export default async function run(check, group) {
         assert.equal(editor.querySelector('table').rows.length, tableBefore + 1, 'context menu action did not run');
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         assert.equal(contextMenu.hidden, true, 'Escape did not close the menu');
+    });
+
+    /* --------------------------------------------------------------------
+       Images & attachments end-to-end
+       -------------------------------------------------------------------- */
+
+    const storageMod = await import(url('assets/js/storage.js'));
+    const imagePane = document.getElementById('toolbarPaneImage');
+    const imageContextMenuEl = document.getElementById('imageContextMenu');
+    const pngFile = () => new dom.window.File(
+        [Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+        'shot.png',
+        { type: 'image/png' },
+    );
+    const pasteImage = async (file) => {
+        const event = new window.Event('paste', { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'clipboardData', {
+            value: {
+                getData: () => '',
+                files: [file],
+                items: [{ getAsFile: () => file }],
+            },
+        });
+        editor.dispatchEvent(event);
+        // handleContentData is async and awaits the attachment store.
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+    };
+
+    await step('pasting an image archives it and inserts a reference', async () => {
+        editor.innerHTML = '<p>before</p><p><br></p>';
+        putCaretInCell(editor.querySelector('p:last-child'));
+        await pasteImage(pngFile());
+
+        const img = editor.querySelector('img[data-npad-img]');
+        assert.ok(img, 'pasted image reference missing');
+        assert.ok(img.getAttribute('data-npad-img').startsWith('img-'), 'id is not note-bound');
+        assert.equal(img.getAttribute('alt'), 'shot.png');
+        assert.ok(img.getAttribute('src') || img.classList.contains('npad-img-missing'), 'payload not resolved');
+        // The blob is really stored (fallback localStorage in jsdom).
+        const noteId = storageMod.getActiveNoteId();
+        const owned = await storageMod.listImagesByNote(noteId);
+        assert.equal(owned.length, 1, 'attachment not persisted');
+    });
+
+    await step('clicking the image swaps to the image toolbar', () => {
+        const img = editor.querySelector('img[data-npad-img]');
+        img.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        assert.ok(img.classList.contains('npad-img-selected'), 'image not selected');
+        assert.equal(imagePane.hidden, false, 'image pane not shown');
+        assert.equal(document.getElementById('toolbarPaneBase').hidden, true);
+        assert.ok(imagePane.querySelector('[data-image-action="alt-caption"]'), 'alt/caption action missing');
+        assert.ok(imagePane.querySelector('[data-image-action="remove-image"]'), 'remove action missing');
+    });
+
+    await step('size, alignment and the properties dialog edit the image', async () => {
+        const img = editor.querySelector('img[data-npad-img]');
+        click(imagePane.querySelector('[data-image-action="size-medium"]'));
+        assert.ok(/width:50%/.test(img.getAttribute('style') || ''), 'size not applied');
+
+        click(imagePane.querySelector('[data-image-action="align-center"]'));
+        assert.equal(img.closest('figure').getAttribute('data-npad-figure'), '', 'figure not created for alignment');
+
+        click(imagePane.querySelector('[data-image-action="alt-caption"]'));
+        assert.equal(dialog.open, true, 'image dialog did not open');
+        dialog.querySelector('[data-image-alt]').value = 'A screenshot';
+        dialog.querySelector('[data-image-caption]').value = 'Step one';
+        click(dialog.querySelector('[data-action="apply"]'));
+        await flush();
+
+        assert.equal(img.getAttribute('alt'), 'A screenshot');
+        assert.equal(img.closest('figure').querySelector('figcaption')?.textContent, 'Step one');
+    });
+
+    await step('removing the image returns to the base toolbar', () => {
+        const img = editor.querySelector('img[data-npad-img]');
+        img.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        click(imagePane.querySelector('[data-image-action="remove-image"]'));
+        assert.equal(editor.querySelector('img[data-npad-img]'), null, 'image still present');
+        assert.equal(imagePane.hidden, true, 'image pane still shown');
+        assert.equal(document.getElementById('toolbarPaneBase').hidden, false, 'base toolbar not restored');
+    });
+
+    await step('orphaned attachments are garbage-collected on autosave', async () => {
+        // The removed image's blob must disappear after the note is saved.
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        const noteId = storageMod.getActiveNoteId();
+        const owned = await storageMod.listImagesByNote(noteId);
+        assert.equal(owned.length, 0, 'orphaned attachment still stored');
+    });
+
+    await step('unsupported and oversized images are rejected with a toast', async () => {
+        editor.innerHTML = '<p><br></p>';
+        putCaretInCell(editor.querySelector('p'), true);
+        const svg = new dom.window.File(['<svg/>'], 'a.svg', { type: 'image/svg+xml' });
+        await pasteImage(svg);
+        assert.equal(editor.querySelector('img[data-npad-img]'), null, 'svg image inserted');
+        const big = pngFile();
+        Object.defineProperty(big, 'size', { value: 26 * 1024 * 1024 });
+        await pasteImage(big);
+        assert.equal(editor.querySelector('img[data-npad-img]'), null, 'oversized image inserted');
+        assert.ok(document.querySelectorAll('.toast').length >= 1, 'no rejection toast shown');
+    });
+
+    await step('Insert menu offers Image… and archives a picked file', async () => {
+        let picked = '';
+        const nativeClick = window.HTMLInputElement.prototype.click;
+        window.HTMLInputElement.prototype.click = function () {
+            if (this.type === 'file' && this.accept.includes('image/')) {
+                picked = this.accept;
+                Object.defineProperty(this, 'files', { value: [pngFile()], configurable: true });
+                this.dispatchEvent(new window.Event('change'));
+            } else {
+                nativeClick.call(this);
+            }
+        };
+        try {
+            clickMenu('insert-image');
+        } finally {
+            window.HTMLInputElement.prototype.click = nativeClick;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+        assert.ok(picked.includes('image/png'), 'picker not restricted to images');
+        assert.ok(editor.querySelector('img[data-npad-img]'), 'picked image not inserted');
     });
 
     await step('no uncaught page errors', () => {

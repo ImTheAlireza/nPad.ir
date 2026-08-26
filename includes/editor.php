@@ -245,6 +245,10 @@ $jsStrings = [
     'tableMergeHint'    => t('table.merge_hint'),
     'tableSplitHint'    => t('table.split_hint'),
     'tableSortUnsupported' => t('table.sort_unsupported'),
+    'imageToolbarLabel' => t('image.toolbar_label'),
+    'imageTooLarge'     => t('image.too_large'),
+    'imageUnsupported'  => t('image.unsupported'),
+    'imageStorageFailed' => t('image.storage_failed'),
     'tableDeleteTitle'  => t('table.delete_title'),
     'tableDeleteBody'   => t('table.delete_body'),
     'tablePropertiesTitle' => t('table.properties_title'),
@@ -720,6 +724,55 @@ $jsStrings = [
                 </div>
             </div>
         </div><!-- /toolbarPaneTable -->
+
+        <div class="toolbar__pane" id="toolbarPaneImage" data-toolbar-pane="image" hidden>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_size')) ?>">
+                <button type="button" class="toolbar__btn" data-image-action="size-small" aria-pressed="false"
+                        title="<?= e(t('image.size_small')) ?>" aria-label="<?= e(t('image.size_small')) ?>">
+                    <?= icon('image-size') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="size-medium" aria-pressed="false"
+                        title="<?= e(t('image.size_medium')) ?>" aria-label="<?= e(t('image.size_medium')) ?>">
+                    <?= icon('image-size') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="size-large" aria-pressed="false"
+                        title="<?= e(t('image.size_large')) ?>" aria-label="<?= e(t('image.size_large')) ?>">
+                    <?= icon('image-size') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="size-original" aria-pressed="false"
+                        title="<?= e(t('image.size_original')) ?>" aria-label="<?= e(t('image.size_original')) ?>">
+                    <?= icon('image-size') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('toolbar.group_align')) ?>">
+                <button type="button" class="toolbar__btn" data-image-action="align-left"
+                        title="<?= e(t('image.align_left')) ?>" aria-label="<?= e(t('image.align_left')) ?>">
+                    <?= icon('align-left') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="align-center"
+                        title="<?= e(t('image.align_center')) ?>" aria-label="<?= e(t('image.align_center')) ?>">
+                    <?= icon('align-center') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="align-right"
+                        title="<?= e(t('image.align_right')) ?>" aria-label="<?= e(t('image.align_right')) ?>">
+                    <?= icon('align-right') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_edit')) ?>">
+                <button type="button" class="toolbar__btn" data-image-action="alt-caption"
+                        title="<?= e(t('image.alt_caption')) ?>" aria-label="<?= e(t('image.alt_caption')) ?>">
+                    <?= icon('image-caption') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="replace-image"
+                        title="<?= e(t('image.replace')) ?>" aria-label="<?= e(t('image.replace')) ?>">
+                    <?= icon('image-replace') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="remove-image"
+                        title="<?= e(t('image.remove')) ?>" aria-label="<?= e(t('image.remove')) ?>">
+                    <?= icon('image-remove') ?>
+                </button>
+            </div>
+        </div><!-- /toolbarPaneImage -->
     </div>
 
     <div class="findbar" id="findBar" role="search" aria-label="<?= e(t('find.label')) ?>" hidden>
@@ -843,6 +896,9 @@ $jsStrings = [
 
 <div class="table-context" id="tableContextMenu" role="menu"
      aria-label="<?= e(t('table.context_menu')) ?>" hidden></div>
+
+<div class="table-context" id="imageContextMenu" role="menu"
+     aria-label="<?= e(t('image.context_menu')) ?>" hidden></div>
 
 <dialog class="dialog backup-dialog" id="backupDialog" aria-labelledby="backupDialogTitle">
     <div class="dialog__header">

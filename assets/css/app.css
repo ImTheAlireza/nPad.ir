@@ -1850,6 +1850,44 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     outline-offset: -2px;
 }
 
+/* Attached images: reference markup with runtime-only object URLs. */
+.editor figure {
+    margin: 0 0 0.75em;
+}
+
+.editor figure[style*="text-align:center"] {
+    text-align: center;
+}
+
+.editor figure img,
+.editor p img,
+.editor img {
+    max-width: 100%;
+    height: auto;
+}
+
+.editor figcaption {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: start;
+}
+
+.editor .npad-img-selected {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+.editor .npad-img-missing {
+    display: inline-block;
+    min-width: 120px;
+    min-height: 72px;
+    border: 1px dashed var(--border-strong);
+    background:
+        repeating-linear-gradient(45deg, transparent 0 10px, var(--surface-hover) 10px 20px);
+    vertical-align: middle;
+}
+
 .editor table[style*="width:100%"] { width: 100%; }
 
 @media (max-width: 640px) {

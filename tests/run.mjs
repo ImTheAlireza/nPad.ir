@@ -33,6 +33,7 @@ const suites = [
     ['contrast', './contrast.test.mjs'],
     ['lang', './lang.test.mjs'],
     ['sanitize', './sanitize.test.mjs'],
+    ['attachments', './attachments.test.mjs'],
     ['table', './table.test.mjs'],
     ['formats', './formats.test.mjs'],
     ['storage', './storage.test.mjs'],

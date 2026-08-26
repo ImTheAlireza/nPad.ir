@@ -5,7 +5,14 @@ Tailored to nPad.ir's existing architecture: PHP front-end, local-only storage
 third-party requests, and a strict CSP. Effort: **S** = small (days), **M** =
 medium (1–2 weeks), **L** = large (a month+).
 
-> **Implemented 2026-08:** item 2 (Tables) is now shipped — the **Insert** menu
+> **Implemented 2026-08:** item 2 (Tables) and item 3 (Images & attachments) are now shipped.
+> Images: Blob storage in IndexedDB (base64 fallback only when IndexedDB is
+> absent), 25 MB cap, raster-only whitelist (SVG rejected), paste/drag-drop/
+> Insert menu ingestion, data-URI archiving, remote images become links, an
+> image toolbar pane (size presets, alignment, alt + caption dialog, replace,
+> remove), figure/figcaption captions, orphan GC, and exports that embed
+> images (HTML/Markdown/JSON data URIs, DOCX media parts; RTF keeps alt text).
+> Tables: — the **Insert** menu
 > sits next to Edit, tables insert through a settings dialog (rows/columns,
 > headers, width, presets, live preview), the toolbar swaps to table tools when
 > the caret is inside a cell ("selection-friendly toolbar"), and the full

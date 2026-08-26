@@ -155,6 +155,46 @@ export default function run(check, group) {
         assert.ok(out.includes('safe'), out);
     });
 
+    group('sanitize: images');
+
+    check('keeps reference images with figure, caption and alt', () => {
+        const out = sanitizeHtml('<figure data-npad-figure style="text-align:center">'
+            + '<img data-npad-img="img-1" alt="A cat" style="width:50%">'
+            + '<figcaption>My cat</figcaption></figure>');
+        assert.ok(/<figure/.test(out), out);
+        assert.ok(/data-npad-img="img-1"/.test(out), out);
+        assert.ok(/alt="A cat"/.test(out), out);
+        assert.ok(/<figcaption>My cat<\/figcaption>/.test(out), out);
+        assert.ok(/width:50%/.test(out), out);
+    });
+
+    check('strips src (resolved object URLs and data URIs never persist)', () => {
+        const out = sanitizeHtml('<img data-npad-img="img-2" src="blob:https://npad.ir/abc" alt="x">');
+        assert.ok(!/src=/.test(out), out);
+        assert.ok(/data-npad-img="img-2"/.test(out), out);
+    });
+
+    check('removes images without an attachment reference', () => {
+        const out = sanitizeHtml('<p>a</p><img src="https://evil.test/x.png" alt="remote"><p>b</p>');
+        assert.ok(!/<img/.test(out), out);
+        assert.ok(out.includes('a') && out.includes('b'), out);
+    });
+
+    check('data-URI import mode keeps raster images and drops the rest', () => {
+        const png = 'data:image/png;base64,iVBORw0KGgo=';
+        const svg = 'data:image/svg+xml;base64,PHN2Zy8+';
+        const kept = sanitizeHtml(`<img src="${png}" alt="ok">`, { dataImages: true });
+        assert.ok(/src="data:image\/png;base64/.test(kept), kept);
+        const stripped = sanitizeHtml(`<img src="${svg}" alt="x"><img src="${png}" alt="y">`, { dataImages: true });
+        assert.ok(!/svg/.test(stripped), stripped);
+        assert.ok(/data:image\/png/.test(stripped), stripped);
+    });
+
+    check('remote and javascript image sources never survive', () => {
+        const out = sanitizeHtml('<img src="https://x.test/a.png"><img src="javascript:alert(1)">', { dataImages: true });
+        assert.equal(out, '', out);
+    });
+
     group('sanitize: textToHtml');
 
     check('escapes angle brackets', () => {

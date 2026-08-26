@@ -172,9 +172,12 @@ export default async function run(check, group) {
                 const id = t.getAttribute('aria-controls');
                 assert.ok(id && document.getElementById(id), `aria-controls target missing: ${id}`);
             });
-            const insertTable = [...document.querySelectorAll('#insertMenuPanel .menu__item')]
-                .find((item) => item.dataset.action === 'insert-table');
-            assert.ok(insertTable, 'Insert menu lacks a Table item');
+            const insertItems = [...document.querySelectorAll('#insertMenuPanel .menu__item')]
+                .map((item) => item.dataset.action);
+            assert.ok(insertItems.includes('insert-table'), 'Insert menu lacks a Table item');
+            assert.ok(insertItems.includes('insert-image'), 'Insert menu lacks an Image item');
+            assert.ok(document.querySelectorAll('#toolbarPaneImage [data-image-action]').length >= 7,
+                'image toolbar pane is incomplete');
         });
 
         check('skip link resolves', () => {

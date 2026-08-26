@@ -34,6 +34,17 @@ const mergedTableDocxHtml = await formats.docxToHtml(formats.htmlToDocx(
     '<table><tbody><tr><td rowspan="2" colspan="2">big</td></tr><tr></tr></tbody></table>',
 ));
 
+/* Image fixtures: a 1x1 PNG as a data URI. */
+const IMAGE_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const imageFigureHtml = `<figure style="text-align:center"><img src="${IMAGE_DATA_URI}" alt="Diagram"><figcaption>A caption</figcaption></figure>`;
+const imageMarkdown = formats.htmlToMarkdown(imageFigureHtml);
+const imageMarkdownHtml = formats.markdownToHtml(imageMarkdown);
+const imageJson = JSON.parse(formats.noteToJson({ title: 'Img', html: imageFigureHtml }));
+const [imageJsonNote] = formats.parseNoteJson(imageJson);
+const imageDocx = formats.htmlToDocx(imageFigureHtml);
+const imageDocxText = new TextDecoder().decode(imageDocx);
+const imageRtf = formats.htmlToRtf(imageFigureHtml);
+
 function testCrc32(bytes) {
     let crc = 0xffffffff;
     for (const byte of bytes) {
@@ -174,6 +185,13 @@ export default function run(check, group) {
         assert.match(back, /<table><tbody><tr><td>x<\/td><td>y<\/td><\/tr><\/tbody><\/table>/);
     });
 
+    check('Markdown round-trips images with captions as data URIs', () => {
+        assert.match(imageMarkdown, /!\[Diagram\]\(data:image\/png;base64,/);
+        assert.match(imageMarkdown, /\*A caption\*/);
+        assert.match(imageMarkdownHtml, /<img src="data:image\/png;base64,[^"]+" alt="Diagram">/);
+        assert.match(imageMarkdownHtml, /<figcaption|A caption/);
+    });
+
     check('NPad JSON round-trips metadata and sanitizes HTML', () => {
         const json = formats.noteToJson({
             title: 'Portable', html: '<p>Hi</p>', pinned: true, folderId: 'f1', tags: ['t1'],
@@ -242,6 +260,24 @@ export default function run(check, group) {
         assert.match(html, /Name/);
         assert.match(html, /Count/);
         assert.match(html, /1/);
+    });
+
+    check('NPad JSON keeps data-URI images for the import pipeline', () => {
+        assert.match(imageJsonNote.html, /src="data:image\/png;base64,/);
+        assert.match(imageJsonNote.html, /A caption/);
+    });
+
+    check('DOCX embeds images as real media parts with DrawingML', () => {
+        assert.ok(imageDocxText.includes('word/media/image1.png'), 'media part missing');
+        assert.ok(imageDocxText.includes('r:embed="rIdImg1"'), 'drawing reference missing');
+        assert.ok(imageDocxText.includes('image/png'), 'content type missing');
+        assert.ok(imageDocxText.includes('rIdImg1'), 'relationship missing');
+        assert.ok(imageDocxText.includes('A caption'), 'caption text missing');
+    });
+
+    check('RTF keeps the image alt text (binary pict is engine-specific)', () => {
+        assert.match(imageRtf, /Diagram/);
+        assert.match(imageRtf, /\\i A caption/);
     });
 
     check('PDF importer inflates streams and follows Unicode font maps', () => {
