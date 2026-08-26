@@ -54,7 +54,6 @@ $editItems = [
 
 $insertItems = [
     ['action' => 'insert-table', 'icon' => 'table', 'label' => t('menu.table')],
-    ['action' => 'insert-image', 'icon' => 'image', 'label' => t('menu.image')],
     ['separator' => true],
     ['action' => 'insert-hr',     'icon' => 'hr',    'label' => t('menu.horizontal_rule')],
     ['action' => 'insert-datetime', 'icon' => 'calendar', 'label' => t('menu.date_time')],

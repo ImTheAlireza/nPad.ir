@@ -31,10 +31,8 @@ function escapeXml(value) {
 import { tableGrid } from './table.js';
 
 function htmlBody(html) {
-    // Export paths embed images as data URIs, so this parse must allow them
-    // (persisted notes never contain sources; the editor archives first).
     return new DOMParser().parseFromString(
-        `<body>${sanitizeHtml(html || '', { dataImages: true })}</body>`,
+        `<body>${sanitizeHtml(html || '')}</body>`,
         'text/html',
     ).body;
 }
@@ -57,19 +55,6 @@ function nodeToMarkdown(node, depth = 0) {
 
     if (/^h[1-6]$/.test(tag)) return `${'#'.repeat(Number(tag[1]))} ${content.trim()}\n\n`;
     if (tag === 'p' || tag === 'div') return `${content.trim()}\n\n`;
-    if (tag === 'img') {
-        const src = node.getAttribute('src') || '';
-        if (!src.startsWith('data:image/')) return node.getAttribute('alt') || '';
-        return `![${(node.getAttribute('alt') || '').replace(/\]/g, '\\]')}](${src})`;
-    }
-    if (tag === 'figure') {
-        const img = node.querySelector(':scope > img');
-        const caption = node.querySelector(':scope > figcaption');
-        const image = img ? nodeToMarkdown(img) : '';
-        const captionText = caption?.textContent.trim() ? `\n\n*${markdownText(caption.textContent.trim())}*` : '';
-        return `${image}${captionText}\n\n`;
-    }
-    if (tag === 'figcaption') return '';
     if (tag === 'br') return '\n';
     if (tag === 'strong' || tag === 'b') return `**${content}**`;
     if (tag === 'em' || tag === 'i') return `*${content}*`;
@@ -164,12 +149,6 @@ function inlineMarkdown(value) {
     // safely escaped inline-HTML extension (also emitted by htmlToMarkdown).
     out = out.replace(/<u>([^<>]*)<\/u>/gi, (_match, text) => token(`<u>${escapeHtml(text)}</u>`));
     out = out.replace(/`([^`]+)`/g, (_match, code) => token(`<code>${escapeHtml(code)}</code>`));
-    // Images: kept as data URIs (raster only) so the import pipeline can
-    // archive them before persisting.
-    out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
-        if (!/^data:image\/(png|jpeg|gif|webp|avif|bmp);base64,/i.test(src)) return '';
-        return token(`<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">`);
-    });
     out = escapeHtml(out);
     out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, rawHref) => {
         let href = rawHref.replace(/&amp;/g, '&').trim();
@@ -321,7 +300,7 @@ export function markdownToHtml(markdown) {
         blocks.push(`<p>${inlineMarkdown(paragraph.join(' '))}</p>`);
     }
 
-    return sanitizeHtml(blocks.join(''), { dataImages: true });
+    return sanitizeHtml(blocks.join(''));
 }
 
 /* -------------------------------------------------------------------------
@@ -359,7 +338,7 @@ export function parseNoteJson(json) {
         let html = note.html ?? note.content;
         if (html === undefined && note.markdown !== undefined) html = markdownToHtml(note.markdown);
         else if (html === undefined) html = textToHtml(String(note.text ?? ''));
-        else html = sanitizeHtml(String(html), { dataImages: true });
+        else html = sanitizeHtml(String(html));
         const folder = typeof note.folder === 'string'
             ? { name: note.folder }
             : (note.folder && typeof note.folder === 'object' ? { name: String(note.folder.name || '') } : null);
@@ -423,14 +402,6 @@ function nodeToRtf(node) {
     if (tag === 'ul') return [...node.children].map((item) => `\\bullet\\tab ${nodeToRtf(item)}\\par\n`).join('');
     if (tag === 'ol') return [...node.children].map((item, index) => `${index + 1}.\\tab ${nodeToRtf(item)}\\par\n`).join('');
     if (tag === 'hr') return '____________________\\par\n';
-    if (tag === 'img') {
-        // RTF pict blobs are engine-specific; keep the alt text so nothing
-        // silently disappears (documented limitation).
-        const alt = (node.getAttribute('alt') || '').trim();
-        return alt ? `[${rtfEscape(alt)}]` : '';
-    }
-    if (tag === 'figure') return content;
-    if (tag === 'figcaption') return `{\\i ${content}}\\par\\n`;
     if (tag === 'table') {
         // RTF tables need a separate complex structure; NPad flattens them to
         // tab-separated rows so no content is lost (documented limitation).
@@ -759,104 +730,6 @@ function wordRun(text, style = {}) {
     return parts.map((part, index) => `${index ? '<w:r><w:br/></w:r>' : ''}<w:r>${properties ? `<w:rPr>${properties}</w:rPr>` : ''}<w:t xml:space="preserve">${escapeXml(part)}</w:t></w:r>`).join('');
 }
 
-const EMU_PER_PX = 9525;
-const EMU_FULL_WIDTH = 5486400; // 6in at 100%
-
-/** Parse the (sanitised) image object model off an exported <img>. */
-function docxImageProps(img) {
-    const raw = img.getAttribute('data-npad-props');
-    if (!raw) return null;
-    try {
-        return JSON.parse(raw);
-    } catch {
-        return null;
-    }
-}
-
-const RECOLOR_TO_DOCX = { grayscale: true };
-
-/** DrawingML inline or anchored picture, mapped from the object model. */
-function docxDrawing(rid, alt, props = null) {
-    const descr = escapeXml(alt || '');
-    const seq = Number(rid.replace(/\D+/g, '')) || 1;
-
-    // Size: width prop -> EMU (%, px, or the 4x3 default).
-    let cx = 3657600;
-    let cy = 2743200;
-    const width = props?.width;
-    if (width && width.endsWith('%')) cx = Math.round(EMU_FULL_WIDTH * (parseFloat(width) / 100));
-    else if (width && width.endsWith('px')) cx = Math.round(parseFloat(width) * EMU_PER_PX);
-    const height = props?.height;
-    if (height && height.endsWith('px')) cy = Math.round(parseFloat(height) * EMU_PER_PX);
-    else if (width) cy = Math.round(cx * 0.75);
-
-    // Crop -> a:srcRect (units are 1/1000 of a percent).
-    const crop = props?.crop || { l: 0, r: 0, t: 0, b: 0 };
-    const srcRect = crop.l || crop.r || crop.t || crop.b
-        ? `<a:srcRect l="${Math.round(crop.l * 1000)}" t="${Math.round(crop.t * 1000)}" r="${Math.round(crop.r * 1000)}" b="${Math.round(crop.b * 1000)}"/>`
-        : '';
-
-    // Rotation & flip: rot is 1/60000 degree.
-    let rot = Math.round(((props?.rotate || 0) % 360) * 60000);
-    if (rot < 0) rot += 21600000;
-    const flipH = props?.flipH ? ' flipH="1"' : '';
-    const flipV = props?.flipV ? ' flipV="1"' : '';
-
-    // Effects: grayscale + opacity survive re-import.
-    const effects = [];
-    if (RECOLOR_TO_DOCX[props?.recolor]) effects.push('<a:grayscale val="true"/>');
-    if (props?.opacity != null && props.opacity < 100) {
-        effects.push(`<a:alphaModFix amt="${Math.round(props.opacity * 1000)}"/>`);
-    }
-    const blip = `<a:blip r:embed="${rid}">${effects.join('')}</a:blip>`;
-    const rotAttr = rot ? ` rot="${rot}"` : '';
-    const xfrm = `<a:xfrm${rotAttr}${flipH}${flipV}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`;
-
-    const picture = `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`
-        + `<pic:pic><pic:nvPicPr><pic:cNvPr id="${seq}" name="Image ${seq}" descr="${descr}"/><pic:cNvPicPr/></pic:nvPicPr>`
-        + `<pic:blipFill>${blip}${srcRect}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
-        + `<pic:spPr>${xfrm}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>`
-        + `</a:graphicData></a:graphic>`;
-
-    const layout = props?.layout || 'inline';
-    const anchor = props?.anchor || 'paragraph';
-    if (layout === 'inline') {
-        return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`
-            + `<wp:extent cx="${cx}" cy="${cy}"/>`
-            + `<wp:docPr id="${seq}" name="Image ${seq}" descr="${descr}"/>`
-            + picture + `</wp:inline></w:drawing></w:r>`;
-    }
-
-    const pxToPosOffset = (px) => Math.round((Number(px) || 0) * 6350);
-    const behind = layout === 'behind' ? '1' : '0';
-    let wrap = '<wp:wrapNone/>';
-    let relativeH = 'column';
-    let relativeV = 'paragraph';
-    let posX = 0;
-    let posY = 0;
-    if (layout === 'wrap-left' || layout === 'wrap-right') {
-        wrap = '<wp:wrapSquare wrapText="bothSides"/>';
-        relativeH = 'column';
-    } else if (layout === 'top-bottom') {
-        wrap = '<wp:wrapTopAndBottom/>';
-    } else {
-        // behind / front / fixed
-        relativeH = layout === 'fixed' ? 'page' : 'paragraph';
-        relativeV = anchor === 'page' || layout === 'fixed' ? 'page' : 'paragraph';
-        posX = pxToPosOffset(props?.pos?.x);
-        posY = pxToPosOffset(props?.pos?.y);
-    }
-    return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0"`
-        + ` relativeHeight="${seq}" behindDoc="${behind}" locked="0" layoutInCell="1" allowOverlap="1">`
-        + `<wp:simplePos x="0" y="0"/>`
-        + `<wp:positionH relativeFrom="${relativeH}"><wp:posOffset>${posX}</wp:posOffset></wp:positionH>`
-        + `<wp:positionV relativeFrom="${relativeV}"><wp:posOffset>${posY}</wp:posOffset></wp:positionV>`
-        + `<wp:extent cx="${cx}" cy="${cy}"/>`
-        + wrap
-        + `<wp:docPr id="${seq}" name="Image ${seq}" descr="${descr}"/>`
-        + picture + `</wp:anchor></w:drawing></w:r>`;
-}
-
 function htmlNodeToWord(node, inherited = {}) {
     if (node.nodeType === Node.TEXT_NODE) return wordRun(node.nodeValue, inherited);
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
@@ -870,10 +743,6 @@ function htmlNodeToWord(node, inherited = {}) {
         code: inherited.code || tag === 'code' || tag === 'pre',
     };
     if (tag === 'br') return '<w:r><w:br/></w:r>';
-    if (tag === 'img') {
-        const rid = node.getAttribute('data-docx-rid');
-        return rid ? docxDrawing(rid, node.getAttribute('alt') || '', docxImageProps(node)) : '';
-    }
     return [...node.childNodes].map((child) => htmlNodeToWord(child, style)).join('');
 }
 
@@ -978,49 +847,8 @@ function htmlToWordBody(body, documentDirection) {
 
 export function htmlToDocx(html, { direction = 'ltr' } = {}) {
     const body = htmlBody(html);
-
-    // Embedded raster images become real media parts with DrawingML inline
-    // pictures (Google Docs/Word show them; the round trip is lossless).
-    const media = [];
-    const imageRels = [];
-    const imageExtensions = new Map();
-    let imageSeq = 0;
-    for (const img of [...body.querySelectorAll('img')]) {
-        const match = (img.getAttribute('src') || '').trim()
-            .match(/^data:image\/(png|jpeg|gif|webp);base64,([a-z0-9+/=\s]+)$/i);
-        if (!match) {
-            img.remove();
-            continue;
-        }
-        imageSeq += 1;
-        const type = match[1].toLowerCase();
-        const ext = type === 'jpeg' ? 'jpg' : type;
-        const mediaName = `image${imageSeq}.${ext}`;
-        const rid = `rIdImg${imageSeq}`;
-        let bytes;
-        try {
-            const binary = atob(match[2].replace(/\s+/g, ''));
-            bytes = new Uint8Array(binary.length);
-            for (let index = 0; index < binary.length; index += 1) {
-                bytes[index] = binary.charCodeAt(index);
-            }
-        } catch {
-            img.remove();
-            continue;
-        }
-        media.push([`word/media/${mediaName}`, bytes]);
-        imageRels.push(`<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/>`);
-        imageExtensions.set(ext, `image/${type}`);
-        img.setAttribute('data-docx-rid', rid);
-        img.removeAttribute('src');
-    }
-
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
- xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
- xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
- xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
- xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${htmlToWordBody(body, direction)}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${htmlToWordBody(body, direction)}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`;
     const headingStyles = [32, 28, 26, 24, 22, 20].map((size, index) => {
         const level = index + 1;
         return `<w:style w:type="paragraph" w:styleId="Heading${level}"><w:name w:val="heading ${level}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr></w:style>`;
@@ -1028,21 +856,14 @@ export function htmlToDocx(html, { direction = 'ltr' } = {}) {
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>${headingStyles}</w:styles>`;
 
-    const contentTypesDefaults = [...imageExtensions.entries()]
-        .map(([ext, contentType]) => `<Default Extension="${ext}" ContentType="${contentType}"/>`)
-        .join('');
-    const documentRels = [`<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`, ...imageRels].join('');
-
     return makeZip([
-        ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${contentTypesDefaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`],
+        ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>'],
         ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'],
         ['word/document.xml', documentXml],
         ['word/styles.xml', stylesXml],
-        ['word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${documentRels}</Relationships>`],
-        ...media,
+        ['word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
     ]);
 }
-
 function firstChildByLocalName(node, name) {
     return [...(node?.children || [])].find((child) => child.localName === name) || null;
 }

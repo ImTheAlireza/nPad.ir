@@ -245,62 +245,6 @@ $jsStrings = [
     'tableMergeHint'    => t('table.merge_hint'),
     'tableSplitHint'    => t('table.split_hint'),
     'tableSortUnsupported' => t('table.sort_unsupported'),
-    'imageToolbarLabel' => t('image.toolbar_label'),
-    'imageTooLarge'     => t('image.too_large'),
-    'imageUnsupported'  => t('image.unsupported'),
-    'imageStorageFailed' => t('image.storage_failed'),
-    'imageDialogTitle'  => t('image.dialog_title'),
-    'imageAlt'          => t('image.alt'),
-    'imageCaption'      => t('image.caption'),
-    'imageSectionText'  => t('image.section_text'),
-    'imageSectionSize'  => t('image.section_size'),
-    'imageSectionLayout' => t('image.section_layout'),
-    'imageSectionCrop'  => t('image.section_crop'),
-    'imageSectionMargins' => t('image.section_margins'),
-    'imageSectionAdjust' => t('image.section_adjust'),
-    'imageSectionBorder' => t('image.section_border'),
-    'imageLayoutInline' => t('image.layout_inline'),
-    'imageLayoutWrap'   => t('image.layout_wrap'),
-    'imageLayoutBreak'  => t('image.layout_break'),
-    'imageLayoutBehind' => t('image.layout_behind'),
-    'imageLayoutFront'  => t('image.layout_front'),
-    'imageLayoutFixed'  => t('image.layout_fixed'),
-    'imageAnchor'       => t('image.anchor'),
-    'imageAnchorParagraph' => t('image.anchor_paragraph'),
-    'imageAnchorPage'   => t('image.anchor_page'),
-    'imageLayoutHint'   => t('image.layout_hint'),
-    'imagePosX'         => t('image.pos_x'),
-    'imagePosY'         => t('image.pos_y'),
-    'imageCropOriginal' => t('image.crop_original'),
-    'imageCropCircle'   => t('image.crop_circle'),
-    'imageCropLeft'     => t('image.crop_left'),
-    'imageCropRight'    => t('image.crop_right'),
-    'imageCropTop'      => t('image.crop_top'),
-    'imageCropBottom'   => t('image.crop_bottom'),
-    'imageMarginTop'    => t('image.margin_top'),
-    'imageMarginRight'  => t('image.margin_right'),
-    'imageMarginBottom' => t('image.margin_bottom'),
-    'imageMarginLeft'   => t('image.margin_left'),
-    'imageRecolorNone'  => t('image.recolor_none'),
-    'imageRecolorGrayscale' => t('image.recolor_grayscale'),
-    'imageRecolorSepia' => t('image.recolor_sepia'),
-    'imageRecolorNegative' => t('image.recolor_negative'),
-    'imageRecolorFaded' => t('image.recolor_faded'),
-    'imageRecolorCool'  => t('image.recolor_cool'),
-    'imageRecolorWarm'  => t('image.recolor_warm'),
-    'imageOpacity'      => t('image.opacity'),
-    'imageBrightness'   => t('image.brightness'),
-    'imageContrast'     => t('image.contrast'),
-    'imageBorderWidth'  => t('image.border_width'),
-    'imageBorderColor'  => t('image.border_color'),
-    'imageBorderRadius' => t('image.border_radius'),
-    'imageShadow'       => t('image.shadow'),
-    'imageWidth'        => t('image.width'),
-    'imageHeight'       => t('image.height'),
-    'imageHeightAuto'   => t('image.height_auto'),
-    'imageRotate'       => t('image.rotate'),
-    'imageFlipH'        => t('image.flip_h'),
-    'imageFlipV'        => t('image.flip_v'),
     'tableDeleteTitle'  => t('table.delete_title'),
     'tableDeleteBody'   => t('table.delete_body'),
     'tablePropertiesTitle' => t('table.properties_title'),
@@ -777,88 +721,6 @@ $jsStrings = [
             </div>
         </div><!-- /toolbarPaneTable -->
 
-        <div class="toolbar__pane" id="toolbarPaneImage" data-toolbar-pane="image" hidden>
-            <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_size')) ?>">
-                <button type="button" class="toolbar__btn" data-image-action="size-small" aria-pressed="false"
-                        title="<?= e(t('image.size_small')) ?>" aria-label="<?= e(t('image.size_small')) ?>">
-                    <?= icon('image-size') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="size-medium" aria-pressed="false"
-                        title="<?= e(t('image.size_medium')) ?>" aria-label="<?= e(t('image.size_medium')) ?>">
-                    <?= icon('image-size') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="size-large" aria-pressed="false"
-                        title="<?= e(t('image.size_large')) ?>" aria-label="<?= e(t('image.size_large')) ?>">
-                    <?= icon('image-size') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="size-original" aria-pressed="false"
-                        title="<?= e(t('image.size_original')) ?>" aria-label="<?= e(t('image.size_original')) ?>">
-                    <?= icon('image-size') ?>
-                </button>
-            </div>
-            <div class="toolbar__group" role="group" aria-label="<?= e(t('toolbar.group_align')) ?>">
-                <button type="button" class="toolbar__btn" data-image-action="align-left"
-                        title="<?= e(t('image.align_left')) ?>" aria-label="<?= e(t('image.align_left')) ?>">
-                    <?= icon('align-left') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="align-center"
-                        title="<?= e(t('image.align_center')) ?>" aria-label="<?= e(t('image.align_center')) ?>">
-                    <?= icon('align-center') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="align-right"
-                        title="<?= e(t('image.align_right')) ?>" aria-label="<?= e(t('image.align_right')) ?>">
-                    <?= icon('align-right') ?>
-                </button>
-            </div>
-            <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_layout')) ?>">
-                <button type="button" class="toolbar__btn" data-image-action="layout-inline" aria-pressed="false"
-                        title="<?= e(t('image.layout_inline')) ?>" aria-label="<?= e(t('image.layout_inline')) ?>">
-                    <?= icon('image-inline') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="layout-wrap" aria-pressed="false"
-                        title="<?= e(t('image.layout_wrap')) ?>" aria-label="<?= e(t('image.layout_wrap')) ?>">
-                    <?= icon('layout') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="layout-break" aria-pressed="false"
-                        title="<?= e(t('image.layout_break')) ?>" aria-label="<?= e(t('image.layout_break')) ?>">
-                    <?= icon('image-break') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="layout-front" aria-pressed="false"
-                        title="<?= e(t('image.layout_front')) ?>" aria-label="<?= e(t('image.layout_front')) ?>">
-                    <?= icon('image-front') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="layout-behind" aria-pressed="false"
-                        title="<?= e(t('image.layout_behind')) ?>" aria-label="<?= e(t('image.layout_behind')) ?>">
-                    <?= icon('image-behind') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="layout-fixed" aria-pressed="false"
-                        title="<?= e(t('image.layout_fixed')) ?>" aria-label="<?= e(t('image.layout_fixed')) ?>">
-                    <?= icon('pin') ?>
-                </button>
-            </div>
-            <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_edit')) ?>">
-                <button type="button" class="toolbar__btn" data-image-action="advanced"
-                        title="<?= e(t('image.advanced')) ?>" aria-label="<?= e(t('image.advanced')) ?>">
-                    <?= icon('image-advanced') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="rotate-ccw"
-                        title="<?= e(t('image.rotate')) ?>" aria-label="<?= e(t('image.rotate')) ?>">
-                    <?= icon('rotate') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="recolor-grayscale"
-                        title="<?= e(t('image.recolor_grayscale_quick')) ?>" aria-label="<?= e(t('image.recolor_grayscale_quick')) ?>">
-                    <?= icon('grayscale') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="replace-image"
-                        title="<?= e(t('image.replace')) ?>" aria-label="<?= e(t('image.replace')) ?>">
-                    <?= icon('image-replace') ?>
-                </button>
-                <button type="button" class="toolbar__btn" data-image-action="remove-image"
-                        title="<?= e(t('image.remove')) ?>" aria-label="<?= e(t('image.remove')) ?>">
-                    <?= icon('image-remove') ?>
-                </button>
-            </div>
-        </div><!-- /toolbarPaneImage -->
     </div>
 
     <div class="findbar" id="findBar" role="search" aria-label="<?= e(t('find.label')) ?>" hidden>
@@ -983,8 +845,6 @@ $jsStrings = [
 <div class="table-context" id="tableContextMenu" role="menu"
      aria-label="<?= e(t('table.context_menu')) ?>" hidden></div>
 
-<div class="table-context" id="imageContextMenu" role="menu"
-     aria-label="<?= e(t('image.context_menu')) ?>" hidden></div>
 
 <dialog class="dialog backup-dialog" id="backupDialog" aria-labelledby="backupDialogTitle">
     <div class="dialog__header">

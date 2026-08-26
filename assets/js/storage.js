@@ -9,12 +9,12 @@
  */
 
 const DB_NAME = 'npad';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORE = 'documents';
 const META_STORE = 'metadata';
 const BACKUP_STORE = 'backups';
-const IMAGES_STORE = 'images';
-const IMAGES_KEY_PREFIX = 'npad:img:';
+const RETIRED_ATTACHMENT_STORE = 'images';
+const RETIRED_ATTACHMENT_KEY_PREFIX = 'npad:img:';
 const LEGACY_ID = 'current';
 const LEGACY_KEY = 'npad:document';
 const FALLBACK_KEY = 'npad:notes';
@@ -30,8 +30,24 @@ const MAX_BACKUPS_TOTAL = 120;
 
 /** @type {Promise<IDBDatabase|null>|null} */
 let connection = null;
+let retiredAttachmentFallbackPurged = false;
+
+/** Remove payloads written by the retired attachment feature. */
+function purgeRetiredAttachmentFallback() {
+    if (retiredAttachmentFallbackPurged) return;
+    retiredAttachmentFallbackPurged = true;
+    try {
+        const keys = [];
+        for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+            if (key?.startsWith(RETIRED_ATTACHMENT_KEY_PREFIX)) keys.push(key);
+        }
+        keys.forEach((key) => localStorage.removeItem(key));
+    } catch { /* storage disabled */ }
+}
 
 function openDatabase() {
+    purgeRetiredAttachmentFallback();
     if (connection) return connection;
 
     connection = new Promise((resolve) => {
@@ -61,9 +77,9 @@ function openDatabase() {
                 backups.createIndex('noteId', 'noteId', { unique: false });
                 backups.createIndex('createdAt', 'createdAt', { unique: false });
             }
-            if (!db.objectStoreNames.contains(IMAGES_STORE)) {
-                const images = db.createObjectStore(IMAGES_STORE, { keyPath: 'id' });
-                images.createIndex('noteId', 'noteId', { unique: false });
+            // Version 6 intentionally retires the old image-payload store.
+            if (db.objectStoreNames.contains(RETIRED_ATTACHMENT_STORE)) {
+                db.deleteObjectStore(RETIRED_ATTACHMENT_STORE);
             }
             if (event.oldVersion < 2 && db.objectStoreNames.contains('editorContent')) {
                 try { db.deleteObjectStore('editorContent'); } catch { /* already absent */ }
@@ -126,23 +142,6 @@ function normaliseBackup(record = {}) {
 
 function normaliseColour(value) {
     return /^#[\da-f]{6}$/i.test(String(value || '')) ? String(value).toLowerCase() : '#0e7490';
-}
-
-function normaliseImage(record = {}) {
-    const now = Date.now();
-    // JSON round-trips Blobs as plain objects; only a real Blob/File is kept.
-    const tag = record.blob ? Object.prototype.toString.call(record.blob) : '';
-    const isRealBlob = tag === '[object Blob]' || tag === '[object File]';
-    return {
-        id: String(record.id || newId()),
-        noteId: String(record.noteId || ''),
-        type: String(record.type || 'image/png'),
-        size: Number(record.size) || 0,
-        name: String(record.name || ''),
-        createdAt: Number(record.createdAt) || now,
-        blob: isRealBlob ? record.blob : null,
-        dataUrl: record.dataUrl || '',
-    };
 }
 
 function normaliseOrganization(record = {}) {
@@ -534,224 +533,6 @@ export async function clearBackups() {
     try { localStorage.removeItem(BACKUP_KEY); } catch { /* storage disabled */ }
     const db = await openDatabase();
     return db ? removeBackupsFromDatabase(db, null) : true;
-}
-
-/* -------------------------------------------------------------------------
-   Image attachments. IndexedDB stores Blobs natively; the localStorage
-   fallback stores base64 data URIs (note HTML never contains either, only
-   the reference id).
-   ------------------------------------------------------------------------- */
-
-function dataUrlToBlob(dataUrl) {
-    const match = String(dataUrl || '').match(/^data:([^;,]+);base64,([a-z0-9+/=\s]+)$/i);
-    if (!match) return null;
-    const bytes = Uint8Array.from(atob(match[2].replace(/\s+/g, '')), (char) => char.charCodeAt(0));
-    return new Blob([bytes], { type: match[1] });
-}
-
-/** Encode a Blob to a base64 data URI (localStorage fallback payload). */
-function blobToDataUrl(blob) {
-    if (!blob) return '';
-    const toDataUrl = (bytes) => {
-        let binary = '';
-        for (let index = 0; index < bytes.length; index += 0x8000) {
-            binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-        }
-        const base64 = globalThis.btoa ? globalThis.btoa(binary) : btoa(binary);
-        return `data:${blob.type || 'application/octet-stream'};base64,${base64}`;
-    };
-    if (typeof blob.arrayBuffer === 'function') {
-        return blob.arrayBuffer().then((buffer) => toDataUrl(new Uint8Array(buffer)));
-    }
-    const Reader = globalThis.FileReader
-        || (typeof window !== 'undefined' && window.FileReader)
-        || null;
-    if (!Reader) return Promise.resolve('');
-    return new Promise((resolve) => {
-        const reader = new Reader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(blob);
-    });
-}
-
-function readFallbackImage(id) {
-    try {
-        const raw = localStorage.getItem(IMAGES_KEY_PREFIX + id);
-        return raw ? normaliseImage(JSON.parse(raw)) : null;
-    } catch {
-        return null;
-    }
-}
-
-function writeFallbackImage(record) {
-    try {
-        localStorage.setItem(
-            IMAGES_KEY_PREFIX + record.id,
-            JSON.stringify(normaliseImage(record)),
-        );
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function removeFallbackImage(ids) {
-    try {
-        for (const id of ids) localStorage.removeItem(IMAGES_KEY_PREFIX + id);
-    } catch { /* storage disabled */ }
-}
-
-function listFallbackImages(noteId = null) {
-    const out = [];
-    try {
-        for (let index = 0; index < localStorage.length; index += 1) {
-            const key = localStorage.key(index);
-            if (!key || !key.startsWith(IMAGES_KEY_PREFIX)) continue;
-            const record = readFallbackImage(key.slice(IMAGES_KEY_PREFIX.length));
-            if (record && (!noteId || record.noteId === noteId)) out.push(record);
-        }
-    } catch { /* storage disabled */ }
-    return out;
-}
-
-function clearFallbackImages(noteId = null) {
-    removeFallbackImage(listFallbackImages(noteId).map((record) => record.id));
-}
-
-function getImageFromDatabase(db, id) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGES_STORE, 'readonly');
-        } catch {
-            resolve(null);
-            return;
-        }
-        const request = tx.objectStore(IMAGES_STORE).get(String(id));
-        request.onsuccess = () => resolve(normaliseImage(request.result || null));
-        request.onerror = () => resolve(null);
-    });
-}
-
-function putImagesIntoDatabase(db, records) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGES_STORE, 'readwrite');
-            for (const record of records) tx.objectStore(IMAGES_STORE).put(normaliseImage(record));
-        } catch {
-            resolve(false);
-            return;
-        }
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => resolve(false);
-        tx.onabort = () => resolve(false);
-    });
-}
-
-function removeImagesFromDatabase(db, ids = null) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGES_STORE, 'readwrite');
-            const store = tx.objectStore(IMAGES_STORE);
-            if (ids === null) store.clear();
-            else for (const id of ids) store.delete(String(id));
-        } catch {
-            resolve(false);
-            return;
-        }
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => resolve(false);
-        tx.onabort = () => resolve(false);
-    });
-}
-
-function listImagesFromDatabase(db, noteId = null) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGES_STORE, 'readonly');
-        } catch {
-            resolve([]);
-            return;
-        }
-        const store = tx.objectStore(IMAGES_STORE);
-        const request = noteId
-            ? store.index('noteId').getAll(String(noteId))
-            : store.getAll();
-        request.onsuccess = () => resolve((request.result || []).map(normaliseImage));
-        request.onerror = () => resolve([]);
-    });
-}
-
-/** Store one attachment. Falls back to base64 in localStorage. */
-export async function saveImage(record) {
-    const image = normaliseImage(record);
-    if (!image.id || !image.noteId || !image.blob) return false;
-    image.dataUrl = image.dataUrl || '';
-    const db = await openDatabase();
-    if (!db) {
-        // No IndexedDB: the payload goes to localStorage as a data URL.
-        image.dataUrl = image.dataUrl || await blobToDataUrl(image.blob);
-        return !!image.dataUrl && writeFallbackImage(image);
-    }
-    const ok = await putImagesIntoDatabase(db, [image]);
-    if (ok) return true;
-    return !!image.dataUrl && writeFallbackImage(image);
-}
-
-/** Resolve one attachment to a Blob (data-URI fallback decoded on the fly). */
-export async function loadImage(id) {
-    const imageId = String(id);
-    const db = await openDatabase();
-    if (db) {
-        const record = await getImageFromDatabase(db, imageId);
-        if (record?.blob) return record.blob;
-        if (record?.dataUrl) return dataUrlToBlob(record.dataUrl);
-    }
-    const fallback = readFallbackImage(imageId);
-    return fallback ? (fallback.blob || dataUrlToBlob(fallback.dataUrl)) : null;
-}
-
-/** Delete specific attachment ids everywhere. */
-export async function deleteImages(ids) {
-    const list = (Array.isArray(ids) ? ids : [ids]).map(String).filter(Boolean);
-    removeFallbackImage(list);
-    const db = await openDatabase();
-    return db ? removeImagesFromDatabase(db, list) : true;
-}
-
-/** Delete every attachment belonging to one note. */
-export async function deleteImagesByNote(noteId) {
-    const noteIdString = String(noteId);
-    if (noteIdString === 'null') return true;
-    const fallback = listFallbackImages(noteIdString);
-    removeFallbackImage(fallback.map((record) => record.id));
-    const db = await openDatabase();
-    if (!db) return true;
-    const stored = await listImagesFromDatabase(db, noteIdString);
-    return removeImagesFromDatabase(db, stored.map((record) => record.id));
-}
-
-/** List attachment ids owned by one note (used by garbage collection). */
-export async function listImagesByNote(noteId) {
-    const noteIdString = String(noteId);
-    const fallback = listFallbackImages(noteIdString);
-    const db = await openDatabase();
-    if (!db) return fallback;
-    const stored = await listImagesFromDatabase(db, noteIdString);
-    const merged = new Map();
-    for (const record of [...stored, ...fallback]) merged.set(record.id, record);
-    return [...merged.values()];
-}
-
-/** Permanently delete every attachment (Clear all notes). */
-export async function clearImages() {
-    clearFallbackImages();
-    const db = await openDatabase();
-    return db ? removeImagesFromDatabase(db, null) : true;
 }
 
 /** Delete one note from every possible persistence path. */

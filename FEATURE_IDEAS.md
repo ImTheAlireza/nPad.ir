@@ -5,31 +5,13 @@ Tailored to nPad.ir's existing architecture: PHP front-end, local-only storage
 third-party requests, and a strict CSP. Effort: **S** = small (days), **M** =
 medium (1–2 weeks), **L** = large (a month+).
 
-> **Implemented 2026-08:** item 2 (Tables) and item 3 (Images & attachments) are now shipped.
-> Images: Blob storage in IndexedDB (base64 fallback only when IndexedDB is
-> absent), 25 MB cap, raster-only whitelist (SVG rejected), paste/drag-drop/
-> Insert menu ingestion, data-URI archiving, remote images become links, an
-> image toolbar pane (size, alignment, rotate, wrap toggle, grayscale,
-> properties, replace, remove), object selection chrome with corner resize
-> handles and free pointer movement (inline images auto-promote to floating,
-> Escape cancels a drag, arrows nudge, Delete removes), figure/figcaption
-> captions, orphan GC, and
-> exports that embed images (HTML/Markdown/JSON data URIs, DOCX media parts;
-> RTF keeps alt text). The image object model adds cropping (clip-frame
-> preview + ratio presets), size & rotation, margins from text, layout
-> modes (inline / wrap / break / behind / in front / fixed), anchoring
-> (move with text vs fix on page), pointer dragging, recolor presets,
-> opacity/brightness/contrast, borders/radius/shadow — stored as validated
-> data-npad-props JSON and mapped to DOCX srcRect/rot/anchors on export.
-> Tables: — the **Insert** menu
-> sits next to Edit, tables insert through a settings dialog (rows/columns,
-> headers, width, presets, live preview), the toolbar swaps to table tools when
-> the caret is inside a cell ("selection-friendly toolbar"), and the full
-> control set is in: rows/columns, merge/split, headers, alignment, cell
-> colour, width/borders/caption, move row, delete, right-click context menu,
-> Tab navigation, plus Markdown (GFM), DOCX (`w:tbl`) and RTF export support.
-> Literal drawn "shapes" (circles, SVG) remain intentionally out of scope —
-> the sanitizer strips SVG and DOCX/RTF/Markdown cannot carry them.
+> **Implemented 2026-08:** item 2 (Tables) is shipped.
+>
+> **Reset 2026-08:** the previous image/attachment implementation was removed
+> deliberately. It had accumulated a large object model and competing editing
+> interactions before a clear, accessible content-block design was agreed.
+> Research findings and the replacement proposal live in
+> [IMAGE_EDITOR_REDESIGN_PLAN.md](IMAGE_EDITOR_REDESIGN_PLAN.md).
 
 ---
 
@@ -42,9 +24,9 @@ medium (1–2 weeks), **L** = large (a month+).
 2. **Tables** — insert/edit/resize tables with toolbar controls (native
    `contenteditable` support is thin; a small table editor panel is enough;
    must survive DOCX/HTML export). *(M)*
-3. **Images & attachments** — paste or drag-drop images, stored as blobs in
-   IndexedDB (not base64 in the note), with resize/caption/alt text; same
-   bounded-size rules as the 25 MB import limit. *(L)*
+3. **Image blocks (planned)** — intentionally not shipped while the
+   researched, accessibility-first redesign in
+   [IMAGE_EDITOR_REDESIGN_PLAN.md](IMAGE_EDITOR_REDESIGN_PLAN.md) is reviewed. *(L)*
 4. **Code blocks with syntax highlighting** — self-hosted Prism (no CDN),
    monospace font, copy button; essential for the developer audience and it
    pairs with Markdown mode. *(M)*
@@ -86,7 +68,7 @@ medium (1–2 weeks), **L** = large (a month+).
 
 ### Input, export & tools
 17. **Web Share Target & File System Access** — register the PWA as a share
-    target (send text/images from other apps straight into a note) and expose
+    target (send text and supported documents from other apps straight into a note) and expose
     "Save as… / Open from disk" via the File System Access API where
     supported. *(M)*
 18. **Import from other notepads** — Google Keep JSON, Apple Notes, Evernote
@@ -148,7 +130,7 @@ path unless marked "cloud" (which is much simpler to ship).
 13. **Natural-language filters** — "notes from last week about work", "my
     untagged notes" parsed into search filters instead of manual dropdowns. *(S)*
 
-### Voice, image & reading
+### Voice & reading
 14. **Dictation** — speak → typed note using on-device speech recognition;
     pair with the existing spellchecker for FA/EN transcription. *(M)*
 15. **Text-to-speech narration** — listen to a note (or selection) read aloud
@@ -191,5 +173,5 @@ path unless marked "cloud" (which is much simpler to ship).
    command palette, TTS) — quick wins that compound with existing features.
 2. **M items** (tables, code blocks, maths, note links, version diff, dictation,
    OCR, smart titles/filters) — the visible jump in usefulness.
-3. **L items** (Markdown dual mode, attachments, self-hosted sync, local
+3. **L items** (Markdown dual mode, image blocks, self-hosted sync, local
    semantic search, chat-with-notes) — the ambitious, differentiating tier.

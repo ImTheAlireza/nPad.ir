@@ -211,7 +211,7 @@ a {
 
 a:hover { color: var(--accent-hover); }
 
-img, svg { max-width: 100%; }
+svg { max-width: 100%; }
 
 button, input, select, textarea {
     font: inherit;
@@ -1850,190 +1850,6 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     outline-offset: -2px;
 }
 
-/* Attached images: reference markup with runtime-only object URLs. */
-.editor { position: relative; }
-
-.editor figure {
-    margin: 0 0 0.75em;
-}
-
-.editor .npad-paragraph-anchor {
-    position: relative;
-}
-
-.editor figure[style*="text-align:center"] {
-    text-align: center;
-}
-
-.editor figure img,
-.editor p img,
-.editor img {
-    max-width: 100%;
-    height: auto;
-}
-
-.editor figcaption {
-    margin-top: 2px;
-    font-size: 13px;
-    color: var(--text-muted);
-    text-align: start;
-}
-
-.editor .npad-img-selected {
-    outline: 2px solid var(--accent-ring);
-    outline-offset: 2px;
-}
-
-.editor .npad-img-missing {
-    display: inline-block;
-    min-width: 120px;
-    min-height: 72px;
-    border: 1px dashed var(--border-strong);
-    background:
-        repeating-linear-gradient(45deg, transparent 0 10px, var(--surface-hover) 10px 20px);
-    vertical-align: middle;
-}
-
-.editor [data-npad-frame-clip] {
-    border-radius: inherit;
-}
-
-.editor figure[data-npad-anchor="paragraph"] {
-    margin: 0;
-}
-
-/* Object selection chrome: outline + corner resize handles overlay.
-   Fixed-position (window coordinates), outside the contenteditable so it can
-   never be typed into, deleted or saved. */
-.npad-object-overlay {
-    position: fixed;
-    z-index: 70;
-    pointer-events: none;
-    border: 2px solid var(--accent-ring);
-    box-sizing: border-box;
-}
-
-.npad-object-overlay[hidden] { display: none; }
-
-.npad-object-overlay__handle {
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    padding: 0;
-    border: 2px solid var(--accent);
-    border-radius: 2px;
-    background: #fff;
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
-    pointer-events: auto;
-    touch-action: none;
-}
-
-.npad-object-overlay__handle--nw { left: 0; top: 0; transform: translate(-50%, -50%); }
-.npad-object-overlay__handle--ne { right: 0; top: 0; transform: translate(50%, -50%); }
-.npad-object-overlay__handle--sw { left: 0; bottom: 0; transform: translate(-50%, 50%); }
-.npad-object-overlay__handle--se { right: 0; bottom: 0; transform: translate(50%, 50%); }
-
-.npad-object-overlay__handle:hover { background: var(--accent-soft); }
-
-/* Image properties dialog. */
-.image-props__section {
-    margin: 0 0 var(--space-4);
-    padding-bottom: var(--space-3);
-    border-bottom: 1px solid var(--border-subtle);
-}
-
-.image-props__section:last-child { border-bottom: 0; }
-
-.image-props__heading {
-    margin: 0 0 var(--space-2);
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-strong);
-}
-
-.image-props__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--space-3);
-}
-
-.image-props__layouts {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: var(--space-2);
-    margin: 0 0 var(--space-3);
-}
-
-.image-props__choice {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: 8px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    color: var(--text-body);
-    cursor: pointer;
-    background: var(--surface-raised);
-}
-
-.image-props__choice:has(input:checked) {
-    background: var(--accent-soft);
-    color: var(--accent-text);
-    border-color: var(--accent-ring);
-}
-
-.image-props__check {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: 13px;
-    color: var(--text-body);
-}
-
-.image-props__check input { accent-color: var(--accent); }
-
-.image-props__pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin: 0 0 var(--space-3);
-}
-
-.image-props__pill {
-    padding: 4px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
-    background: var(--surface-raised);
-    color: var(--text-body);
-    font-size: 13px;
-    cursor: pointer;
-}
-
-.image-props__pill:hover {
-    background: var(--surface-hover);
-    color: var(--text-strong);
-}
-
-.image-props__hint {
-    margin: var(--space-2) 0 0 !important;
-    font-size: 12px;
-    color: var(--text-muted);
-}
-
-.image-props__value {
-    display: inline-block;
-    min-width: 3ch;
-    text-align: end;
-    color: var(--text-muted);
-    font-size: 12px;
-}
-
-.image-props input[type='range'] {
-    min-height: 28px;
-    accent-color: var(--accent);
-}
-
 .editor table[style*="width:100%"] { width: 100%; }
 
 @media (max-width: 640px) {
@@ -3494,7 +3310,6 @@ body.focus-mode .focus-exit { display: inline-flex; }
     .findbar,
     .focus-exit,
     .spell-tip,
-    .npad-object-overlay,
     .dialog,
     .content,
     .footer,

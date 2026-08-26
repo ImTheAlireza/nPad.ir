@@ -16,10 +16,6 @@ import {
     saveNote,
     saveNoteSync,
     deleteNote,
-    deleteImages,
-    deleteImagesByNote,
-    listImagesByNote,
-    clearImages,
     getActiveNoteId,
     setActiveNoteId,
     getOpenNoteIds,
@@ -32,31 +28,7 @@ import {
     saveOrganization,
     createFolderRecord,
     createTagRecord,
-    loadImage,
-    saveImage,
 } from './storage.js';
-import {
-    MAX_IMAGE_BYTES,
-    isSupportedImageFile,
-    imageTooLarge,
-    newImageId,
-    dataUriToBlob,
-    imageHtml,
-    readImageProps,
-    defaultImageProps,
-    applyImagePropsCss,
-    imageFigureCss,
-    cropObjectPosition,
-    cropFramePadding,
-    collectImageIds,
-    remapImageIds,
-    extractImagesFromHtml,
-    resolveImageReferences,
-    revokeImageUrls,
-    stripImageSources,
-    isImageElement,
-    embedImagesAsDataUrls,
-} from './attachments.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
 import {
     MAX_ROWS as TABLE_MAX_ROWS,
@@ -195,22 +167,12 @@ export function initEditor({ strings, onEvent }) {
     /* Custom spell checker (self-contained module). */
     const spell = initSpellcheck({ editor, strings, onEvent: track });
 
-    /* Contextual toolbar panes: the toolbar swaps to table tools when the
-       caret is inside a table cell, and to image tools when an attached
-       image is selected (the "selection friendly" toolbar). */
+    /* The toolbar swaps to table tools when the caret is inside a table cell. */
     const toolbarPaneBase = document.getElementById('toolbarPaneBase');
     const toolbarPaneTable = document.getElementById('toolbarPaneTable');
-    const toolbarPaneImage = document.getElementById('toolbarPaneImage');
     const tableContextMenu = document.getElementById('tableContextMenu');
-    const imageContextMenu = document.getElementById('imageContextMenu');
     const TOOLBAR_LABEL_BASE = toolbar?.getAttribute('aria-label') || '';
     let toolbarContext = 'base';
-
-    /* Active-note image state. */
-    let activeImageUrls = [];
-    let selectedImageEl = null;
-    let imageResolveSeq = 0;
-    let imageDragState = null; // { type: 'move'|'resize', img, ... }
 
     /**
      * Editor HTML without transient spell-check marks, for storage and
@@ -226,8 +188,6 @@ export function initEditor({ strings, onEvent }) {
         });
         // The caret highlight is a runtime-only affordance: it never persists.
         clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
-        // Image sources are resolved object URLs: never saved or exported.
-        stripImageSources(clone);
         return clone.innerHTML;
     }
 
@@ -252,7 +212,6 @@ export function initEditor({ strings, onEvent }) {
         const BLOCKS = new Set([
             'P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
             'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL', 'TABLE', 'TD', 'TH', 'CAPTION',
-            'FIGURE', 'FIGCAPTION',
         ]);
 
         let out = '';
@@ -396,7 +355,6 @@ export function initEditor({ strings, onEvent }) {
             await saveBackup(previousHasContent ? previous : snapshot);
         }
         const ok = await saveNote(snapshot);
-        if (ok) gcNoteImages(snapshot.id, snapshot.html);
         if (activeNoteId === savingId) {
             const changedWhileSaving = (noteTitleInput?.value.trim() || '') !== snapshot.title
                 || cleanHtml() !== snapshot.html;
@@ -732,12 +690,9 @@ export function initEditor({ strings, onEvent }) {
         setActiveNoteId(note.id);
         editor.innerHTML = sanitizeHtml(note.html || '');
         normaliseTables(editor);
-        // The new note's caret is empty: force the base toolbar back even if
-        // the previous note ended with the caret inside a table or on an image.
+        // The new note's caret is empty: reset contextual table controls.
         markActiveCell(null);
-        clearImageSelection();
         setToolbarContext('base');
-        resolveEditorImages();
         if (noteTitleInput) noteTitleInput.value = displayTitle(note);
         lastSavedAt = note.updatedAt || 0;
         dirty = false;
@@ -811,7 +766,7 @@ export function initEditor({ strings, onEvent }) {
             : (noteFilter.type === 'tag' ? [noteFilter.id] : []);
         const note = createNoteRecord({
             title: title || strings.noteUntitled,
-            html,
+            html: sanitizeHtml(html),
             pinned,
             folderId: initialFolder,
             tags: initialTags,
@@ -909,7 +864,6 @@ export function initEditor({ strings, onEvent }) {
         const closingIndex = openNoteIds.indexOf(id);
         await saveBackup(note, { reason: 'deleted', force: true });
         await deleteNote(id);
-        await deleteImagesByNote(id);
         notes = notes.filter((item) => item.id !== id);
         openNoteIds = openNoteIds.filter((noteId) => noteId !== id);
         setOpenNoteIds(openNoteIds);
@@ -1392,1163 +1346,22 @@ export function initEditor({ strings, onEvent }) {
     }
 
     /* ---------------------------------------------------------------------
-       Images & attachments: archive, paste/drop, toolbar pane, dialogs
+       Clipboard and drop normalisation
        --------------------------------------------------------------------- */
 
-    /** Object URLs for the active note are revoked on switch and re-resolve. */
-    function revokeActiveImageUrls() {
-        revokeImageUrls(activeImageUrls);
-        activeImageUrls = [];
-    }
-
-    async function resolveEditorImages() {
-        const seq = (imageResolveSeq += 1);
-        revokeActiveImageUrls();
-        const { urls } = await resolveImageReferences(editor, loadImage);
-        if (seq !== imageResolveSeq) {
-            // A newer note/interaction won the race: discard stale URLs.
-            revokeImageUrls(urls);
-            return;
-        }
-        activeImageUrls = urls;
-        measureCropFrames();
-    }
-
-    /** Give crop frames their real aspect once the natural size is known. */
-    async function measureCropFrames() {
-        for (const img of [...editor.querySelectorAll('img[data-npad-img]')]) {
-            const clip = img.closest('[data-npad-frame-clip]');
-            const props = readImageProps(img);
-            const hasCrop = props.crop.l || props.crop.r || props.crop.t || props.crop.b;
-            if (!clip || !hasCrop || !img.getAttribute('src')) continue;
-            if (typeof Image === 'undefined' || typeof Image !== 'function') continue;
-            const natural = await new Promise((resolve) => {
-                const probe = new Image();
-                probe.onload = () => resolve({
-                    width: probe.naturalWidth || 0,
-                    height: probe.naturalHeight || 0,
-                });
-                probe.onerror = () => resolve(null);
-                probe.src = img.getAttribute('src');
-            });
-            if (!natural?.width || !natural?.height) continue;
-            const pos = cropObjectPosition(props.crop);
-            clip.style.paddingBottom = `${cropFramePadding(props.crop, natural.width / natural.height)}%`;
-            img.style.objectPosition = `${pos.x}% ${pos.y}%`;
-        }
-    }
-
-    /** Archive a pasted/dropped/imported file; returns the reference id. */
-    async function archiveImageFile(file, noteId) {
-        if (imageTooLarge(file)) {
-            toast(strings.imageTooLarge, 'error');
-            return null;
-        }
-        if (!isSupportedImageFile(file)) {
-            toast(strings.imageUnsupported, 'error');
-            return null;
-        }
-        const id = newImageId(noteId);
-        const saved = await saveImage({
-            id,
-            noteId,
-            blob: file,
-            type: file.type,
-            size: file.size,
-            name: file.name || '',
-            createdAt: Date.now(),
-        });
-        if (!saved) {
-            toast(strings.imageStorageFailed, 'error');
-            return null;
-        }
-        return id;
-    }
-
-    /** Archive a data-URI source found in pasted/imported HTML. */
-    async function archiveImageDataUri(dataUri, noteId) {
-        const parsed = dataUriToBlob(dataUri);
-        if (!parsed) return null;
-        if (parsed.size > MAX_IMAGE_BYTES) {
-            toast(strings.imageTooLarge, 'error');
-            return null;
-        }
-        const id = newImageId(noteId);
-        const saved = await saveImage({
-            id,
-            noteId,
-            blob: parsed.blob,
-            type: parsed.type,
-            size: parsed.size,
-            name: '',
-            createdAt: Date.now(),
-        });
-        return saved ? id : null;
-    }
-
-    function imageFilesFrom(data) {
-        const files = [];
-        const seen = new Set();
-        const push = (file) => {
-            if (file && !seen.has(file)) {
-                seen.add(file);
-                files.push(file);
-            }
-        };
-        if (data && data.files) for (const file of data.files) push(file);
-        if (data && data.items) {
-            for (const item of data.items) {
-                const file = typeof item.getAsFile === 'function' ? item.getAsFile() : null;
-                push(file);
-            }
-        }
-        return files.filter((file) => (file.type || '').toLowerCase().startsWith('image/'));
-    }
-
-    async function insertImageFile(file) {
-        const noteId = activeNoteId || 'note';
-        const id = await archiveImageFile(file, noteId);
-        if (!id) return false;
-        editor.focus();
-        restoreEditorSelection();
-        insertHtml(imageHtml(id, { alt: file.name || '' }));
+    /** Insert trusted text or sanitised HTML. File-only drops are ignored. */
+    function handleContentData(data) {
+        const html = typeof data?.getData === 'function' ? data.getData('text/html') : '';
+        const text = typeof data?.getData === 'function' ? data.getData('text/plain') : '';
+        const clean = html ? sanitizeHtml(html) : (text ? textToHtml(text) : '');
+        if (!clean) return false;
+        insertHtml(clean);
+        normaliseTables(editor);
         scheduleSave();
         updateCounts();
         spell.refresh();
-        track('image_inserted');
-        resolveEditorImages();
         return true;
     }
-
-    /**
-     * Unified paste/drop path: archive image files and data-URI images, keep
-     * the rest of the clipboard text (sanitised) and leave remote images as
-     * links — NPad never fetches third-party content.
-     */
-    async function handleContentData(data, { asFile = true } = {}) {
-        const noteId = activeNoteId || 'note';
-        const html = typeof data?.getData === 'function' ? data.getData('text/html') : '';
-        const text = typeof data?.getData === 'function' ? data.getData('text/plain') : '';
-        const files = asFile ? imageFilesFrom(data) : [];
-        let changed = false;
-
-        if (html) {
-            const { html: extracted } = await extractImagesFromHtml(html, async (uri, sourceImg) => {
-                const id = await archiveImageDataUri(uri, noteId);
-                if (!id) return null;
-                // Preserve the pasted image's alt text and object model.
-                return imageHtml(id, {
-                    alt: sourceImg.getAttribute('alt') || '',
-                    props: sourceImg.getAttribute('data-npad-props') || undefined,
-                });
-            });
-            const clean = sanitizeHtml(extracted);
-            if (clean) {
-                insertHtml(clean);
-                normaliseTables(editor);
-                changed = true;
-            }
-        } else if (text) {
-            insertHtml(textToHtml(text));
-            changed = true;
-        }
-
-        for (const file of files) {
-            editor.focus();
-            restoreEditorSelection();
-            if (await insertImageFile(file)) changed = true;
-        }
-        if (changed) {
-            scheduleSave();
-            updateCounts();
-            resolveEditorImages();
-        }
-        return changed;
-    }
-
-    /** Orphan attachment GC: blobs not referenced by the note are removed. */
-    async function gcNoteImages(noteId, html) {
-        if (!noteId || noteId === 'note') return;
-        const keep = new Set(collectImageIds(html));
-        const stored = await listImagesByNote(noteId);
-        const orphans = stored
-            .filter((record) => !keep.has(record.id))
-            .map((record) => record.id);
-        if (orphans.length) await deleteImages(orphans);
-    }
-
-    /** Copy a note's images to new ids (backup restore), returning remapped HTML. */
-    async function rehomeNoteImages(html, sourceNoteId, targetNoteId) {
-        const ids = collectImageIds(html);
-        const map = new Map();
-        for (const id of ids) {
-            try {
-                const blob = await loadImage(id);
-                if (!blob) continue;
-                const targetId = newImageId(targetNoteId);
-                const saved = await saveImage({
-                    id: targetId,
-                    noteId: targetNoteId,
-                    blob,
-                    type: blob.type || 'image/png',
-                    size: blob.size || 0,
-                    name: '',
-                    createdAt: Date.now(),
-                });
-                if (saved) map.set(id, targetId);
-            } catch { /* keep the old reference */ }
-        }
-        return remapImageIds(html, map);
-    }
-
-    function insertImageFromPicker() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp';
-        input.multiple = true;
-        input.addEventListener('change', async () => {
-            editor.focus();
-            rememberEditorSelection();
-            for (const file of [...(input.files || [])]) {
-                await insertImageFile(file);
-            }
-            resolveEditorImages();
-        });
-        input.click();
-    }
-
-    /* --- Image selection state --- */
-
-    /* --- Object selection chrome: overlay with corner resize handles --- */
-
-    let objectOverlay = null;
-    let objectOverlayHandles = [];
-    let overlayFrame = 0;
-
-    function ensureObjectOverlay() {
-        if (objectOverlay?.isConnected) return objectOverlay;
-        objectOverlay = document.createElement('div');
-        objectOverlay.className = 'npad-object-overlay';
-        objectOverlay.setAttribute('aria-hidden', 'true');
-        objectOverlay.hidden = true;
-        const corners = [
-            ['nw', 'nwse-resize', -1, -1],
-            ['ne', 'nesw-resize', 1, -1],
-            ['sw', 'nesw-resize', -1, 1],
-            ['se', 'nwse-resize', 1, 1],
-        ];
-        objectOverlayHandles = corners.map(([suffix, cursor, xSign, ySign]) => {
-            const handle = document.createElement('button');
-            handle.type = 'button';
-            handle.className = `npad-object-overlay__handle npad-object-overlay__handle--${suffix}`;
-            handle.dataset.imageHandle = suffix;
-            handle.dataset.xSign = String(xSign);
-            handle.dataset.ySign = String(ySign);
-            handle.style.cursor = cursor;
-            handle.setAttribute('aria-label', `Resize image (${suffix})`);
-            handle.tabIndex = -1;
-            objectOverlay.appendChild(handle);
-            return handle;
-        });
-        objectOverlay.addEventListener('pointerdown', startImageResizePointer);
-        document.body.appendChild(objectOverlay);
-        return objectOverlay;
-    }
-
-    function positionObjectOverlay() {
-        if (!selectedImageEl?.isConnected) {
-            hideObjectOverlay();
-            return;
-        }
-        const overlay = ensureObjectOverlay();
-        overlay.hidden = false;
-        const rect = selectedImageEl.getBoundingClientRect();
-        if (!rect.width && !rect.height) return; // not laid out yet (jsdom)
-        overlay.style.left = `${rect.left || 0}px`;
-        overlay.style.top = `${rect.top || 0}px`;
-        overlay.style.width = `${rect.width || 0}px`;
-        overlay.style.height = `${rect.height || 0}px`;
-        overlay.hidden = false;
-    }
-
-    function scheduleObjectOverlayPosition() {
-        if (overlayFrame) return;
-        overlayFrame = window.requestAnimationFrame(() => {
-            overlayFrame = 0;
-            positionObjectOverlay();
-        });
-    }
-
-    function hideObjectOverlay() {
-        if (objectOverlay) objectOverlay.hidden = true;
-    }
-
-    window.addEventListener('scroll', scheduleObjectOverlayPosition, true);
-    window.addEventListener('resize', scheduleObjectOverlayPosition);
-
-    function clearImageSelection() {
-        if (!selectedImageEl && objectOverlay?.hidden) return;
-        if (selectedImageEl) {
-            selectedImageEl.classList.remove('npad-img-selected');
-            selectedImageEl = null;
-        }
-        hideObjectOverlay();
-    }
-
-    function selectImageElement(img) {
-        clearImageSelection();
-        selectedImageEl = img;
-        img.classList.add('npad-img-selected');
-        try {
-            const range = document.createRange();
-            range.selectNode(img);
-            const selection = window.getSelection();
-            selection.removeAllRanges();
-            selection.addRange(range);
-        } catch { /* visual selection state only */ }
-        positionObjectOverlay();
-        setToolbarContext('image');
-        syncImageToolbarState();
-    }
-
-    /* --- Object pointer interactions: resize handles + move body --- */
-
-    const floatLayout = (layout) => ['behind', 'front', 'fixed'].includes(layout);
-
-    function clampPx(value, min, max) {
-        return Math.min(max, Math.max(min, value));
-    }
-
-    /**
-     * Promote any image to a floating object so it can be moved anywhere,
-     * preserving its current on-screen position (Word/Google-Docs style).
-     */
-    function promoteToFloating(img) {
-        const props = readImageProps(img);
-        if (floatLayout(props.layout)) return props;
-        const figure = imageMount(img);
-        const anchorEl = img.closest('p, li, div, h1, h2, h3, h4, h5, h6, blockquote') || editor;
-        const imgRect = (figure || img).getBoundingClientRect();
-        const anchorRect = anchorEl.getBoundingClientRect();
-        const oldLayout = props.layout;
-        props.layout = oldLayout === 'behind' ? 'behind' : 'front';
-        props.anchor = 'paragraph';
-        props.pos = {
-            x: Math.round(imgRect.left - anchorRect.left),
-            y: Math.round(imgRect.top - anchorRect.top),
-        };
-        writePropsToImg(img, props);
-        rebuildImageMount(img, props);
-        return props;
-    }
-
-    function startImageObjectPointer(event) {
-        const img = event.target.closest?.('img[data-npad-img]');
-        if (!img || event.button !== 0) return;
-        event.preventDefault();
-        selectImageElement(img);
-        // Promote to floating (keeps position) so the object can move anywhere.
-        const props = promoteToFloating(img);
-        imageDragState = {
-            type: 'move',
-            img,
-            startX: event.clientX || 0,
-            startY: event.clientY || 0,
-            baseX: props.pos.x,
-            baseY: props.pos.y,
-            snapshot: JSON.stringify(props),
-            moved: false,
-        };
-    }
-
-    function startImageResizePointer(event) {
-        const handle = event.target.closest?.('[data-image-handle]');
-        const img = selectedImageEl?.isConnected ? selectedImageEl : null;
-        if (!handle || !img || event.button !== 0) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const props = readImageProps(img);
-        const parent = img.parentElement;
-        const parentWidth = parent?.clientWidth || 1000;
-        const current = img.getBoundingClientRect();
-        const widthProp = props.width || '100%';
-        const isPercent = widthProp.endsWith('%');
-        const baseWidth = isPercent ? parseFloat(widthProp) : (current.width || 100);
-        imageDragState = {
-            type: 'resize',
-            img,
-            handle: handle.dataset.imageHandle,
-            xSign: Number(handle.dataset.xSign),
-            ySign: Number(handle.dataset.ySign),
-            startX: event.clientX || 0,
-            startY: event.clientY || 0,
-            baseWidth,
-            baseHeight: current.height || (baseWidth * 0.75),
-            isPercent,
-            parentWidth,
-            shift: event.shiftKey,
-            snapshot: JSON.stringify(props),
-        };
-    }
-
-    function moveImageObjectPointer(event) {
-        const state = imageDragState;
-        if (!state || !state.img.isConnected) {
-            imageDragState = null;
-            return;
-        }
-        const dx = (event.clientX || 0) - state.startX;
-        const dy = (event.clientY || 0) - state.startY;
-        state.moved = state.moved || Math.abs(dx) > 2 || Math.abs(dy) > 2;
-
-        if (state.type === 'move') {
-            const props = readImageProps(state.img);
-            props.pos.x = Math.round(state.baseX + dx);
-            props.pos.y = Math.round(state.baseY + dy);
-            writePropsToImg(state.img, props);
-            const figure = imageMount(state.img);
-            if (figure) {
-                figure.style.left = `${props.pos.x}px`;
-                figure.style.top = `${props.pos.y}px`;
-            }
-            scheduleObjectOverlayPosition();
-        } else {
-            const props = readImageProps(state.img);
-            // Corner handle: dominant delta scales width, aspect stays locked
-            // (Shift = free: height follows too).
-            const delta = (state.xSign * dx + state.ySign * dy) / 2;
-            if (state.isPercent) {
-                const newPct = clampPx(state.baseWidth + (delta / (state.parentWidth || 1000)) * 100, 5, 400);
-                props.width = `${Math.round(newPct * 10) / 10}%`;
-                props.height = state.shift ? null : null;
-            } else {
-                const newPx = clampPx(state.baseWidth + delta, 24, 4000);
-                props.width = `${Math.round(newPx)}px`;
-            }
-            writePropsToImg(state.img, props);
-            applyImagePropsCss(state.img, props);
-            scheduleObjectOverlayPosition();
-        }
-    }
-
-    function finishImageObjectPointer(event) {
-        const state = imageDragState;
-        if (!state) return;
-        imageDragState = null;
-        if (!state.img.isConnected) return;
-        if (state.moved && (event?.type === 'pointerup')) {
-            afterImageOp();
-            track('image_moved');
-        } else {
-            // No movement: keep the object selected (handled by pointerdown).
-        }
-        scheduleObjectOverlayPosition();
-    }
-
-    function cancelImageObjectInteraction() {
-        const state = imageDragState;
-        if (!state) return;
-        imageDragState = null;
-        if (state.img.isConnected) {
-            try {
-                writePropsToImg(state.img, JSON.parse(state.snapshot));
-                applyImagePropsCss(state.img, JSON.parse(state.snapshot));
-                rebuildImageMount(state.img, JSON.parse(state.snapshot));
-            } catch { /* ignore */ }
-            selectImageElement(state.img);
-        }
-    }
-
-    function imageMount(img) {
-        return img.closest('figure');
-    }
-
-    function figureCaption(figure) {
-        return figure?.querySelector('figcaption');
-    }
-
-    /** Legacy quick-action readers now run through the object model. */
-    function imageAlign(img) {
-        const layout = readImageProps(img).layout;
-        if (layout === 'center') return 'center';
-        if (layout === 'wrap-left') return 'left';
-        if (layout === 'wrap-right') return 'right';
-        const figure = imageMount(img);
-        const style = figure ? (figure.getAttribute('style') || '') : '';
-        if (/text-align\s*:\s*center/i.test(style)) return 'center';
-        return '';
-    }
-
-    function imageSize(img) {
-        const width = readImageProps(img).width;
-        if (width === '25%') return 'small';
-        if (width === '50%') return 'medium';
-        if (width === '75%') return 'large';
-        return 'original';
-    }
-
-    function imageWidthPct(img) {
-        return readImageProps(img).width || '';
-    }
-
-    function setImageStyle(img, prop, value) {
-        const props = readImageProps(img);
-        if (prop === 'width') props.width = value || null;
-        applyImagePropsCss(writePropsToImg(img, props), props);
-    }
-
-    /** Canonicalise + persist props, return the img. */
-    function writePropsToImg(img, props) {
-        const canonical = JSON.stringify(props);
-        img.setAttribute('data-npad-props', canonical);
-        return img;
-    }
-
-    function setImageLayout(img, layout) {
-        const props = readImageProps(img);
-        props.layout = layout;
-        if (['behind', 'front', 'fixed'].includes(layout) && !props.width) props.width = '240px';
-        if (['wrap-left', 'wrap-right', 'top-bottom'].includes(layout) && !props.width) props.width = '50%';
-        if (layout === 'center' && !props.width) props.width = '50%';
-        writePropsToImg(img, props);
-        rebuildImageMount(img, props);
-        afterImageOp();
-    }
-
-    function setImageAlign(img, align) {
-        const props = readImageProps(img);
-        // Center keeps a block figure with centred text so the image is
-        // centred within the note column (matches the previous behaviour).
-        props.layout = align === 'left' ? 'wrap-left'
-            : align === 'right' ? 'wrap-right'
-                : align === 'center' ? 'center' : 'inline';
-        writePropsToImg(img, props);
-        rebuildImageMount(img, props);
-        afterImageOp();
-    }
-
-    /**
-     * Rebuild the figure around an image to match its object model:
-     * - crop  -> clipped frame (span) around the img
-     * - absolute layouts -> position:absolute figure anchored in the paragraph
-     * - floats/block/inline -> plain figure or bare img
-     * The img element itself is preserved (references and selection survive).
-     */
-    function rebuildImageMount(img, props) {
-        const oldFigure = imageMount(img);
-        const caption = figureCaption(oldFigure)?.textContent || '';
-        const absolute = ['behind', 'front', 'fixed'].includes(props.layout);
-        const hasCrop = props.crop.l || props.crop.r || props.crop.t || props.crop.b;
-
-        // Detach the img and the clip wrapper if present.
-        const oldClip = img.closest('[data-npad-frame-clip]');
-        if (oldClip) oldClip.replaceWith(img);
-        if (oldFigure) oldFigure.replaceWith(img);
-
-        // Caption must not outlive the old figure.
-        const figure = document.createElement('figure');
-        figure.setAttribute('data-npad-figure', '');
-        if (hasCrop) figure.setAttribute('data-npad-frame', '');
-        if (absolute) {
-            figure.setAttribute('data-npad-anchor', props.anchor);
-            // Anchor to the containing paragraph so the image moves with text.
-            const paragraph = img.closest('p, li, div, h1, h2, h3, h4, h5, h6, blockquote');
-            const host = paragraph || editor;
-            host.appendChild(figure);
-            host.classList.add('npad-paragraph-anchor');
-        } else {
-            img.before(figure);
-        }
-        figure.appendChild(img);
-
-        if (hasCrop) {
-            const clip = document.createElement('span');
-            clip.setAttribute('data-npad-frame-clip', '');
-            const pos = cropObjectPosition(props.crop);
-            clip.style.cssText = `display:block;position:relative;overflow:hidden;`
-                + `padding-bottom:75%;object-fit:cover;object-position:${pos.x}% ${pos.y}%`;
-            img.before(clip);
-            clip.appendChild(img);
-            img.style.cssText += `;position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;`
-                + `object-position:${pos.x}% ${pos.y}%`;
-            measureCropFrames();
-        }
-
-        if (caption) {
-            const captionEl = document.createElement('figcaption');
-            captionEl.textContent = caption;
-            figure.appendChild(captionEl);
-        }
-
-        const figureCss = imageFigureCss(props);
-        if (figureCss) figure.style.cssText = figureCss;
-        else figure.removeAttribute('style');
-
-        // No figure needed for a bare inline image without caption/effects.
-        const isBare = props.layout === 'inline' && !caption && !hasCrop && !absolute
-            && !(props.margin.top || props.margin.right || props.margin.bottom || props.margin.left)
-            && props.border.width === 0 && !props.border.shadow;
-        if (isBare) figure.replaceWith(img);
-        return img;
-    }
-
-    function applyImageProps(img, props) {
-        writePropsToImg(img, props);
-        applyImagePropsCss(img, props);
-        rebuildImageMount(img, props);
-        afterImageOp();
-    }
-
-    function syncImageToolbarState() {
-        if (!toolbarPaneImage) return;
-        const img = selectedImageEl?.isConnected ? selectedImageEl : null;
-        const setPressed = (action, on) => {
-            const button = toolbarPaneImage.querySelector(`[data-image-action="${action}"]`);
-            if (button) button.setAttribute('aria-pressed', String(!!on));
-        };
-        const size = img ? imageSize(img) : '';
-        const align = img ? imageAlign(img) : '';
-        const layout = img ? readImageProps(img).layout : '';
-        const layoutToBtn = {
-            inline: 'layout-inline',
-            'wrap-left': 'layout-wrap',
-            'wrap-right': 'layout-wrap',
-            'top-bottom': 'layout-break',
-            front: 'layout-front',
-            behind: 'layout-behind',
-            fixed: 'layout-fixed',
-        };
-        for (const [name, action] of Object.entries(layoutToBtn)) {
-            setPressed(action, layout === name);
-        }
-        setPressed('size-small', size === 'small');
-        setPressed('size-medium', size === 'medium');
-        setPressed('size-large', size === 'large');
-        setPressed('size-original', size === 'original');
-        setPressed('align-left', align === 'left');
-        setPressed('align-center', align === 'center');
-        setPressed('align-right', align === 'right');
-    }
-
-    function afterImageOp() {
-        rememberEditorSelection();
-        scheduleSave();
-        updateCounts();
-        track('image_tool_used');
-        if (selectedImageEl?.isConnected) selectImageElement(selectedImageEl);
-        else updateToolbarContext();
-    }
-
-    /**
-     * Full image properties dialog — the Google-Docs-style object model:
-     * alt/caption, size & rotation, layout & anchoring, crop, margins from
-     * text, recolor + adjustments (opacity/brightness/contrast), border.
-     * Every control writes straight into data-npad-props; Apply persists.
-     */
-    async function openImageDialog(img) {
-        rememberEditorSelection();
-        const initial = readImageProps(img);
-        const startFigure = imageMount(img);
-        const startCaption = figureCaption(startFigure)?.textContent || '';
-        const layoutLabels = [
-            ['inline', strings.imageLayoutInline],
-            ['wrap-left', strings.imageLayoutWrap],
-            ['top-bottom', strings.imageLayoutBreak],
-            ['behind', strings.imageLayoutBehind],
-            ['front', strings.imageLayoutFront],
-            ['fixed', strings.imageLayoutFixed],
-        ];
-        const layoutRadios = layoutLabels.map(([value, label]) => `
-            <label class="image-props__choice">
-                <input type="radio" name="data-image-layout" value="${value}"
-                       ${initial.layout === value ? 'checked' : ''}>
-                <span>${escapeHtml(label)}</span>
-            </label>`).join('');
-        const recolorOptions = [
-            ['none', strings.imageRecolorNone],
-            ['grayscale', strings.imageRecolorGrayscale],
-            ['sepia', strings.imageRecolorSepia],
-            ['negative', strings.imageRecolorNegative],
-            ['faded', strings.imageRecolorFaded],
-            ['cool', strings.imageRecolorCool],
-            ['warm', strings.imageRecolorWarm],
-        ].map(([value, label]) =>
-            `<option value="${value}" ${initial.recolor === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
-        const cropPresets = [
-            ['original', strings.imageCropOriginal],
-            ['16x9', '16:9'],
-            ['4x3', '4:3'],
-            ['1x1', '1:1'],
-            ['circle', strings.imageCropCircle],
-        ].map(([value, label]) =>
-            `<button type="button" class="image-props__pill" data-crop-preset="${value}">${escapeHtml(label)}</button>`).join('');
-
-        const field = (label, control, extra = '') => `
-            <label class="table-builder__field">
-                <span class="table-builder__field-label">${escapeHtml(label)}</span>
-                ${control}
-                ${extra}
-            </label>`;
-        const slider = (key, min, max, value, step = 1) => `
-            <input type="range" data-image-props="${key}" min="${min}" max="${max}" step="${step}" value="${value}">
-            <span class="image-props__value" data-image-value="${key}">${value}</span>`;
-
-        const bodyHtml = `
-            <div class="image-props">
-                <section class="image-props__section">
-                    <h3 class="image-props__heading">${escapeHtml(strings.imageSectionText)}</h3>
-                    <div class="image-props__grid">
-                        ${field(strings.imageAlt, `<input type="text" data-image-alt maxlength="200" value="${escapeHtml(img.getAttribute('alt') || '')}">`)}
-                        ${field(strings.imageCaption, `<input type="text" data-image-caption maxlength="200" value="${escapeHtml(startCaption)}">`)}
-                    </div>
-                </section>
-
-                <section class="image-props__section">
-                    <h3 class="image-props__heading">${escapeHtml(strings.imageSectionSize)}</h3>
-                    <div class="image-props__grid">
-                        ${field(strings.imageWidth, `<input type="text" data-image-props="width" inputmode="decimal" placeholder="50% · 240px" value="${escapeHtml(initial.width || '')}">`)}
-                        ${field(strings.imageHeight, `<input type="text" data-image-props="height" inputmode="decimal" placeholder="${escapeHtml(strings.imageHeightAuto)}" value="${escapeHtml(initial.height || '')}">`)}
-                        ${field(strings.imageRotate, slider('rotate', -180, 180, initial.rotate))}
-                        <label class="image-props__check"><input type="checkbox" data-image-flip="flipH" ${initial.flipH ? 'checked' : ''}><span>${escapeHtml(strings.imageFlipH)}</span></label>
-                        <label class="image-props__check"><input type="checkbox" data-image-flip="flipV" ${initial.flipV ? 'checked' : ''}><span>${escapeHtml(strings.imageFlipV)}</span></label>
-                    </div>
-                </section>
-
-                <section class="image-props__section">
-                    <h3 class="image-props__heading">${escapeHtml(strings.imageSectionLayout)}</h3>
-                    <div class="image-props__layouts" role="radiogroup">${layoutRadios}</div>
-                    <div class="image-props__grid">
-                        ${field(strings.imageAnchor, `
-                            <select data-image-anchor>
-                                <option value="paragraph" ${initial.anchor === 'paragraph' ? 'selected' : ''}>${escapeHtml(strings.imageAnchorParagraph)}</option>
-                                <option value="page" ${initial.anchor === 'page' ? 'selected' : ''}>${escapeHtml(strings.imageAnchorPage)}</option>
-                            </select>`)}
-                        ${field(strings.imagePosX, `<input type="number" data-image-props-pos="x" value="${initial.pos.x}" step="1">`)}
-                        ${field(strings.imagePosY, `<input type="number" data-image-props-pos="y" value="${initial.pos.y}" step="1">`)}
-                    </div>
-                    <p class="image-props__hint">${escapeHtml(strings.imageLayoutHint)}</p>
-                </section>
-
-                <section class="image-props__section">
-                    <h3 class="image-props__heading">${escapeHtml(strings.imageSectionCrop)}</h3>
-                    <div class="image-props__pills">${cropPresets}</div>
-                    <div class="image-props__grid">
-                        ${field(strings.imageCropLeft, slider('crop.l', 0, 40, initial.crop.l))}
-                        ${field(strings.imageCropRight, slider('crop.r', 0, 40, initial.crop.r))}
-                        ${field(strings.imageCropTop, slider('crop.t', 0, 40, initial.crop.t))}
-                        ${field(strings.imageCropBottom, slider('crop.b', 0, 40, initial.crop.b))}
-                    </div>
-                </section>
-
-                <section class="image-props__section">
-                    <h3 class="image-props__heading">${escapeHtml(strings.imageSectionMargins)}</h3>
-                    <div class="image-props__grid">
-                        ${field(strings.imageMarginTop, `<input type="number" data-image-props-margin="top" min="0" max="200" value="${initial.margin.top}">`)}
-                        ${field(strings.imageMarginRight, `<input type="number" data-image-props-margin="right" min="0" max="200" value="${initial.margin.right}">`)}
-                        ${field(strings.imageMarginBottom, `<input type="number" data-image-props-margin="bottom" min="0" max="200" value="${initial.margin.bottom}">`)}
-                        ${field(strings.imageMarginLeft, `<input type="number" data-image-props-margin="left" min="0" max="200" value="${initial.margin.left}">`)}
-                    </div>
-                </section>
-
-                <section class="image-props__section">
-                    <h3 class="image-props__heading">${escapeHtml(strings.imageSectionAdjust)}</h3>
-                    <div class="image-props__grid">
-                        ${field(strings.imageRecolor, `<select data-image-props="recolor">${recolorOptions}</select>`)}
-                        ${field(strings.imageOpacity, slider('opacity', 0, 100, initial.opacity))}
-                        ${field(strings.imageBrightness, slider('brightness', 25, 300, initial.brightness))}
-                        ${field(strings.imageContrast, slider('contrast', 25, 300, initial.contrast))}
-                    </div>
-                </section>
-
-                <section class="image-props__section">
-                    <h3 class="image-props__heading">${escapeHtml(strings.imageSectionBorder)}</h3>
-                    <div class="image-props__grid">
-                        ${field(strings.imageBorderWidth, `<input type="number" data-image-props-border="width" min="0" max="20" value="${initial.border.width}">`)}
-                        ${field(strings.imageBorderColor, `<input type="text" data-image-props-border="color" maxlength="7" value="${escapeHtml(initial.border.color)}" placeholder="#64748b">`)}
-                        ${field(strings.imageBorderRadius, `<input type="number" data-image-props-border="radius" min="0" max="300" value="${initial.border.radius}">`)}
-                        <label class="image-props__check"><input type="checkbox" data-image-props-border="shadow" ${initial.border.shadow ? 'checked' : ''}><span>${escapeHtml(strings.imageShadow)}</span></label>
-                    </div>
-                </section>
-            </div>`;
-
-        const action = await showDialog({
-            title: strings.imageDialogTitle,
-            bodyHtml,
-            buttons: [
-                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
-                { label: strings.apply, action: 'apply', variant: 'btn--primary' },
-            ],
-            onOpen: (body) => {
-                body.querySelector('[data-image-caption]')?.focus();
-
-                const collect = () => {
-                    const props = readImageProps(img);
-                    const read = (key, fallback) => {
-                        const value = body.querySelector(`[data-image-props="${key}"]`)?.value;
-                        return value === undefined || value === '' ? fallback : value;
-                    };
-                    props.width = read('width', props.width);
-                    props.height = read('height', props.height) || null;
-                    props.rotate = Number(read('rotate', props.rotate)) || 0;
-                    props.recolor = read('recolor', props.recolor);
-                    props.opacity = Number(read('opacity', props.opacity));
-                    props.brightness = Number(read('brightness', props.brightness));
-                    props.contrast = Number(read('contrast', props.contrast));
-                    props.crop.l = Number(read('crop.l', props.crop.l)) || 0;
-                    props.crop.r = Number(read('crop.r', props.crop.r)) || 0;
-                    props.crop.t = Number(read('crop.t', props.crop.t)) || 0;
-                    props.crop.b = Number(read('crop.b', props.crop.b)) || 0;
-                    props.margin.top = Number(body.querySelector('[data-image-props-margin="top"]')?.value) || 0;
-                    props.margin.right = Number(body.querySelector('[data-image-props-margin="right"]')?.value) || 0;
-                    props.margin.bottom = Number(body.querySelector('[data-image-props-margin="bottom"]')?.value) || 0;
-                    props.margin.left = Number(body.querySelector('[data-image-props-margin="left"]')?.value) || 0;
-                    props.pos.x = Number(body.querySelector('[data-image-props-pos="x"]')?.value) || 0;
-                    props.pos.y = Number(body.querySelector('[data-image-props-pos="y"]')?.value) || 0;
-                    props.anchor = body.querySelector('[data-image-anchor]')?.value || 'paragraph';
-                    props.layout = body.querySelector('input[name="data-image-layout"]:checked')?.value || 'inline';
-                    props.border.width = Number(body.querySelector('[data-image-props-border="width"]')?.value) || 0;
-                    props.border.radius = Number(body.querySelector('[data-image-props-border="radius"]')?.value) || 0;
-                    props.border.shadow = !!body.querySelector('[data-image-props-border="shadow"]')?.checked;
-                    const colour = body.querySelector('[data-image-props-border="color"]')?.value?.trim();
-                    if (/^#[\da-f]{6}$/i.test(colour || '')) props.border.color = colour;
-                    return props;
-                };
-
-                const preview = () => {
-                    const props = collect();
-                    writePropsToImg(img, props);
-                    applyImagePropsCss(img, props);
-                    rebuildImageMount(img, props);
-                    // Slight friction is fine during live preview.
-                    scheduleSave();
-                };
-
-                body.querySelectorAll('[data-image-props], [data-image-props-pos], [data-image-props-margin], [data-image-props-border], [data-image-anchor], input[name="data-image-layout"]')
-                    .forEach((control) => {
-                        control.addEventListener('input', preview);
-                        control.addEventListener('change', preview);
-                    });
-                body.querySelectorAll('[data-image-flip]').forEach((control) => {
-                    control.addEventListener('change', () => {
-                        const props = collect();
-                        props[control.dataset.imageFlip] = control.checked;
-                        preview();
-                    });
-                });
-                body.querySelectorAll('[data-crop-preset]').forEach((button) => {
-                    button.addEventListener('click', () => {
-                        const props = collect();
-                        switch (button.dataset.cropPreset) {
-                            case 'original':
-                                props.crop = { l: 0, r: 0, t: 0, b: 0 };
-                                props.border.radius = 0;
-                                break;
-                            case 'circle':
-                                props.crop = { l: 0, r: 0, t: 0, b: 0 };
-                                props.border.radius = 999;
-                                break;
-                            default: {
-                                const crop = {
-                                    '16x9': [12.5, 12.5, 0, 0],
-                                    '4x3': [16.6, 16.6, 0, 0],
-                                    '1x1': [25, 25, 0, 0],
-                                }[button.dataset.cropPreset];
-                                if (crop) props.crop = { l: crop[0], r: crop[1], t: crop[2], b: crop[3] };
-                                break;
-                            }
-                        }
-                        preview();
-                    });
-                });
-                // Re-sync slider value labels.
-                body.querySelectorAll('[data-image-props]').forEach((control) => {
-                    control.addEventListener('input', () => {
-                        const label = body.querySelector(`[data-image-value="${control.dataset.imageProps}"]`);
-                        if (label) label.textContent = control.value;
-                    });
-                });
-            },
-        });
-        if (action !== 'apply') return;
-        const dialog = document.getElementById('appDialog');
-        const alt = (dialog.querySelector('[data-image-alt]')?.value || '').trim();
-        const caption = (dialog.querySelector('[data-image-caption]')?.value || '').trim();
-        img.setAttribute('alt', alt);
-
-        const props = readImageProps(img);
-        // Caption lives on the figure, not in props.
-        let figure = imageMount(img);
-        let captionEl = figureCaption(figure);
-        if (caption) {
-            if (!figure) {
-                figure = document.createElement('figure');
-                figure.setAttribute('data-npad-figure', '');
-                // re-run the mount rebuild so the figure lands in the right place
-                rebuildImageMount(img, props);
-                figure = imageMount(img);
-            }
-            captionEl = figureCaption(figure);
-            if (!captionEl) {
-                captionEl = document.createElement('figcaption');
-                figure.appendChild(captionEl);
-            }
-            captionEl.textContent = caption;
-        } else if (captionEl) {
-            captionEl.remove();
-        }
-
-        writePropsToImg(img, props);
-        applyImagePropsCss(img, props);
-        rebuildImageMount(img, props);
-        rememberEditorSelection();
-        scheduleSave();
-        updateCounts();
-        resolveEditorImages();
-        track('image_props_used');
-        if (selectedImageEl?.isConnected) selectImageElement(selectedImageEl);
-    }
-
-    async function replaceImage(img) {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp';
-        input.addEventListener('change', async () => {
-            const file = input.files && input.files[0];
-            if (!file) return;
-            const noteId = activeNoteId || 'note';
-            const newId = await archiveImageFile(file, noteId);
-            if (!newId) return;
-            const oldId = img.getAttribute('data-npad-img');
-            img.setAttribute('data-npad-img', newId);
-            img.removeAttribute('src');
-            if (oldId) await deleteImages([oldId]);
-            selectImageElement(img);
-            resolveEditorImages();
-            afterImageOp();
-        });
-        input.click();
-    }
-
-    function removeImage(img) {
-        const mount = imageMount(img);
-        (mount || img).remove();
-        clearImageSelection();
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
-        track('image_removed');
-        updateToolbarContext();
-    }
-
-    function runImageAction(action) {
-        const img = selectedImageEl?.isConnected
-            ? selectedImageEl
-            : editor.querySelector('img.npad-img-selected');
-        if (!img) return;
-        switch (action) {
-            case 'alt-caption':
-            case 'advanced':
-                openImageDialog(img);
-                break;
-            case 'size-small':
-                setImageStyle(img, 'width', '25%');
-                afterImageOp();
-                break;
-            case 'size-medium':
-                setImageStyle(img, 'width', '50%');
-                afterImageOp();
-                break;
-            case 'size-large':
-                setImageStyle(img, 'width', '75%');
-                afterImageOp();
-                break;
-            case 'size-original':
-                setImageStyle(img, 'width', '');
-                afterImageOp();
-                break;
-            case 'align-left':
-                setImageAlign(img, 'left');
-                break;
-            case 'align-center':
-                setImageAlign(img, 'center');
-                break;
-            case 'align-right':
-                setImageAlign(img, 'right');
-                break;
-            case 'rotate-ccw': {
-                const props = readImageProps(img);
-                props.rotate = (props.rotate || 0) - 90;
-                setImageLayout(img, props.layout);
-                applyImageProps(img, props);
-                break;
-            }
-            case 'layout-inline':
-                setImageLayout(img, 'inline');
-                break;
-            case 'layout-wrap': {
-                const current = readImageProps(img).layout;
-                // Toggle: inline -> wrap-left, wrap-left <-> wrap-right, else wrap-left.
-                if (current === 'wrap-right') setImageLayout(img, 'wrap-left');
-                else setImageLayout(img, current === 'wrap-left' || current === 'inline' ? 'wrap-right' : 'wrap-left');
-                break;
-            }
-            case 'layout-break':
-                setImageLayout(img, 'top-bottom');
-                break;
-            case 'layout-front':
-                setImageLayout(img, 'front');
-                break;
-            case 'layout-behind':
-                setImageLayout(img, 'behind');
-                break;
-            case 'layout-fixed': {
-                const props = readImageProps(img);
-                props.layout = 'fixed';
-                props.anchor = 'page';
-                if (!props.width) props.width = '240px';
-                writePropsToImg(img, props);
-                rebuildImageMount(img, props);
-                afterImageOp();
-                break;
-            }
-            case 'recolor-grayscale': {
-                const props = readImageProps(img);
-                props.recolor = props.recolor === 'grayscale' ? 'none' : 'grayscale';
-                applyImageProps(img, props);
-                break;
-            }
-            case 'replace-image':
-                replaceImage(img);
-                break;
-            case 'remove-image':
-                removeImage(img);
-                break;
-            default:
-                break;
-        }
-    }
-
-    document.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-image-action]');
-        if (!button) return;
-        if (imageContextMenu && !imageContextMenu.hidden) hideImageContextMenu();
-        runImageAction(button.dataset.imageAction);
-    });
-
-    /* --- Image context menu (right-click) --- */
-
-    function buildContextMenuFrom(pane, menuEl) {
-        menuEl.innerHTML = '';
-        const groups = [...pane.querySelectorAll('.toolbar__group, .menu__panel--table')]
-            .filter((group) => !group.closest('[hidden]'));
-        groups.forEach((group) => {
-            const buttons = [...group.querySelectorAll('[data-image-action], [data-table-action]')]
-                .filter((button) => !button.disabled);
-            if (!buttons.length) return;
-            const section = document.createElement('div');
-            section.className = 'table-context__group';
-            buttons.forEach((original) => {
-                const item = document.createElement('button');
-                item.type = 'button';
-                item.className = 'table-context__item';
-                const action = original.dataset.imageAction || original.dataset.tableAction;
-                if (original.dataset.imageAction) item.dataset.imageAction = action;
-                else item.dataset.tableAction = action;
-                item.setAttribute('role', 'menuitem');
-                const iconClone = original.querySelector('svg')?.cloneNode(true);
-                if (iconClone) item.appendChild(iconClone);
-                const label = document.createElement('span');
-                label.textContent = original.getAttribute('aria-label')
-                    || original.querySelector('span')?.textContent || '';
-                item.appendChild(label);
-                section.appendChild(item);
-            });
-            menuEl.appendChild(section);
-        });
-    }
-
-    function showImageContextMenu(x, y) {
-        if (!imageContextMenu) return;
-        syncImageToolbarState();
-        buildContextMenuFrom(toolbarPaneImage, imageContextMenu);
-        imageContextMenu.hidden = false;
-        const margin = 8;
-        const rect = imageContextMenu.getBoundingClientRect();
-        imageContextMenu.style.left = `${Math.min(x, Math.max(margin, window.innerWidth - rect.width - margin))}px`;
-        imageContextMenu.style.top = `${Math.min(y, Math.max(margin, window.innerHeight - rect.height - margin))}px`;
-    }
-
-    function hideImageContextMenu() {
-        if (imageContextMenu) imageContextMenu.hidden = true;
-    }
-
-    /* --- Image entry events --- */
-
-    editor.addEventListener('click', (event) => {
-        const img = event.target.closest?.('img[data-npad-img]');
-        if (img) {
-            event.preventDefault();
-            selectImageElement(img);
-            return;
-        }
-        if (selectedImageEl) clearImageSelection();
-    });
-
-    editor.addEventListener('input', () => {
-        clearImageSelection();
-    });
-
-    document.addEventListener('pointerdown', (event) => {
-        if (!event.target.closest?.('[data-image-action], img[data-npad-img], [data-image-handle], .npad-object-overlay, #toolbarPaneImage')) {
-            clearImageSelection();
-        }
-    }, true);
-
-    /* --- Object interactions: select, resize (corner handles), move --- */
-
-    editor.addEventListener('pointerdown', startImageObjectPointer);
-    document.addEventListener('pointermove', moveImageObjectPointer);
-    document.addEventListener('pointerup', (event) => {
-        finishImageObjectPointer(event);
-    });
-    document.addEventListener('pointercancel', finishImageObjectPointer);
-    editor.addEventListener('dragstart', (event) => {
-        if (event.target.closest?.('img')) event.preventDefault();
-    });
-
-    // Object keyboard: Delete the selection, Escape deselects (or cancels a
-    // drag), arrow keys nudge a floating object.
-    document.addEventListener('keydown', (event) => {
-        if (!selectedImageEl?.isConnected) return;
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            cancelImageObjectInteraction();
-            clearImageSelection();
-            updateToolbarContext();
-            return;
-        }
-        if (event.key === 'Delete' || event.key === 'Backspace') {
-            event.preventDefault();
-            removeImage(selectedImageEl);
-            return;
-        }
-        const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-        if (arrows[event.key] && floatLayout(readImageProps(selectedImageEl).layout)) {
-            event.preventDefault();
-            const [dx, dy] = arrows[event.key];
-            const step = event.shiftKey ? 10 : 1;
-            const props = readImageProps(selectedImageEl);
-            props.pos.x += dx * step;
-            props.pos.y += dy * step;
-            writePropsToImg(selectedImageEl, props);
-            const figure = imageMount(selectedImageEl);
-            if (figure) {
-                figure.style.left = `${props.pos.x}px`;
-                figure.style.top = `${props.pos.y}px`;
-            }
-            scheduleObjectOverlayPosition();
-            afterImageOp();
-            track('image_moved');
-        }
-    });
 
     /* ---------------------------------------------------------------------
        Tables: contextual toolbar, insert dialog, full cell control
@@ -2577,18 +1390,13 @@ export function initEditor({ strings, onEvent }) {
         toolbarContext = context;
         if (toolbarPaneBase) toolbarPaneBase.hidden = context !== 'base';
         if (toolbarPaneTable) toolbarPaneTable.hidden = context !== 'table';
-        if (toolbarPaneImage) toolbarPaneImage.hidden = context !== 'image';
         if (toolbar) {
             toolbar.dataset.toolbarContext = context;
-            const label = context === 'table'
+            toolbar.setAttribute('aria-label', context === 'table'
                 ? (strings.tableToolbarLabel || TOOLBAR_LABEL_BASE)
-                : context === 'image'
-                    ? (strings.imageToolbarLabel || TOOLBAR_LABEL_BASE)
-                    : TOOLBAR_LABEL_BASE;
-            toolbar.setAttribute('aria-label', label);
+                : TOOLBAR_LABEL_BASE);
         }
         if (context === 'table') syncTableToolbarState();
-        if (context === 'image') syncImageToolbarState();
     }
 
     function syncTableToolbarState() {
@@ -2676,14 +1484,6 @@ export function initEditor({ strings, onEvent }) {
     }
 
     function updateToolbarContext() {
-        // An explicitly selected attachment owns the toolbar until the user
-        // clicks elsewhere or edits.
-        if (selectedImageEl?.isConnected) {
-            markActiveCell(null);
-            setToolbarContext('image');
-            syncImageToolbarState();
-            return;
-        }
         const selection = window.getSelection();
         const table = contextTableFromSelection(selection);
         const collapsedInCell = !!(table && selection?.isCollapsed);
@@ -2718,7 +1518,7 @@ export function initEditor({ strings, onEvent }) {
             : range.startContainer.parentElement;
         block = block?.closest?.('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre');
         if (block && block !== editor) {
-            const empty = !block.textContent.trim() && !block.querySelector('img, table, ul, ol, blockquote, pre');
+            const empty = !block.textContent.trim() && !block.querySelector('table, ul, ol, blockquote, pre');
             if (empty) block.replaceWith(element);
             else block.after(element);
             return true;
@@ -3800,9 +2600,8 @@ export function initEditor({ strings, onEvent }) {
        Paste — always sanitise, never trust clipboard HTML
        --------------------------------------------------------------------- */
 
-    // Paste and drop share one pipeline: archive every supported image
-    // (files and data-URI HTML), keep the sanitised text, never fetch remote
-    // images.
+    // Paste and drop share one sanitised text/HTML pipeline. Unsupported
+    // embedded elements are discarded by the allow-list before insertion.
     editor.addEventListener('paste', (event) => {
         event.preventDefault();
         if (!event.clipboardData) return;
@@ -3874,16 +2673,9 @@ export function initEditor({ strings, onEvent }) {
                 }
                 tagIds.push(tag.id);
             }
-            // Imported documents may carry base64 images inside their HTML
-            // (NPad JSON/HTML exports, pasted corpora): archive them first
-            // under a shared "import" owner, then rehome per created note.
-            const extracted = await extractImagesFromHtml(item.html, async (uri) => {
-                const id = await archiveImageDataUri(uri, 'import');
-                return id ? imageHtml(id, { alt: '' }) : null;
-            });
             prepared.push({
                 title: item.title.trim().slice(0, 120) || fallbackTitle,
-                html: sanitizeHtml(extracted.html),
+                html: sanitizeHtml(item.html),
                 pinned: !!item.pinned,
                 folderId,
                 tags: [...new Set(tagIds)],
@@ -3897,13 +2689,7 @@ export function initEditor({ strings, onEvent }) {
             renderOrganization();
         }
         for (const note of prepared) {
-            const created = await createNewNote({ ...note, focusTitle: false, report: false });
-            const rehomed = await rehomeNoteImages(created.html, 'import', created.id);
-            if (rehomed !== created.html) {
-                created.html = rehomed;
-                await saveNote(created);
-                showNote(created);
-            }
+            await createNewNote({ ...note, focusTitle: false, report: false });
         }
     }
 
@@ -3956,12 +2742,7 @@ export function initEditor({ strings, onEvent }) {
                 if (extension === 'txt') {
                     imported = [{ title, html: textToHtml(await file.text()) }];
                 } else if (extension === 'html' || extension === 'htm') {
-                    const raw = await file.text();
-                    const extracted = await extractImagesFromHtml(raw, async (uri) => {
-                        const id = await archiveImageDataUri(uri, 'import');
-                        return id ? imageHtml(id, { alt: '' }) : null;
-                    });
-                    imported = [{ title, html: sanitizeHtml(extracted.html) }];
+                    imported = [{ title, html: sanitizeHtml(await file.text()) }];
                 } else if (extension === 'md' || extension === 'markdown') {
                     imported = [{ title, html: markdownToHtml(await file.text()) }];
                 } else if (extension === 'json') {
@@ -4018,38 +2799,37 @@ export function initEditor({ strings, onEvent }) {
         track('download_txt');
     }
 
-    async function embeddedExportHtml() {
-        // Export formats are self-contained: references become data URIs.
-        return embedImagesAsDataUrls(cleanHtml(), loadImage);
+    function exportHtml() {
+        return cleanHtml();
     }
 
-    async function saveAsHtml() {
+    function saveAsHtml() {
         const doc = `<!DOCTYPE html>
 <html lang="${document.documentElement.lang || 'en'}" dir="${currentDir()}">
 <meta charset="utf-8">
 <title>NPad note — ${stamp()}</title>
-<style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}figure{margin:0 0 1em}figure img{max-width:100%;height:auto}figcaption{font-size:0.85em;color:#555}</style>
-${await embeddedExportHtml()}
+<style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}</style>
+${exportHtml()}
 `;
         download(`${exportBaseName()}.html`, doc, 'text/html;charset=utf-8');
         track('download_html');
     }
 
     async function saveAsMarkdown() {
-        const html = await embeddedExportHtml();
+        const html = exportHtml();
         download(`${exportBaseName()}.md`, htmlToMarkdown(html), 'text/markdown;charset=utf-8');
         track('download_markdown');
     }
 
     async function saveAsJson() {
         const note = currentExportNote();
-        note.html = await embeddedExportHtml();
+        note.html = exportHtml();
         download(`${exportBaseName()}.json`, noteToJson(note, organization), 'application/json;charset=utf-8');
         track('download_json');
     }
 
     async function saveAsDocx() {
-        const html = await embeddedExportHtml();
+        const html = exportHtml();
         download(
             `${exportBaseName()}.docx`,
             htmlToDocx(html, { direction: currentDir() }),
@@ -4059,7 +2839,7 @@ ${await embeddedExportHtml()}
     }
 
     async function saveAsRtf() {
-        const html = await embeddedExportHtml();
+        const html = exportHtml();
         download(
             `${exportBaseName()}.rtf`,
             htmlToRtf(html, { direction: currentDir() }),
@@ -4219,9 +2999,7 @@ ${await embeddedExportHtml()}
         const folderId = folderById(backup.folderId) ? backup.folderId : null;
         const tags = backup.tags.filter((tagId) => !!tagById(tagId));
         closeBackupRecovery();
-        // Restoring creates a separate note, so its images are copied to fresh
-        // ids owned by the new note (the original note may still be alive).
-        const restored = await createNewNote({
+        await createNewNote({
             title: `${displayTitle(backup)} ${strings.backupRestoredSuffix}`.trim(),
             html: backup.html,
             focusTitle: false,
@@ -4230,12 +3008,6 @@ ${await embeddedExportHtml()}
             tags,
             pinned: backup.pinned,
         });
-        const rehomed = await rehomeNoteImages(restored.html, backup.noteId, restored.id);
-        if (rehomed !== restored.html) {
-            restored.html = rehomed;
-            await saveNote(restored);
-            showNote(restored);
-        }
         toast(strings.backupRestored, 'success');
         track('backup_restored');
     }
@@ -4296,7 +3068,6 @@ ${await embeddedExportHtml()}
         }
         window.clearTimeout(saveTimer);
         await clearNotes();
-        await clearImages();
         notes = [];
         openNoteIds = [];
         activeNoteId = null;
@@ -4336,44 +3107,18 @@ ${await embeddedExportHtml()}
         try {
             if (!plainOnly && navigator.clipboard && navigator.clipboard.read) {
                 const items = await navigator.clipboard.read();
-                const images = [];
                 for (const item of items) {
-                    if (item.types.includes('text/html')) {
-                        const blob = await item.getType('text/html');
-                        const source = await blob.text();
-                        const { html: extracted } = await extractImagesFromHtml(
-                            source,
-                            async (uri) => {
-                                const id = await archiveImageDataUri(uri, activeNoteId || 'note');
-                                return id ? imageHtml(id, { alt: '' }) : null;
-                            },
-                        );
-                        insertHtml(sanitizeHtml(extracted));
-                        normaliseTables(editor);
-                        resolveEditorImages();
-                        finishPaste(plainOnly);
-                        return;
-                    }
-                    if (typeof item.getType === 'function') {
-                        for (const type of item.types) {
-                            if (type.startsWith('image/')) {
-                                const file = await item.getType(type);
-                                if (file) images.push(file);
-                            }
-                        }
-                    }
-                }
-                if (images.length) {
-                    for (const file of images) {
-                        rememberEditorSelection();
-                        await insertImageFile(file);
-                    }
-                    resolveEditorImages();
-                    finishPaste(plainOnly);
+                    if (!item.types.includes('text/html')) continue;
+                    const source = await (await item.getType('text/html')).text();
+                    const clean = sanitizeHtml(source);
+                    if (!clean) continue;
+                    insertHtml(clean);
+                    finishPaste(false);
                     return;
                 }
             }
             const text = await navigator.clipboard.readText();
+            if (!text) return;
             insertHtml(textToHtml(text));
             finishPaste(plainOnly);
         } catch {
@@ -4891,7 +3636,6 @@ ${await embeddedExportHtml()}
     window.addEventListener('beforeprint', () => {
         clearFindVisuals();
         hideTableContextMenu();
-        hideImageContextMenu();
     });
     window.addEventListener('afterprint', () => {
         if (findBar && !findBar.hidden) refreshFind(false);
@@ -4963,7 +3707,6 @@ ${await embeddedExportHtml()}
         find: () => openFind(false),
         'find-replace': () => openFind(true),
         'insert-table': openTableDialog,
-        'insert-image': insertImageFromPicker,
         'insert-hr': insertHorizontalRule,
         'insert-datetime': insertDateTime,
         'insert-link': () => promptForLink(),
@@ -5027,17 +3770,6 @@ ${await embeddedExportHtml()}
     // leave focus mode.
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return;
-        if (imageContextMenu && !imageContextMenu.hidden) {
-            event.preventDefault();
-            hideImageContextMenu();
-            return;
-        }
-        if (selectedImageEl) {
-            event.preventDefault();
-            clearImageSelection();
-            updateToolbarContext();
-            return;
-        }
         if (tableContextMenu && !tableContextMenu.hidden) {
             event.preventDefault();
             hideTableContextMenu();
@@ -5094,8 +3826,13 @@ ${await embeddedExportHtml()}
         notes = notes.map((note) => {
             const folderId = note.folderId && folderIds.has(note.folderId) ? note.folderId : null;
             const tags = note.tags.filter((id) => tagIds.has(id));
-            if (folderId === note.folderId && tags.length === note.tags.length) return note;
-            const updated = { ...note, folderId, tags, updatedAt: Date.now() };
+            // Persist the current allow-list form so unsupported legacy markup
+            // cannot remain hidden in an untouched local note.
+            const html = sanitizeHtml(note.html);
+            if (folderId === note.folderId && tags.length === note.tags.length && html === note.html) {
+                return note;
+            }
+            const updated = { ...note, html, folderId, tags, updatedAt: Date.now() };
             repaired.push(updated);
             return updated;
         });

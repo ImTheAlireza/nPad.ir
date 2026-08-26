@@ -194,57 +194,6 @@ JSON exports, and are serialised to GFM pipe tables in Markdown, real
 Excel, Word or the web are normalised (nested tables lifted, spans bounded)
 before they enter the grid model.
 
-## Images & attachments
-
-Paste, drag-drop, or Insert → Image… to attach screenshots and photos. The
-image bytes live as Blobs in an IndexedDB `images` store (base64 in
-localStorage only when IndexedDB is unavailable) — **note HTML never contains
-the bytes**, only `<img data-npad-img="…">` references. Everything follows the
-same bounded, local-first rules as the rest of the app:
-
-- raster formats only (PNG, JPEG, GIF, WebP, AVIF, BMP — SVG is rejected as a
-  script vector) and the same 25 MB per-file cap as document imports
-- pasted data-URI images are archived automatically; remote `<img src>`
-  becomes a plain link — NPad never fetches third-party content
-- clicking an image swaps the toolbar to **image tools**: size presets,
-  alignment, rotate, wrap toggle, grayscale, replace and remove (plus a
-  right-click menu) — the selection-friendly toolbar pattern again
-- **full image object model** (Google-Docs-style) in Image properties:
-  - alt text + caption (figures), size & rotation (width/height, rotate,
-    flip), cropping with live clip-frame preview (percentage + 16:9 / 4:3 /
-    1:1 / circle presets), margins from text
-  - layout: **inline with text**, **wrap text**, **break text** (top &
-    bottom), **behind text**, **in front of text**, **fixed on page** —
-    anchored "move with text" (top left of paragraph) or "fix position on
-    page", with pointer dragging for floating images
-  - recolor (grayscale, sepia, negative, faded, cool, warm) and adjustments
-    (opacity, brightness, contrast), border width/colour, corner radius,
-    drop shadow
-  - the model is stored as a schema-validated `data-npad-props` JSON on the
-    reference (never pixels, never free-form CSS) and maps to DOCX on export:
-    `a:srcRect` crop, `rot`, `behindDoc`/`wrapSquare`/`wrapTopAndBottom`
-    anchors with page/paragraph offsets, grayscale and opacity
-- hands-on object editing (Word/Google-Docs flow):
-  - click an image → it is **selected as an object**: outline + four corner
-    resize handles overlay, image toolbar stays; Escape deselects,
-    `Delete` removes it, arrow keys nudge a floating object (Shift = 10 px)
-  - drag a **corner handle** to resize — width scales live, aspect stays
-    locked (Shift = free size in the properties dialog)
-  - drag the **image body to move it anywhere**: an inline/wrapped image is
-    automatically promoted to a floating object (keeping its on-screen
-    position) and follows the pointer, anchored to its paragraph; Escape
-    during a drag cancels it
-  - quick layout buttons: **Inline · Wrap · Break (text in two pieces) ·
-    In front · Behind · Fixed**; fixed is page-anchored, the rest move with
-    text — all persisted and mapped to DOCX on export
-- captions become `<figure>/<figcaption>` and stay editable; alt text is
-  preserved for accessibility; missing payloads show a clear placeholder
-- exports embed the images (HTML, Markdown and NPad JSON as data URIs; DOCX
-  as real `word/media` parts with DrawingML); RTF keeps the alt text
-- attachments follow their note: deleted notes and Clear all remove them,
-  restored backups copy them to fresh ids, and orphaned blobs are
-  garbage-collected on save
-
 ## Tests
 
 ```bash
@@ -252,7 +201,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-332 assertions covering:
+Automated coverage includes:
 
 | Suite | What it proves |
 |---|---|

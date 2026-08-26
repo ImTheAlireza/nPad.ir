@@ -175,9 +175,9 @@ export default async function run(check, group) {
             const insertItems = [...document.querySelectorAll('#insertMenuPanel .menu__item')]
                 .map((item) => item.dataset.action);
             assert.ok(insertItems.includes('insert-table'), 'Insert menu lacks a Table item');
-            assert.ok(insertItems.includes('insert-image'), 'Insert menu lacks an Image item');
-            assert.ok(document.querySelectorAll('#toolbarPaneImage [data-image-action]').length >= 7,
-                'image toolbar pane is incomplete');
+            assert.ok(!insertItems.includes('insert-image'), 'retired Image item remains in the Insert menu');
+            assert.equal(document.getElementById('toolbarPaneImage'), null,
+                'retired image toolbar pane remains in the document');
         });
 
         check('skip link resolves', () => {
