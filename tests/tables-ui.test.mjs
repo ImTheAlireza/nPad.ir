@@ -414,7 +414,10 @@ export default async function run(check, group) {
         assert.ok(img.classList.contains('npad-img-selected'), 'image not selected');
         assert.equal(imagePane.hidden, false, 'image pane not shown');
         assert.equal(document.getElementById('toolbarPaneBase').hidden, true);
-        assert.ok(imagePane.querySelector('[data-image-action="alt-caption"]'), 'alt/caption action missing');
+        assert.ok(imagePane.querySelector('[data-image-action="advanced"]'), 'advanced properties action missing');
+        assert.ok(imagePane.querySelector('[data-image-action="rotate-ccw"]'), 'rotate action missing');
+        assert.ok(imagePane.querySelector('[data-image-action="layout-wrap"]'), 'wrap toggle action missing');
+        assert.ok(imagePane.querySelector('[data-image-action="recolor-grayscale"]'), 'recolor action missing');
         assert.ok(imagePane.querySelector('[data-image-action="remove-image"]'), 'remove action missing');
     });
 
@@ -426,7 +429,7 @@ export default async function run(check, group) {
         click(imagePane.querySelector('[data-image-action="align-center"]'));
         assert.equal(img.closest('figure').getAttribute('data-npad-figure'), '', 'figure not created for alignment');
 
-        click(imagePane.querySelector('[data-image-action="alt-caption"]'));
+        click(imagePane.querySelector('[data-image-action="advanced"]'));
         assert.equal(dialog.open, true, 'image dialog did not open');
         dialog.querySelector('[data-image-alt]').value = 'A screenshot';
         dialog.querySelector('[data-image-caption]').value = 'Step one';
@@ -487,6 +490,113 @@ export default async function run(check, group) {
         await new Promise((resolve) => window.setTimeout(resolve, 40));
         assert.ok(picked.includes('image/png'), 'picker not restricted to images');
         assert.ok(editor.querySelector('img[data-npad-img]'), 'picked image not inserted');
+    });
+
+    /* --------------------------------------------------------------------
+       Image object model end-to-end
+       -------------------------------------------------------------------- */
+
+    const readProps = (img) => JSON.parse(img.getAttribute('data-npad-props') || '{}');
+
+    await step('advanced dialog applies wrap layout, rotation and adjustments', async () => {
+        const img = editor.querySelector('img[data-npad-img]');
+        img.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        click(imagePane.querySelector('[data-image-action="advanced"]'));
+        assert.equal(dialog.open, true, 'properties dialog did not open');
+
+        const wrap = dialog.querySelector('input[name="data-image-layout"][value="wrap-left"]');
+        wrap.checked = true;
+        wrap.dispatchEvent(new window.Event('change', { bubbles: true }));
+        const rotate = dialog.querySelector('[data-image-props="rotate"]');
+        rotate.value = '30';
+        rotate.dispatchEvent(new window.Event('input', { bubbles: true }));
+        const opacity = dialog.querySelector('[data-image-props="opacity"]');
+        opacity.value = '60';
+        opacity.dispatchEvent(new window.Event('input', { bubbles: true }));
+        const recolor = dialog.querySelector('[data-image-props="recolor"]');
+        recolor.value = 'sepia';
+        recolor.dispatchEvent(new window.Event('change', { bubbles: true }));
+        click(dialog.querySelector('[data-action="apply"]'));
+        await flush();
+
+        const props = readProps(img);
+        assert.equal(props.layout, 'wrap-left', 'layout not applied');
+        assert.equal(props.rotate, 30, 'rotation not applied');
+        assert.equal(props.opacity, 60, 'opacity not applied');
+        assert.equal(props.recolor, 'sepia', 'recolor not applied');
+        assert.match(img.closest('figure').getAttribute('style'), /float:\s*left/);
+        assert.match(img.getAttribute('style'), /filter:/);
+        assert.match(img.getAttribute('style'), /filter:/);
+        assert.match(img.getAttribute('style'), /rotate\(30deg\)/);
+    });
+
+    await step('crop sliders build a clipped frame and persist', async () => {
+        const img = editor.querySelector('img[data-npad-img]');
+        img.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        click(imagePane.querySelector('[data-image-action="advanced"]'));
+        const left = dialog.querySelector('[data-image-props="crop.l"]');
+        left.value = '10';
+        left.dispatchEvent(new window.Event('input', { bubbles: true }));
+        click(dialog.querySelector('[data-action="apply"]'));
+        await flush();
+
+        const props = readProps(img);
+        assert.equal(props.crop.l, 10, 'crop not applied');
+        assert.ok(img.closest('[data-npad-frame-clip]'), 'crop frame missing');
+        assert.match(img.getAttribute('style'), /object-fit:\s*cover/);
+        assert.match(img.getAttribute('style'), /object-position:/);
+    });
+
+    await step('grayscale quick action toggles and rotate shortcut works', () => {
+        const img = editor.querySelector('img[data-npad-img]');
+        img.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        click(imagePane.querySelector('[data-image-action="recolor-grayscale"]'));
+        assert.equal(readProps(img).recolor, 'grayscale');
+        click(imagePane.querySelector('[data-image-action="recolor-grayscale"]'));
+        assert.equal(readProps(img).recolor, 'none');
+        click(imagePane.querySelector('[data-image-action="rotate-ccw"]'));
+        assert.equal(readProps(img).rotate, -60, 'rotate shortcut did not apply');
+    });
+
+    await step('behind-text layout is anchored and can be dragged with the pointer', async () => {
+        const img = editor.querySelector('img[data-npad-img]');
+        img.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+        click(imagePane.querySelector('[data-image-action="advanced"]'));
+        const behind = dialog.querySelector('input[name="data-image-layout"][value="behind"]');
+        behind.checked = true;
+        behind.dispatchEvent(new window.Event('change', { bubbles: true }));
+        const x = dialog.querySelector('[data-image-props-pos="x"]');
+        x.value = '20';
+        x.dispatchEvent(new window.Event('input', { bubbles: true }));
+        const y = dialog.querySelector('[data-image-props-pos="y"]');
+        y.value = '10';
+        y.dispatchEvent(new window.Event('input', { bubbles: true }));
+        click(dialog.querySelector('[data-action="apply"]'));
+        await flush();
+
+        let props = readProps(img);
+        assert.equal(props.layout, 'behind', 'behind layout not applied');
+        assert.equal(props.pos.x, 20);
+        assert.equal(props.pos.y, 10);
+        const figure = img.closest('figure');
+        assert.match(figure.getAttribute('style'), /position:\s*absolute/);
+        assert.ok(figure.parentElement === editor
+            || !!(figure.parentElement && figure.parentElement.closest('.editor')), 'not anchored in the note');
+
+        // Simulate a pointer drag: +35px x, -12px y.
+        img.dispatchEvent(new window.MouseEvent('pointerdown', {
+            bubbles: true, cancelable: true, clientX: 100, clientY: 100,
+        }));
+        document.dispatchEvent(new window.MouseEvent('pointermove', {
+            bubbles: true, cancelable: true, clientX: 135, clientY: 88,
+        }));
+        document.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true }));
+
+        const moved = readProps(img);
+        assert.equal(moved.pos.x, 55, 'drag x not applied');
+        assert.equal(moved.pos.y, -2, 'drag y not applied');
+        assert.match(figure.getAttribute('style'), /left:\s*55px/);
+        assert.match(figure.getAttribute('style'), /top:\s*-2px/);
     });
 
     await step('no uncaught page errors', () => {

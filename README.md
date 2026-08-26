@@ -207,8 +207,23 @@ same bounded, local-first rules as the rest of the app:
 - pasted data-URI images are archived automatically; remote `<img src>`
   becomes a plain link — NPad never fetches third-party content
 - clicking an image swaps the toolbar to **image tools**: size presets,
-  alignment, alt text + caption dialog, replace and remove (plus a
+  alignment, rotate, wrap toggle, grayscale, replace and remove (plus a
   right-click menu) — the selection-friendly toolbar pattern again
+- **full image object model** (Google-Docs-style) in Image properties:
+  - alt text + caption (figures), size & rotation (width/height, rotate,
+    flip), cropping with live clip-frame preview (percentage + 16:9 / 4:3 /
+    1:1 / circle presets), margins from text
+  - layout: **inline with text**, **wrap text**, **break text** (top &
+    bottom), **behind text**, **in front of text**, **fixed on page** —
+    anchored "move with text" (top left of paragraph) or "fix position on
+    page", with pointer dragging for floating images
+  - recolor (grayscale, sepia, negative, faded, cool, warm) and adjustments
+    (opacity, brightness, contrast), border width/colour, corner radius,
+    drop shadow
+  - the model is stored as a schema-validated `data-npad-props` JSON on the
+    reference (never pixels, never free-form CSS) and maps to DOCX on export:
+    `a:srcRect` crop, `rot`, `behindDoc`/`wrapSquare`/`wrapTopAndBottom`
+    anchors with page/paragraph offsets, grayscale and opacity
 - captions become `<figure>/<figcaption>` and stay editable; alt text is
   preserved for accessibility; missing payloads show a clear placeholder
 - exports embed the images (HTML, Markdown and NPad JSON as data URIs; DOCX
@@ -224,7 +239,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-315 assertions covering:
+327 assertions covering:
 
 | Suite | What it proves |
 |---|---|

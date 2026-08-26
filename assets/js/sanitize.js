@@ -21,8 +21,9 @@ const ALLOWED_ATTRS = {
     FONT: new Set(['color', 'face', 'size']),
     TD: new Set(['colspan', 'rowspan']),
     TH: new Set(['colspan', 'rowspan', 'scope']),
-    IMG: new Set(['data-npad-img', 'alt', 'title']),
-    FIGURE: new Set(['data-npad-figure']),
+    IMG: new Set(['data-npad-img', 'data-npad-props', 'alt', 'title']),
+    FIGURE: new Set(['data-npad-figure', 'data-npad-frame', 'data-npad-anchor']),
+    SPAN: new Set(['data-npad-frame-clip']),
     '*': new Set(['style', 'align', 'dir']),
 };
 
@@ -33,6 +34,12 @@ const ALLOWED_STYLES = new Set([
     'margin-left', 'margin-right', 'padding-left', 'padding-right', 'direction',
     'width', 'min-width', 'max-width', 'border', 'border-collapse',
     'border-color', 'border-style', 'border-width', 'vertical-align',
+    'height', 'max-height', 'float', 'clear', 'display',
+    'position', 'top', 'right', 'bottom', 'left', 'z-index',
+    'transform', 'filter', 'opacity', 'overflow',
+    'margin', 'margin-top', 'margin-bottom',
+    'border-radius', 'box-shadow',
+    'object-fit', 'object-position', 'padding-bottom', 'aspect-ratio',
 ]);
 
 const SAFE_URL = /^(https?:|mailto:|tel:|#|\/)/i;
@@ -40,15 +47,107 @@ const SAFE_URL = /^(https?:|mailto:|tel:|#|\/)/i;
 /** Raster data-URI images only: no SVG (script vector), no remote fetch. */
 const SAFE_IMAGE_DATA = /^data:image\/(png|jpeg|gif|webp|avif|bmp);base64,[a-z0-9+/=\s]+$/i;
 
-function sanitiseStyle(value) {
+/* -------------------------------------------------------------------------
+   Image object properties (stored as <img data-npad-props="{...}">).
+   This is the security boundary: every value is parsed, validated, clamped
+   and re-serialised so a malicious paste cannot smuggle unknown keys, CSS
+   or huge numbers into a note.
+   ------------------------------------------------------------------------- */
+
+const IMAGE_LAYOUTS = new Set(['inline', 'center', 'wrap-left', 'wrap-right', 'top-bottom', 'behind', 'front', 'fixed']);
+const IMAGE_ANCHORS = new Set(['paragraph', 'page']);
+const IMAGE_RECOLORS = new Set(['none', 'grayscale', 'sepia', 'negative', 'faded', 'cool', 'warm']);
+
+const num = (value, min, max, fallback) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, number));
+};
+
+const sizeValue = (value) => {
+    const text = String(value ?? '');
+    return /^\d+(\.\d+)?(px|%)$/.test(text) ? text : null;
+};
+
+const hexColour = (value) => (/^#[\da-f]{6}$/i.test(String(value || '')) ? String(value).toLowerCase() : null);
+
+/**
+ * Validate and canonicalise image props JSON. Returns a canonical JSON
+ * string, or null when the value is not an object.
+ */
+export function normaliseImageProps(raw) {
+    let parsed;
+    try {
+        parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch {
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+    const crop = parsed.crop && typeof parsed.crop === 'object' && !Array.isArray(parsed.crop)
+        ? {
+            l: num(parsed.crop.l, 0, 40, 0),
+            r: num(parsed.crop.r, 0, 40, 0),
+            t: num(parsed.crop.t, 0, 40, 0),
+            b: num(parsed.crop.b, 0, 40, 0),
+        }
+        : { l: 0, r: 0, t: 0, b: 0 };
+    const margin = parsed.margin && typeof parsed.margin === 'object' && !Array.isArray(parsed.margin)
+        ? {
+            top: num(parsed.margin.top, 0, 200, 0),
+            right: num(parsed.margin.right, 0, 200, 0),
+            bottom: num(parsed.margin.bottom, 0, 200, 0),
+            left: num(parsed.margin.left, 0, 200, 0),
+        }
+        : { top: 0, right: 0, bottom: 0, left: 0 };
+    const border = parsed.border && typeof parsed.border === 'object' && !Array.isArray(parsed.border)
+        ? {
+            width: num(parsed.border.width, 0, 20, 0),
+            color: hexColour(parsed.border.color) || '#64748b',
+            radius: num(parsed.border.radius, 0, 300, 0),
+            shadow: !!parsed.border.shadow,
+        }
+        : { width: 0, color: '#64748b', radius: 0, shadow: false };
+
+    const out = {
+        layout: IMAGE_LAYOUTS.has(parsed.layout) ? parsed.layout : 'inline',
+        anchor: IMAGE_ANCHORS.has(parsed.anchor) ? parsed.anchor : 'paragraph',
+        width: sizeValue(parsed.width),
+        height: sizeValue(parsed.height),
+        rotate: num(parsed.rotate, -360, 360, 0),
+        flipH: !!parsed.flipH,
+        flipV: !!parsed.flipV,
+        crop,
+        margin,
+        recolor: IMAGE_RECOLORS.has(parsed.recolor) ? parsed.recolor : 'none',
+        opacity: num(parsed.opacity, 0, 100, 100),
+        brightness: num(parsed.brightness, 25, 300, 100),
+        contrast: num(parsed.contrast, 25, 300, 100),
+        border,
+        pos: {
+            x: num(parsed.pos?.x, -4000, 4000, 0),
+            y: num(parsed.pos?.y, -4000, 4000, 0),
+        },
+    };
+    return JSON.stringify(out);
+}
+
+const LAYOUT_STYLE_TAGS = new Set(['IMG', 'FIGURE', 'SPAN']);
+const LAYOUT_ONLY_STYLES = new Set(['position', 'top', 'right', 'bottom', 'left', 'z-index']);
+
+function sanitiseStyle(value, tag = '') {
     return value
         .split(';')
         .map((decl) => decl.trim())
         .filter(Boolean)
         .filter((decl) => {
             const [prop, val = ''] = decl.split(':');
-            if (!prop || !val.trim()) return false;
-            if (!ALLOWED_STYLES.has(prop.trim().toLowerCase())) return false;
+            const propName = prop.trim().toLowerCase();
+            if (!propName || !val.trim()) return false;
+            if (!ALLOWED_STYLES.has(propName)) return false;
+            // Absolute-positioning styles are only valid on our image mounts;
+            // on paragraphs/divs a pasted style could overlay the UI.
+            if (LAYOUT_ONLY_STYLES.has(propName) && !LAYOUT_STYLE_TAGS.has(tag)) return false;
             // url() can smuggle a request; expressions are legacy IE script.
             return !/url\s*\(|expression\s*\(|javascript:/i.test(val);
         })
@@ -95,9 +194,24 @@ function cleanElement(el, options = {}) {
         }
 
         if (name === 'style') {
-            const cleaned = sanitiseStyle(attr.value);
+            const cleaned = sanitiseStyle(attr.value, tag);
             if (cleaned) el.setAttribute('style', cleaned);
             else el.removeAttribute('style');
+        }
+
+        // Image object properties: schema-validated JSON or the attribute is
+        // dropped entirely (nothing user-bytes may skip validation).
+        if (name === 'data-npad-props' && tag === 'IMG') {
+            const canonical = normaliseImageProps(attr.value);
+            if (canonical) el.setAttribute('data-npad-props', canonical);
+            else el.removeAttribute('data-npad-props');
+            continue;
+        }
+
+        if (tag === 'FIGURE' && name === 'data-npad-anchor') {
+            if (!['paragraph', 'page'].includes(attr.value.trim().toLowerCase())) {
+                el.removeAttribute(attr.name);
+            }
         }
 
         // Table spans are bounded so a malformed paste cannot ask a browser

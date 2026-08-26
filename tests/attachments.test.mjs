@@ -19,6 +19,7 @@ global.Node = dom.window.Node;
 // Deliberately NOT replacing global.Blob: the formats suite loads afterwards
 // and relies on Node's Blob (stream/arrayBuffer); jsdom's Blob lacks them.
 
+const { normaliseImageProps } = await import(`file://${path.join(ROOT, 'assets/js/sanitize.js')}`);
 const attachments = await import(`file://${path.join(ROOT, 'assets/js/attachments.js')}`);
 
 const PNG_1x1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -156,6 +157,94 @@ export default function run(check, group) {
         assert.match(remoteExtracted.html, /<a href="https:\/\/example\.com\/pic\.png"/);
         assert.match(remoteExtracted.html, /Diagram/);
         assert.ok(!/<img/.test(remoteExtracted.html), remoteExtracted.html);
+    });
+
+    group('attachments: object model (crop, layout, rotation, adjustments)');
+
+    const cropProps = attachments.defaultImageProps();
+    cropProps.crop = { l: 10, r: 10, t: 5, b: 5 };
+    cropProps.layout = 'wrap-right';
+    cropProps.rotate = 30;
+    cropProps.flipH = true;
+    cropProps.opacity = 60;
+    cropProps.brightness = 120;
+    cropProps.contrast = 80;
+    cropProps.recolor = 'grayscale';
+    cropProps.margin = { top: 4, right: 8, bottom: 12, left: 16 };
+    cropProps.border = { width: 2, color: '#dc2626', radius: 12, shadow: true };
+    cropProps.width = '50%';
+    const propsCanonical = normaliseImageProps(cropProps);
+
+    const cropHtml = attachments.imageHtml('img-crop', {
+        alt: 'cropped', caption: 'C', props: JSON.parse(propsCanonical),
+    });
+    const wrapCss = attachments.imageFigureCss(cropProps);
+    const elementCss = attachments.imageElementCss(cropProps);
+    const cropPos = attachments.cropObjectPosition(cropProps.crop);
+
+    check('crop region and frame math are exact', () => {
+        assert.equal(cropPos.x, 12.5);
+        assert.equal(cropPos.y, 5.555555555555555);
+        assert.ok(attachments.cropFramePadding({ l: 10, r: 10, t: 5, b: 5 }, 1) > 0);
+        assert.equal(attachments.cropFramePadding({ l: 0, r: 0, t: 0, b: 0 }, 1), 100);
+    });
+
+    check('crop markup wraps the image in a clipped frame', () => {
+        assert.match(cropHtml, /data-npad-frame/);
+        assert.match(cropHtml, /data-npad-frame-clip/);
+        assert.match(cropHtml, /object-fit:cover/);
+        assert.match(cropHtml, /object-position:12\.5% 5\.555555555555555%/);
+    });
+
+    check('figure CSS maps layout and margins; element CSS maps effects', () => {
+        assert.match(wrapCss, /float:right/);
+        assert.match(wrapCss, /margin:4px 8px 12px 16px/);
+        assert.match(elementCss, /width:50%/);
+        assert.match(elementCss, /opacity:0\.6/);
+        assert.match(elementCss, /filter:grayscale\(1\) brightness\(120%\) contrast\(80%\)/);
+        assert.match(elementCss, /transform:rotate\(30deg\) scaleX\(-1\)/);
+        assert.match(elementCss, /border:2px solid #dc2626/);
+        assert.match(elementCss, /border-radius:12px/);
+        assert.match(elementCss, /box-shadow/);
+    });
+
+    check('behind/front/fixed map to absolute placement', () => {
+        const behind = attachments.defaultImageProps();
+        behind.layout = 'behind';
+        behind.pos = { x: 40, y: -12 };
+        const css = attachments.imageFigureCss(behind);
+        assert.match(css, /position:absolute/);
+        assert.match(css, /left:40px/);
+        assert.match(css, /top:-12px/);
+        assert.match(css, /z-index:-1/);
+        const fixed = attachments.defaultImageProps();
+        fixed.layout = 'front';
+        assert.match(attachments.imageFigureCss(fixed), /z-index:1/);
+    });
+
+    check('writeImageProps round-trips through data-npad-props', () => {
+        const host = editorWith(`<img data-npad-img="a" alt="x">`);
+        const img = host.querySelector('img');
+        attachments.writeImageProps(img, cropProps);
+        const parsed = attachments.readImageProps(img);
+        assert.equal(parsed.layout, 'wrap-right');
+        assert.equal(parsed.rotate, 30);
+        assert.deepEqual(parsed.crop, { l: 10, r: 10, t: 5, b: 5 });
+        assert.match(img.getAttribute('style'), /opacity:0\.6/);
+    });
+
+    check('embedImagesAsDataUrls flattens props into inline styles', async () => {
+        const html = '<figure data-npad-frame data-npad-anchor="paragraph" style="float:right">'
+            + `<img data-npad-img="a" data-npad-props="${propsCanonical.replace(/"/g, '&quot;')}" alt="x">`
+            + '<figcaption>C</figcaption></figure>';
+        const out = await attachments.embedImagesAsDataUrls(html, async () =>
+            new window.Blob([Uint8Array.from([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' }));
+        assert.ok(!/data-npad-/.test(out), out);
+        assert.match(out, /float:\s*right/);
+        assert.match(out, /opacity:0\.6/);
+        assert.match(out, /filter:/);
+        assert.match(out, /transform:rotate\(30deg\)/);
+        assert.match(out, /src="data:image\/png;base64,/);
     });
 
     group('attachments: rendering');

@@ -249,6 +249,58 @@ $jsStrings = [
     'imageTooLarge'     => t('image.too_large'),
     'imageUnsupported'  => t('image.unsupported'),
     'imageStorageFailed' => t('image.storage_failed'),
+    'imageDialogTitle'  => t('image.dialog_title'),
+    'imageAlt'          => t('image.alt'),
+    'imageCaption'      => t('image.caption'),
+    'imageSectionText'  => t('image.section_text'),
+    'imageSectionSize'  => t('image.section_size'),
+    'imageSectionLayout' => t('image.section_layout'),
+    'imageSectionCrop'  => t('image.section_crop'),
+    'imageSectionMargins' => t('image.section_margins'),
+    'imageSectionAdjust' => t('image.section_adjust'),
+    'imageSectionBorder' => t('image.section_border'),
+    'imageLayoutInline' => t('image.layout_inline'),
+    'imageLayoutWrap'   => t('image.layout_wrap'),
+    'imageLayoutBreak'  => t('image.layout_break'),
+    'imageLayoutBehind' => t('image.layout_behind'),
+    'imageLayoutFront'  => t('image.layout_front'),
+    'imageLayoutFixed'  => t('image.layout_fixed'),
+    'imageAnchor'       => t('image.anchor'),
+    'imageAnchorParagraph' => t('image.anchor_paragraph'),
+    'imageAnchorPage'   => t('image.anchor_page'),
+    'imageLayoutHint'   => t('image.layout_hint'),
+    'imagePosX'         => t('image.pos_x'),
+    'imagePosY'         => t('image.pos_y'),
+    'imageCropOriginal' => t('image.crop_original'),
+    'imageCropCircle'   => t('image.crop_circle'),
+    'imageCropLeft'     => t('image.crop_left'),
+    'imageCropRight'    => t('image.crop_right'),
+    'imageCropTop'      => t('image.crop_top'),
+    'imageCropBottom'   => t('image.crop_bottom'),
+    'imageMarginTop'    => t('image.margin_top'),
+    'imageMarginRight'  => t('image.margin_right'),
+    'imageMarginBottom' => t('image.margin_bottom'),
+    'imageMarginLeft'   => t('image.margin_left'),
+    'imageRecolorNone'  => t('image.recolor_none'),
+    'imageRecolorGrayscale' => t('image.recolor_grayscale'),
+    'imageRecolorSepia' => t('image.recolor_sepia'),
+    'imageRecolorNegative' => t('image.recolor_negative'),
+    'imageRecolorFaded' => t('image.recolor_faded'),
+    'imageRecolorCool'  => t('image.recolor_cool'),
+    'imageRecolorWarm'  => t('image.recolor_warm'),
+    'imageOpacity'      => t('image.opacity'),
+    'imageBrightness'   => t('image.brightness'),
+    'imageContrast'     => t('image.contrast'),
+    'imageBorderWidth'  => t('image.border_width'),
+    'imageBorderColor'  => t('image.border_color'),
+    'imageBorderRadius' => t('image.border_radius'),
+    'imageShadow'       => t('image.shadow'),
+    'imageWidth'        => t('image.width'),
+    'imageHeight'       => t('image.height'),
+    'imageHeightAuto'   => t('image.height_auto'),
+    'imageRotate'       => t('image.rotate'),
+    'imageFlipH'        => t('image.flip_h'),
+    'imageFlipV'        => t('image.flip_v'),
     'tableDeleteTitle'  => t('table.delete_title'),
     'tableDeleteBody'   => t('table.delete_body'),
     'tablePropertiesTitle' => t('table.properties_title'),
@@ -759,9 +811,21 @@ $jsStrings = [
                 </button>
             </div>
             <div class="toolbar__group" role="group" aria-label="<?= e(t('image.group_edit')) ?>">
-                <button type="button" class="toolbar__btn" data-image-action="alt-caption"
-                        title="<?= e(t('image.alt_caption')) ?>" aria-label="<?= e(t('image.alt_caption')) ?>">
-                    <?= icon('image-caption') ?>
+                <button type="button" class="toolbar__btn" data-image-action="advanced"
+                        title="<?= e(t('image.advanced')) ?>" aria-label="<?= e(t('image.advanced')) ?>">
+                    <?= icon('image-advanced') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="rotate-ccw"
+                        title="<?= e(t('image.rotate')) ?>" aria-label="<?= e(t('image.rotate')) ?>">
+                    <?= icon('rotate') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="layout-wrap"
+                        title="<?= e(t('image.layout_wrap')) ?>" aria-label="<?= e(t('image.layout_wrap')) ?>">
+                    <?= icon('layout') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-image-action="recolor-grayscale"
+                        title="<?= e(t('image.recolor_grayscale_quick')) ?>" aria-label="<?= e(t('image.recolor_grayscale_quick')) ?>">
+                    <?= icon('grayscale') ?>
                 </button>
                 <button type="button" class="toolbar__btn" data-image-action="replace-image"
                         title="<?= e(t('image.replace')) ?>" aria-label="<?= e(t('image.replace')) ?>">

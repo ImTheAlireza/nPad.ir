@@ -90,10 +90,22 @@ export default function run(check, group) {
         assert.ok(!/url\(/i.test(out), out);
     });
 
-    check('drops disallowed properties', () => {
-        const out = sanitizeHtml('<span style="position: fixed; color: blue">x</span>');
+    check('drops disallowed properties on non-image elements', () => {
+        // position/fixed layout styles are only legal on our image figures.
+        const out = sanitizeHtml('<p style="position: fixed; top: 0; color: blue">x</p>');
         assert.ok(!/position/i.test(out), out);
+        assert.ok(!/top/i.test(out), out);
         assert.ok(/color/i.test(out), out);
+    });
+
+    check('keeps image layout styles on figures and images', () => {
+        const out = sanitizeHtml('<figure style="position:absolute;top:40px;left:20px;z-index:-1">'
+            + '<img data-npad-img="a" style="transform:rotate(30deg);opacity:0.5;filter:grayscale(1)" alt="x">'
+            + '</figure>');
+        assert.ok(/position:absolute/.test(out), out);
+        assert.ok(/z-index:-1/.test(out), out);
+        assert.ok(/rotate\(30deg\)/.test(out), out);
+        assert.ok(/opacity:0\.5/.test(out), out);
     });
 
     group('sanitize: content preservation');
@@ -193,6 +205,39 @@ export default function run(check, group) {
     check('remote and javascript image sources never survive', () => {
         const out = sanitizeHtml('<img src="https://x.test/a.png"><img src="javascript:alert(1)">', { dataImages: true });
         assert.equal(out, '', out);
+    });
+
+    group('sanitize: image object properties');
+
+    check('keeps canonical JSON props and rejects unknown fields', () => {
+        const good = '<img data-npad-img="a" data-npad-props=\'{"layout":"wrap-right","rotate":45,"opacity":80}\' alt="x">';
+        const out = sanitizeHtml(good);
+        assert.ok(/data-npad-props="{&quot;layout&quot;:&quot;wrap-right&quot;/.test(out), out);
+        assert.ok(/&quot;rotate&quot;:45/.test(out), out);
+        assert.ok(/&quot;opacity&quot;:80/.test(out), out);
+        const bad = '<img data-npad-img="a" data-npad-props=\'{"layout":"javascript:alert(1)","evil":"x","opacity":9999}\' alt="y">';
+        const cleaned = sanitizeHtml(bad);
+        assert.ok(!/evil/.test(cleaned), cleaned);
+        assert.ok(!/javascript/.test(cleaned), cleaned);
+        assert.ok(/opacity&quot;:100/.test(cleaned), 'out-of-range value not clamped/defaulted');
+    });
+
+    check('drops corrupt props and width/height injection', () => {
+        const corrupt = sanitizeHtml('<img data-npad-img="a" data-npad-props="not json" alt="x">');
+        assert.ok(!/data-npad-props/.test(corrupt), corrupt);
+        const injection = sanitizeHtml(
+            '<img data-npad-img="a" data-npad-props=\'{"width":"100%;position:fixed"}\' alt="x">',
+        );
+        const parsed = JSON.parse((injection.match(/data-npad-props="([^"]*)"/) || [])[1]
+            ?.replace(/&quot;/g, '"') || '{}');
+        assert.equal(parsed.width, null, 'unsafe width survived');
+    });
+
+    check('layout styles survive only on image mounts', () => {
+        const img = sanitizeHtml('<figure style="position:absolute;top:10px"><img data-npad-img="a" alt="x"></figure>');
+        assert.ok(/position:absolute/.test(img) && /top:10px/.test(img), img);
+        const p = sanitizeHtml('<p style="position:absolute;top:10px">text</p>');
+        assert.ok(!/position/.test(p) && !/top/.test(p), p);
     });
 
     group('sanitize: textToHtml');

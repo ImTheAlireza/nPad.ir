@@ -47,6 +47,7 @@ const ALLOWED = new Set([
     'image_tool_used',
     'image_replaced',
     'image_removed',
+    'image_props_used',
 ]);
 
 let enabled = true;

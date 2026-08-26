@@ -101,6 +101,7 @@ const ALLOWED_EVENTS = [
     'image_tool_used',
     'image_replaced',
     'image_removed',
+    'image_props_used',
 ];
 
 $event = trim((string) ($_POST['event'] ?? ''));

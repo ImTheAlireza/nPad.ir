@@ -280,6 +280,34 @@ export default function run(check, group) {
         assert.match(imageRtf, /\\i A caption/);
     });
 
+    const propsFigure = `<figure data-npad-frame data-npad-anchor="paragraph" style="float:right">`
+        + `<img src="${IMAGE_DATA_URI}" alt="Props" data-npad-props='{"layout":"wrap-right","rotate":90,"crop":{"l":10,"r":10,"t":5,"b":5},"opacity":60,"recolor":"grayscale","width":"50%"}'>`
+        + `</figure>`;
+    const propsDocx = formats.htmlToDocx(propsFigure);
+    const propsDocxText = new TextDecoder().decode(propsDocx);
+
+    check('DOCX maps crop, rotation, effects and layout from image props', () => {
+        assert.ok(propsDocxText.includes('<a:srcRect l="10000" t="5000" r="10000" b="5000"/>'), 'srcRect missing');
+        assert.ok(propsDocxText.includes('rot="5400000"'), 'rotation missing');
+        assert.ok(propsDocxText.includes('behindDoc="0"'), 'anchor missing');
+        assert.ok(propsDocxText.includes('<wp:wrapSquare wrapText="bothSides"/>'), 'wrap missing');
+        assert.ok(propsDocxText.includes('<a:alphaModFix amt="60000"/>'), 'opacity missing');
+        assert.ok(propsDocxText.includes('<a:grayscale val="true"/>'), 'grayscale missing');
+    });
+
+    const behindFigure = `<figure data-npad-frame data-npad-anchor="page">`
+        + `<img src="${IMAGE_DATA_URI}" alt="Behind" data-npad-props='{"layout":"behind","anchor":"page","pos":{"x":40,"y":-8}}'>`
+        + `</figure>`;
+    const behindDocx = formats.htmlToDocx(behindFigure);
+    const behindText = new TextDecoder().decode(behindDocx);
+
+    check('DOCX maps behind-text placement to an anchored image', () => {
+        assert.ok(behindText.includes('behindDoc="1"'), 'behind flag missing');
+        assert.ok(behindText.includes('relativeFrom="page"'), 'page anchor missing');
+        assert.ok(behindText.includes('<wp:posOffset>254000</wp:posOffset>'), 'x offset missing');
+        assert.ok(behindText.includes('<wp:posOffset>-50800</wp:posOffset>'), 'y offset missing');
+    });
+
     check('PDF importer inflates streams and follows Unicode font maps', () => {
         assert.match(pdfHtml, /Hello PDF/);
         assert.match(unicodePdfHtml, /سلام/);

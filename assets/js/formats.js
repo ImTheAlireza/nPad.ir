@@ -759,19 +759,102 @@ function wordRun(text, style = {}) {
     return parts.map((part, index) => `${index ? '<w:r><w:br/></w:r>' : ''}<w:r>${properties ? `<w:rPr>${properties}</w:rPr>` : ''}<w:t xml:space="preserve">${escapeXml(part)}</w:t></w:r>`).join('');
 }
 
-/** DrawingML inline picture (4in x 3in default box). */
-function docxDrawing(rid, alt) {
+const EMU_PER_PX = 9525;
+const EMU_FULL_WIDTH = 5486400; // 6in at 100%
+
+/** Parse the (sanitised) image object model off an exported <img>. */
+function docxImageProps(img) {
+    const raw = img.getAttribute('data-npad-props');
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+const RECOLOR_TO_DOCX = { grayscale: true };
+
+/** DrawingML inline or anchored picture, mapped from the object model. */
+function docxDrawing(rid, alt, props = null) {
     const descr = escapeXml(alt || '');
     const seq = Number(rid.replace(/\D+/g, '')) || 1;
-    return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`
-        + `<wp:extent cx="3657600" cy="2743200"/>`
-        + `<wp:docPr id="${seq}" name="Image ${seq}" descr="${descr}"/>`
-        + `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+
+    // Size: width prop -> EMU (%, px, or the 4x3 default).
+    let cx = 3657600;
+    let cy = 2743200;
+    const width = props?.width;
+    if (width && width.endsWith('%')) cx = Math.round(EMU_FULL_WIDTH * (parseFloat(width) / 100));
+    else if (width && width.endsWith('px')) cx = Math.round(parseFloat(width) * EMU_PER_PX);
+    const height = props?.height;
+    if (height && height.endsWith('px')) cy = Math.round(parseFloat(height) * EMU_PER_PX);
+    else if (width) cy = Math.round(cx * 0.75);
+
+    // Crop -> a:srcRect (units are 1/1000 of a percent).
+    const crop = props?.crop || { l: 0, r: 0, t: 0, b: 0 };
+    const srcRect = crop.l || crop.r || crop.t || crop.b
+        ? `<a:srcRect l="${Math.round(crop.l * 1000)}" t="${Math.round(crop.t * 1000)}" r="${Math.round(crop.r * 1000)}" b="${Math.round(crop.b * 1000)}"/>`
+        : '';
+
+    // Rotation & flip: rot is 1/60000 degree.
+    let rot = Math.round(((props?.rotate || 0) % 360) * 60000);
+    if (rot < 0) rot += 21600000;
+    const flipH = props?.flipH ? ' flipH="1"' : '';
+    const flipV = props?.flipV ? ' flipV="1"' : '';
+
+    // Effects: grayscale + opacity survive re-import.
+    const effects = [];
+    if (RECOLOR_TO_DOCX[props?.recolor]) effects.push('<a:grayscale val="true"/>');
+    if (props?.opacity != null && props.opacity < 100) {
+        effects.push(`<a:alphaModFix amt="${Math.round(props.opacity * 1000)}"/>`);
+    }
+    const blip = `<a:blip r:embed="${rid}">${effects.join('')}</a:blip>`;
+    const rotAttr = rot ? ` rot="${rot}"` : '';
+    const xfrm = `<a:xfrm${rotAttr}${flipH}${flipV}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`;
+
+    const picture = `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`
         + `<pic:pic><pic:nvPicPr><pic:cNvPr id="${seq}" name="Image ${seq}" descr="${descr}"/><pic:cNvPicPr/></pic:nvPicPr>`
-        + `<pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
-        + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3657600" cy="2743200"/></a:xfrm>`
-        + `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>`
-        + `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+        + `<pic:blipFill>${blip}${srcRect}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+        + `<pic:spPr>${xfrm}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>`
+        + `</a:graphicData></a:graphic>`;
+
+    const layout = props?.layout || 'inline';
+    const anchor = props?.anchor || 'paragraph';
+    if (layout === 'inline') {
+        return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`
+            + `<wp:extent cx="${cx}" cy="${cy}"/>`
+            + `<wp:docPr id="${seq}" name="Image ${seq}" descr="${descr}"/>`
+            + picture + `</wp:inline></w:drawing></w:r>`;
+    }
+
+    const pxToPosOffset = (px) => Math.round((Number(px) || 0) * 6350);
+    const behind = layout === 'behind' ? '1' : '0';
+    let wrap = '<wp:wrapNone/>';
+    let relativeH = 'column';
+    let relativeV = 'paragraph';
+    let posX = 0;
+    let posY = 0;
+    if (layout === 'wrap-left' || layout === 'wrap-right') {
+        wrap = '<wp:wrapSquare wrapText="bothSides"/>';
+        relativeH = 'column';
+    } else if (layout === 'top-bottom') {
+        wrap = '<wp:wrapTopAndBottom/>';
+    } else {
+        // behind / front / fixed
+        relativeH = layout === 'fixed' ? 'page' : 'paragraph';
+        relativeV = anchor === 'page' || layout === 'fixed' ? 'page' : 'paragraph';
+        posX = pxToPosOffset(props?.pos?.x);
+        posY = pxToPosOffset(props?.pos?.y);
+    }
+    return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0"`
+        + ` relativeHeight="${seq}" behindDoc="${behind}" locked="0" layoutInCell="1" allowOverlap="1">`
+        + `<wp:simplePos x="0" y="0"/>`
+        + `<wp:positionH relativeFrom="${relativeH}"><wp:posOffset>${posX}</wp:posOffset></wp:positionH>`
+        + `<wp:positionV relativeFrom="${relativeV}"><wp:posOffset>${posY}</wp:posOffset></wp:positionV>`
+        + `<wp:extent cx="${cx}" cy="${cy}"/>`
+        + wrap
+        + `<wp:docPr id="${seq}" name="Image ${seq}" descr="${descr}"/>`
+        + picture + `</wp:anchor></w:drawing></w:r>`;
 }
 
 function htmlNodeToWord(node, inherited = {}) {
@@ -789,7 +872,7 @@ function htmlNodeToWord(node, inherited = {}) {
     if (tag === 'br') return '<w:r><w:br/></w:r>';
     if (tag === 'img') {
         const rid = node.getAttribute('data-docx-rid');
-        return rid ? docxDrawing(rid, node.getAttribute('alt') || '') : '';
+        return rid ? docxDrawing(rid, node.getAttribute('alt') || '', docxImageProps(node)) : '';
     }
     return [...node.childNodes].map((child) => htmlNodeToWord(child, style)).join('');
 }
