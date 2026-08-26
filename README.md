@@ -50,6 +50,8 @@ Live: <https://npad.ir>
 │     ├─ spellcheck.js    Local spell checker with tap/keyboard corrections
 │     ├─ codeblock.js     Code blocks: highlighting, language chip, copy button
 │     ├─ mathblock.js     Math typesetting: KaTeX paint, dialog, magic typing
+│     ├─ outline.js       Collapsible sections + outline navigator
+│     ├─ checklist.js     Checklists + cross-note task overview
 │     ├─ caret.js         Caret boundary helpers shared by code/math modules
 │     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
 │     └─ vendor/          Self-hosted Chart.js 4.5.1 + Prism 1.30.0 + KaTeX 0.18.4
@@ -217,6 +219,29 @@ an emptied formula removes it, and double-click reopens the dialog.
 DOCX/RTF keep the LaTeX source in monospace; PDF export prints the
 rendered formula for free.
 
+## Collapsible sections, outline and checklists
+
+The **Insert** menu adds collapsible sections and checklists; the toolbar
+gains an **Outline** panel.
+
+Sections are native `<details>/<summary>`: the stored note keeps the source
+*and* each section's open/collapsed state, clicking the summary toggles it
+(the one deterministic behaviour across engines), printing expands every
+section and restores it after, and Markdown passes sections through as raw
+HTML blocks. The **Outline** panel lists the note's H1–H6 headings and
+section summaries indented by level — click to jump, `Esc` to close, rebuilt
+live while typing.
+
+Checklists are GFM-compatible: `- [ ]` / `- [x]` round-trip through Markdown,
+items are real checkboxes (toggle with the mouse or Space), checked items
+dim with a strike-through, and the checked state persists in the note. The
+sanitizer admits checkbox inputs only inside checklist lists.
+
+**Edit → Tasks…** aggregates every checklist task across all notes into one
+dialog — open and completed sections, live counts, toggling a row updates
+the source note (the live editor for the active note, storage for the rest),
+and each row carries a jump link that opens the note and scrolls to the task.
+
 ## Tables
 
 The **Insert** menu (next to Edit) adds a table through a settings dialog:
@@ -272,7 +297,8 @@ Automated coverage includes:
 | `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes; spelling corrections; autosave; Insert menu, table dialog, contextual toolbar, cell control |
 | `tables-ui` | Full awaited end-to-end flow: Insert menu → settings dialog → live table → row/column/merge/split/header tools → properties → delete → context menu |
 | `codeblocks-ui` | Full awaited end-to-end flow: Insert menu → block with chrome → language dialog → Prism highlight → copy → Tab → autosave stores the plain form → markdown paste |
-| `math` / `math-ui` | Sanitiser bounds on the math tags; `$…$`/`$$…$$` round trips incl. money heuristics; the runtime module against the real KaTeX: paint/strip cycles, edit mode, keyboard model, magic typing; awaited end-to-end dialog flow, autosave, double-click edit |
+| `math` / `math-ui` | Sanitiser bounds on the math tags; `$$…$$` round trips incl. money heuristics; the runtime module against the real KaTeX: paint/strip cycles, edit mode, keyboard model, magic typing; awaited end-to-end dialog flow, autosave, double-click edit |
+| `structure` / `structure-ui` | Sanitiser bounds for sections/checklists (`open`, bounded input attrs, checklist-only inputs); Markdown round trips for task lists and raw details; outline build + jump; checklist normalisation; cross-note task scan; awaited end-to-end flows for sections, outline, checklist toggle and the Tasks dialog across notes |
 
 ## Notable decisions
 

@@ -597,7 +597,6 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         let texField = null;
         let preview = null;
         let errorLine = null;
-        let modeButtons = [];
 
         const action = await showDialog({
             title: existing ? (strings.mathEditTitle || 'Edit formula') : (strings.mathDialogTitle || 'Math formula'),
@@ -607,9 +606,6 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
                         <span>${strings.mathSource || 'LaTeX source'}</span>
                         <textarea data-math-tex rows="3" spellcheck="false" wrap="off"></textarea>
                     </label>
-                    <div class="math-builder__modes" role="group" aria-label="${strings.mathMode || 'Placement'}">
-                        <button type="button" class="table-builder__preset" data-math-mode="inline" aria-pressed="false">${strings.mathModeInline || 'Inline'}</button>
-                        <button type="button" class="table-builder__preset" data-math-mode="block" aria-pressed="false">${strings.mathModeBlock || 'Block'}</button>
                     </div>
                     <div class="math-builder__pad" role="group" aria-label="${escapeAttr(strings.mathKeyboard || 'Symbol keyboard')}">
                         ${KEYS.map(([label, snippet]) => (
@@ -629,22 +625,12 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
                 texField = body.querySelector('[data-math-tex]');
                 preview = body.querySelector('[data-math-preview]');
                 errorLine = body.querySelector('[data-math-error]');
-                modeButtons = [...body.querySelectorAll('[data-math-mode]')];
                 texField.value = state.tex;
 
                 const sync = () => {
                     state.tex = texField.value;
-                    modeButtons.forEach((btn) => {
-                        btn.setAttribute('aria-pressed', String(btn.dataset.mathMode === state.mode));
-                    });
-                    renderPreviewInto(preview, errorLine, state.tex, state.mode);
+                    renderPreviewInto(preview, errorLine, state.tex);
                 };
-                modeButtons.forEach((btn) => {
-                    btn.addEventListener('click', () => {
-                        state.mode = btn.dataset.mathMode;
-                        sync();
-                    });
-                });
                 body.querySelectorAll('[data-math-key]').forEach((btn) => {
                     // Keep the textarea's focus and caret while "pressing keys".
                     btn.addEventListener('mousedown', (event) => event.preventDefault());

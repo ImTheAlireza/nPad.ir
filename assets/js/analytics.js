@@ -47,6 +47,12 @@ const ALLOWED = new Set([
     'code_copied',
     'math_inserted',
     'math_edited',
+    'section_inserted',
+    'outline_used',
+    'checklist_inserted',
+    'tasks_opened',
+    'task_toggled',
+    'task_jumped',
 ]);
 
 let enabled = true;

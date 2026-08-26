@@ -3714,6 +3714,219 @@ body.focus-mode .focus-exit { display: inline-flex; }
    stylesheet, so printed output lost all formatting. Now we print in place.
    -------------------------------------------------------------------------- */
 
+/* --------------------------------------------------------------------------
+   Outline navigator
+   -------------------------------------------------------------------------- */
+
+.outline-panel {
+    margin: var(--space-2) var(--space-3) 0;
+    padding: var(--space-2);
+    background: var(--surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.outline-panel__entry {
+    display: block;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-body);
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: start;
+    cursor: pointer;
+    overflow-wrap: break-word;
+}
+
+.outline-panel__entry:hover {
+    background: var(--surface-hover);
+    color: var(--text-strong);
+}
+
+.outline-panel__entry:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: -2px;
+}
+
+.outline-panel__mark {
+    display: inline-block;
+    margin-inline-end: 6px;
+    color: var(--text-muted);
+}
+
+.outline-panel__empty {
+    margin: 0;
+    padding: var(--space-3);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Collapsible sections
+   -------------------------------------------------------------------------- */
+
+.editor details {
+    margin: 0 0 0.75em;
+    background: var(--surface-sunken);
+    border-radius: var(--radius-md);
+}
+
+.editor details > summary {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    border-radius: var(--radius-md);
+}
+
+.editor details > summary::-webkit-details-marker { display: none; }
+
+.editor details > summary::before {
+    content: '';
+    align-self: center;
+    border-inline-start: 5px solid var(--text-muted);
+    border-block: 4px solid transparent;
+    transition: transform var(--transition-fast);
+}
+
+.editor details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.editor details[open] > summary {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.editor details > *:not(summary) {
+    margin-inline: var(--space-3);
+}
+
+.editor details > *:last-child {
+    margin-bottom: var(--space-3) !important;
+    padding-top: var(--space-1);
+}
+
+/* --------------------------------------------------------------------------
+   Checklists
+   -------------------------------------------------------------------------- */
+
+.editor ul.checklist {
+    list-style: none;
+    padding-inline-start: var(--space-2);
+}
+
+.editor ul.checklist li {
+    margin: 0 0 var(--space-1);
+}
+
+.editor ul.checklist input[type='checkbox'] {
+    margin-inline-end: var(--space-2);
+    accent-color: var(--accent);
+    vertical-align: middle;
+}
+
+.editor ul.checklist li.task-checked {
+    color: var(--text-muted);
+    text-decoration: line-through;
+    text-decoration-color: var(--border-strong);
+}
+
+.editor ul.checklist li.task-flash,
+.editor ul.checklist li.task-flash input[type='checkbox'] {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Task overview dialog
+   -------------------------------------------------------------------------- */
+
+.task-overview__section { margin: 0 0 var(--space-4); }
+
+.task-overview__heading {
+    margin: 0 0 var(--space-2);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.task-overview__count {
+    display: inline-block;
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--surface-hover);
+    text-align: center;
+}
+
+.task-overview__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.task-overview__task {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--text-body);
+}
+
+.task-overview__task input[type='checkbox'] {
+    accent-color: var(--accent);
+    flex-shrink: 0;
+}
+
+.task-overview__row:has(input:checked) .task-overview__task span {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+.task-overview__note {
+    flex-shrink: 0;
+    max-width: 40%;
+    padding: 2px 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-overview__note:hover {
+    color: var(--text-strong);
+    border-color: var(--border-strong);
+}
+
+.task-overview__note:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+}
+
+.task-overview__empty {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
 @media print {
     .appbar,
     .notes-sidebar,

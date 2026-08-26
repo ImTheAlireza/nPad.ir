@@ -154,6 +154,23 @@ if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${node.te
         const href = node.getAttribute('href') || '';
         return href ? `[${content || markdownText(href)}](${href.replace(/[()\s]/g, (c) => encodeURIComponent(c))})` : content;
     }
+    if (tag === 'details') {
+        // No Markdown equivalent — pass the section through as raw HTML,
+        // like headerless tables.
+        return `\n${node.outerHTML}\n\n`;
+    }
+    if (tag === 'ul' && (node.classList?.contains('checklist') || node.querySelector('input[type="checkbox"]'))) {
+        const items = [...node.children].filter((child) => child.tagName === 'LI');
+        if (!items.length) return '';
+        const body = items.map((item) => {
+            const done = item.classList.contains('task-checked') || !!item.querySelector('input:checked');
+            const clone = item.cloneNode(true);
+            [...clone.querySelectorAll('input')].forEach((input) => input.remove());
+            const line = [...clone.childNodes].map((child) => nodeToMarkdown(child, depth + 1)).join('').trim();
+            return `${'  '.repeat(depth)}- [${done ? 'x' : ' '}] ${line}`;
+        }).join('\n');
+        return `${body}\n\n`;
+    }
     if (tag === 'ul' || tag === 'ol') {
         const ordered = tag === 'ol';
         return `${[...node.children].filter((child) => child.tagName === 'LI').map((item, index) => {
@@ -300,10 +317,11 @@ export function markdownToHtml(markdown) {
         }
 
         // Raw HTML table block (emitted for headerless tables to stay faithful).
-        if (/^\s*<table[\s>]/i.test(line)) {
+        if (/^\s*<table[\s>]/i.test(line) || /^\s*<details[\s>]/i.test(line)) {
+            const tag = /^\s*<table[\s>]/i.test(line) ? 'table' : 'details';
             const raw = [line];
             index += 1;
-            while (index < lines.length && !/<\/table\s*>/i.test(lines[index])) raw.push(lines[index++]);
+            while (index < lines.length && !new RegExp('</' + tag + '\\s*>', 'i').test(lines[index])) raw.push(lines[index++]);
             if (index < lines.length) raw.push(lines[index++]);
             blocks.push(raw.join('\n'));
             continue;
@@ -360,13 +378,23 @@ export function markdownToHtml(markdown) {
         if (list) {
             const ordered = /^\d/.test(list[1]);
             const items = [];
+            let tasks = 0;
             while (index < lines.length) {
                 const match = lines[index].match(/^\s*([-+*]|\d+[.)])\s+(.+)$/);
                 if (!match || /^\d/.test(match[1]) !== ordered) break;
-                items.push(`<li>${inlineMarkdown(match[2])}</li>`);
+                // GFM task item: "- [ ] " / "- [x] " opens a checklist.
+                const task = match[2].match(/^\[([ xX])\]\s+(.*)$/);
+                if (task) {
+                    tasks += 1;
+                    const done = task[1].toLowerCase() === 'x';
+                    items.push(`<li${done ? ' class="task-checked"' : ''}><input type="checkbox"${done ? ' checked' : ''}>${inlineMarkdown(task[2])}</li>`);
+                } else {
+                    items.push(`<li>${inlineMarkdown(match[2])}</li>`);
+                }
                 index += 1;
             }
-            blocks.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
+            const listClass = tasks && !ordered ? ' class="checklist"' : '';
+            blocks.push(`<${ordered ? 'ol' : 'ul'}${listClass}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
             continue;
         }
 

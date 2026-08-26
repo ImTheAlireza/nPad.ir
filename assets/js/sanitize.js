@@ -7,21 +7,30 @@
  */
 
 const ALLOWED_TAGS = new Set([
-    'A', 'B', 'BLOCKQUOTE', 'BR', 'CAPTION', 'CODE', 'DIV', 'EM', 'FONT',
-    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'LI', 'MARK',
-    'MATH-BLOCK', 'MATH-INLINE', 'OL', 'P',
-    'PRE', 'S', 'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'TABLE', 'TBODY',
-    'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'U', 'UL',
+    'A', 'B', 'BLOCKQUOTE', 'BR', 'CAPTION', 'CODE', 'DETAILS', 'DIV', 'EM',
+    'FONT', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'INPUT', 'LI',
+    'MARK', 'MATH-BLOCK', 'MATH-INLINE', 'OL', 'P',
+    'PRE', 'S', 'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUMMARY', 'SUP',
+    'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'U', 'UL',
 ]);
 
 const ALLOWED_ATTRS = {
     A: new Set(['href', 'title', 'target', 'rel']),
     CODE: new Set(['class']),
+    DETAILS: new Set(['open']),
     FONT: new Set(['color', 'face', 'size']),
+    INPUT: new Set(['type', 'checked', 'disabled']),
+    LI: new Set(['class']),
     TD: new Set(['colspan', 'rowspan']),
     TH: new Set(['colspan', 'rowspan', 'scope']),
+    UL: new Set(['class']),
     '*': new Set(['style', 'align', 'dir']),
 };
+
+/** Checklists are the only lists that may carry the marker class. */
+const LIST_CLASS = /^checklist$/;
+/** Task items keep only their checked marker. */
+const LI_CLASS = /^task-checked$/;
 
 /**
  * Math formulas (`<math-inline>`, `<math-block>`) keep their LaTeX source as
@@ -67,6 +76,19 @@ function sanitiseStyle(value) {
 function cleanElement(el) {
     const tag = el.tagName;
 
+    // Checkbox inputs only exist as checklist items; anything else is dropped
+    // rather than unwrapped (an input has no content to preserve). Read the
+    // RAW class attribute: descendants are cleaned before their ancestors,
+    // so the list may not carry its cleaned class yet.
+    if (tag === 'INPUT') {
+        const list = el.closest('ul, ol');
+        const classes = (list?.getAttribute('class') || '').split(/\s+/);
+        if (!classes.includes('checklist')) {
+            el.remove();
+            return;
+        }
+    }
+
     // Unwrap unknown elements but keep their text, so pasting from Word or
     // Google Docs preserves the words rather than deleting them. Void nodes
     // such as retired image markup disappear naturally because they have no
@@ -91,6 +113,35 @@ function cleanElement(el) {
 
         if (name === 'href') {
             if (!SAFE_URL.test(attr.value.trim())) el.removeAttribute(attr.name);
+            continue;
+        }
+
+        if (name === 'class' && (tag === 'UL' || tag === 'OL')) {
+            const kept = attr.value.split(/\s+/).filter((token) => LIST_CLASS.test(token));
+            if (kept.length) el.setAttribute('class', 'checklist');
+            else el.removeAttribute('class');
+            continue;
+        }
+
+        if (name === 'class' && tag === 'LI') {
+            const kept = attr.value.split(/\s+/).filter((token) => LI_CLASS.test(token));
+            if (kept.length) el.setAttribute('class', 'task-checked');
+            else el.removeAttribute('class');
+            continue;
+        }
+
+        if (tag === 'INPUT') {
+            if (name === 'type') {
+                if (attr.value.trim().toLowerCase() === 'checkbox') el.setAttribute('type', 'checkbox');
+                else { el.remove(); return; }
+            } else if (name === 'checked' || name === 'disabled') {
+                el.setAttribute(name, '');
+            }
+            continue;
+        }
+
+        if (name === 'open' && tag === 'DETAILS') {
+            el.setAttribute('open', '');
             continue;
         }
 
@@ -142,8 +193,10 @@ export function sanitizeHtml(dirty) {
     const template = document.createElement('template');
     template.innerHTML = String(dirty);
 
+    // <input> is handled by cleanElement (checklist checkboxes only);
+    // everything else here is active or foreign content.
     template.content
-        .querySelectorAll('script, style, iframe, object, embed, link, meta, form, input, button, svg, math')
+        .querySelectorAll('script, style, iframe, object, embed, link, meta, form, button, svg, math')
         .forEach((node) => node.remove());
 
     // Walk a static list bottom-up so unwrapping never invalidates iteration.

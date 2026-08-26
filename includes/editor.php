@@ -244,6 +244,16 @@ $jsStrings = [
     'mathHint'          => t('mathform.hint'),
     'mathError'         => t('mathform.error'),
     'mathOffline'       => t('mathform.offline'),
+    'outlineUntitled'   => t('outline.untitled'),
+    'sectionSummary'    => t('section.summary'),
+    'sectionInserted'   => t('section.inserted'),
+    'checklistTask'     => t('checklist.task'),
+    'checklistInserted' => t('checklist.inserted'),
+    'tasksTitle'        => t('tasks.title'),
+    'tasksOpen'         => t('tasks.open'),
+    'tasksDone'         => t('tasks.done'),
+    'tasksEmpty'        => t('tasks.empty'),
+    'tasksJump'         => t('tasks.jump'),
     'mathKeyboard'      => t('mathform.keyboard'),
     'mathDelete'        => t('mathform.delete'),
     'mathDeleteTitle'   => t('mathform.delete_title'),
@@ -608,6 +618,10 @@ $jsStrings = [
                     title="<?= e(t('toolbar.find_replace')) ?>" aria-label="<?= e(t('toolbar.find_replace')) ?>">
                 <?= icon('find-replace') ?>
             </button>
+            <button type="button" class="toolbar__btn" data-action="outline" aria-pressed="false"
+                    title="<?= e(t('toolbar.outline')) ?>" aria-label="<?= e(t('toolbar.outline')) ?>">
+                <?= icon('outline', ['class' => 'icon']) ?>
+            </button>
             <button type="button" class="toolbar__btn" data-action="toggle-spellcheck" aria-pressed="true"
                     title="<?= e(t('toolbar.spellcheck')) ?>" aria-label="<?= e(t('toolbar.spellcheck')) ?>">
                 <?= icon('spellcheck') ?>
@@ -803,6 +817,11 @@ $jsStrings = [
                 <?= e(t('find.replace_all')) ?>
             </button>
         </div>
+    </div>
+
+    <div class="outline-panel" id="outlinePanel" role="region" aria-label="<?= e(t('outline.title')) ?>" hidden>
+        <p class="outline-panel__empty" data-outline-empty hidden><?= e(t('outline.empty')) ?></p>
+        <div class="outline-panel__list" data-outline-list></div>
     </div>
 
     <div id="editor"

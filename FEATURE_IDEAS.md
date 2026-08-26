@@ -6,7 +6,8 @@ third-party requests, and a strict CSP. Effort: **S** = small (days), **M** =
 medium (1–2 weeks), **L** = large (a month+).
 
 > **Implemented 2026-08:** items 2 (Tables), 4 (Code blocks with syntax
-> highlighting) and 5 (Math typesetting) are shipped.
+> highlighting), 5 (Math typesetting), 6 (Collapsible sections & outline
+> navigator) and 7 (Checklists & task aggregation) are shipped.
 >
 > **Reset 2026-08:** the previous image/attachment implementation was removed
 > deliberately. It had accumulated a large object model and competing editing

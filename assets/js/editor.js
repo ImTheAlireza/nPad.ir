@@ -82,6 +82,8 @@ import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
 import { initCodeblocks, detectLanguage } from './codeblock.js';
 import { initMath } from './mathblock.js';
+import { initOutline } from './outline.js';
+import { initChecklist } from './checklist.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -192,6 +194,35 @@ export function initEditor({ strings, onEvent }) {
         placeBlock: insertBlockAtSelection,
     });
 
+    /* Collapsible sections + outline navigator (self-contained module). */
+    const outline = initOutline({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+        placeBlock: insertBlockAtSelection,
+    });
+
+    /* Checklists + task overview (self-contained module). */
+    const checklist = initChecklist({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+        placeBlock: insertBlockAtSelection,
+        getNotes: () => notes.map((note) => (
+            note.id === activeNoteId ? { ...note, html: cleanHtml() } : note
+        )),
+        updateNoteTask,
+        jumpToTask: openTaskInNote,
+    });
+
     /* The toolbar swaps to table tools when the caret is inside a table cell. */
     const toolbarPaneBase = document.getElementById('toolbarPaneBase');
     const toolbarPaneTable = document.getElementById('toolbarPaneTable');
@@ -260,6 +291,12 @@ export function initEditor({ strings, onEvent }) {
                         const tex = (child.dataset?.tex ?? child.textContent ?? '').trim();
                         out += child.tagName === 'MATH-BLOCK' ? `$$${tex}$$` : `$${tex}$`;
                         continue;
+                    }
+                    if (child.tagName === 'INPUT') continue;
+                    if (child.tagName === 'LI' && child.parentElement?.classList.contains('checklist')) {
+                        const done = child.classList.contains('task-checked')
+                            || !!child.querySelector('input:checked');
+                        out += done ? '[x] ' : '[ ] ';
                     }
                     const isBlock = BLOCKS.has(child.tagName);
                     if (isBlock && out && !out.endsWith('\n')) out += '\n';
@@ -728,6 +765,8 @@ export function initEditor({ strings, onEvent }) {
         normaliseTables(editor);
         code.refreshAll();
         math.refreshAll();
+        checklist.normalise(editor);
+        outline.refresh();
         // The new note's caret is empty: reset contextual table controls.
         markActiveCell(null);
         setToolbarContext('base');
@@ -1397,6 +1436,8 @@ export function initEditor({ strings, onEvent }) {
         normaliseTables(editor);
         code.refreshAll();
         math.refreshAll();
+        checklist.normalise(editor);
+        outline.refresh();
         // Code pasted into a plain code block gets a language guess.
         code.autodetectCaretBlock();
         scheduleSave();
@@ -2728,6 +2769,57 @@ export function initEditor({ strings, onEvent }) {
         await createNewNote();
     }
 
+    async function updateNoteTask(noteId, index, checked) {
+        if (noteId === activeNoteId) {
+            const item = editor.querySelectorAll('ul.checklist > li, ol.checklist > li')[index];
+            if (!item) return;
+            const input = item.querySelector('input[type="checkbox"]');
+            if (input) {
+                input.checked = checked;
+                if (checked) input.setAttribute('checked', '');
+                else input.removeAttribute('checked');
+            }
+            item.classList.toggle('task-checked', checked);
+            scheduleSave();
+            updateCounts();
+            return;
+        }
+        const note = notes.find((item) => item.id === noteId);
+        if (!note) return;
+        const holder = document.createElement('template');
+        holder.innerHTML = sanitizeHtml(note.html || '');
+        const item = holder.content.querySelectorAll('ul.checklist > li, ol.checklist > li')[index];
+        if (!item) return;
+        const input = item.querySelector('input[type="checkbox"]');
+        if (input) {
+            input.checked = checked;
+            if (checked) input.setAttribute('checked', '');
+            else input.removeAttribute('checked');
+        }
+        item.classList.toggle('task-checked', checked);
+        note.html = holder.innerHTML;
+        note.updatedAt = Date.now();
+        await saveNote(note);
+        renderNotes();
+    }
+
+    async function openTaskInNote(noteId, index) {
+        document.getElementById('appDialog')?.close();
+        await switchNote(noteId, { focusEditor: false });
+        const item = editor.querySelectorAll('ul.checklist > li, ol.checklist > li')[index];
+        if (!item) return;
+        item.scrollIntoView({ block: 'center' });
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(item);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        item.classList.add('task-flash');
+        window.setTimeout(() => item.classList.remove('task-flash'), 1500);
+        track('task_jumped');
+    }
+
     async function importNotes(imported, fallbackTitle) {
         const prepared = [];
         let organizationChanged = false;
@@ -3795,6 +3887,10 @@ ${exportHtml()}
         'insert-hr': insertHorizontalRule,
         'insert-code': insertCodeBlock,
         'insert-math': () => math.insertMath(),
+        'insert-section': () => outline.insertSection(),
+        'insert-checklist': () => checklist.insertChecklist(),
+        'outline': () => outline.togglePanel(),
+        'tasks-overview': () => checklist.openTasks(),
         'insert-datetime': insertDateTime,
         'insert-link': () => promptForLink(),
         'manage-note-tags': manageCurrentTags,

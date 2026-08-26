@@ -101,6 +101,12 @@ const ALLOWED_EVENTS = [
     'code_copied',
     'math_inserted',
     'math_edited',
+    'section_inserted',
+    'outline_used',
+    'checklist_inserted',
+    'tasks_opened',
+    'task_toggled',
+    'task_jumped',
 ];
 
 $event = trim((string) ($_POST['event'] ?? ''));
