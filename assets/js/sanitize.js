@@ -2,22 +2,22 @@
  * HTML sanitiser for content entering the editor.
  *
  * Applies to restored IndexedDB documents, pasted clipboard HTML and opened
- * .html files. The previous build loaded DOMPurify from a CDN and then never
- * called it — restored content went straight into innerHTML unfiltered.
- *
- * This is a small allow-list cleaner with no dependencies: anything not
- * explicitly permitted is unwrapped or dropped.
+ * .html files. This is a small allow-list cleaner with no dependencies:
+ * anything not explicitly permitted is unwrapped or dropped.
  */
 
 const ALLOWED_TAGS = new Set([
-    'A', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DIV', 'EM', 'FONT', 'H1', 'H2',
-    'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'LI', 'MARK', 'OL', 'P', 'PRE', 'S',
-    'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'U', 'UL',
+    'A', 'B', 'BLOCKQUOTE', 'BR', 'CAPTION', 'CODE', 'DIV', 'EM', 'FONT',
+    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'LI', 'MARK', 'OL', 'P',
+    'PRE', 'S', 'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'TABLE', 'TBODY',
+    'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'U', 'UL',
 ]);
 
 const ALLOWED_ATTRS = {
     A: new Set(['href', 'title', 'target', 'rel']),
     FONT: new Set(['color', 'face', 'size']),
+    TD: new Set(['colspan', 'rowspan']),
+    TH: new Set(['colspan', 'rowspan', 'scope']),
     '*': new Set(['style', 'align', 'dir']),
 };
 
@@ -26,6 +26,8 @@ const ALLOWED_STYLES = new Set([
     'color', 'background-color', 'font-family', 'font-size', 'font-weight',
     'font-style', 'text-align', 'text-decoration', 'text-decoration-line',
     'margin-left', 'margin-right', 'padding-left', 'padding-right', 'direction',
+    'width', 'min-width', 'max-width', 'border', 'border-collapse',
+    'border-color', 'border-style', 'border-width', 'vertical-align',
 ]);
 
 const SAFE_URL = /^(https?:|mailto:|tel:|#|\/)/i;
@@ -37,8 +39,8 @@ function sanitiseStyle(value) {
         .filter(Boolean)
         .filter((decl) => {
             const [prop, val = ''] = decl.split(':');
-            if (!prop || !val.trim()) return false;
-            if (!ALLOWED_STYLES.has(prop.trim().toLowerCase())) return false;
+            const propName = prop.trim().toLowerCase();
+            if (!propName || !val.trim() || !ALLOWED_STYLES.has(propName)) return false;
             // url() can smuggle a request; expressions are legacy IE script.
             return !/url\s*\(|expression\s*\(|javascript:/i.test(val);
         })
@@ -49,7 +51,9 @@ function cleanElement(el) {
     const tag = el.tagName;
 
     // Unwrap unknown elements but keep their text, so pasting from Word or
-    // Google Docs preserves the words rather than deleting them.
+    // Google Docs preserves the words rather than deleting them. Void nodes
+    // such as retired image markup disappear naturally because they have no
+    // child content to preserve.
     if (!ALLOWED_TAGS.has(tag)) {
         const parent = el.parentNode;
         if (!parent) return;
@@ -60,9 +64,8 @@ function cleanElement(el) {
 
     for (const attr of Array.from(el.attributes)) {
         const name = attr.name.toLowerCase();
-        const permitted =
-            (ALLOWED_ATTRS[tag] && ALLOWED_ATTRS[tag].has(name)) ||
-            ALLOWED_ATTRS['*'].has(name);
+        const permitted = (ALLOWED_ATTRS[tag] && ALLOWED_ATTRS[tag].has(name))
+            || ALLOWED_ATTRS['*'].has(name);
 
         if (!permitted) {
             el.removeAttribute(attr.name);
@@ -78,6 +81,23 @@ function cleanElement(el) {
             const cleaned = sanitiseStyle(attr.value);
             if (cleaned) el.setAttribute('style', cleaned);
             else el.removeAttribute('style');
+        }
+
+        // Table spans are bounded so a malformed paste cannot ask a browser
+        // to lay out a 9999-column grid that freezes the tab.
+        if ((tag === 'TD' || tag === 'TH') && (name === 'colspan' || name === 'rowspan')) {
+            const span = Number.parseInt(attr.value, 10);
+            if (!Number.isInteger(span) || span < 1 || span > 100) {
+                el.removeAttribute(attr.name);
+                continue;
+            }
+            el.setAttribute(name, String(span));
+        }
+
+        if (tag === 'TH' && name === 'scope') {
+            if (!['col', 'row', 'colgroup', 'rowgroup'].includes(attr.value.trim().toLowerCase())) {
+                el.removeAttribute(attr.name);
+            }
         }
     }
 

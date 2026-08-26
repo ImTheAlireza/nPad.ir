@@ -52,6 +52,14 @@ $editItems = [
     ['action' => 'select-all',  'icon' => 'select-all', 'label' => t('menu.select_all'),  'shortcut' => 'Ctrl+A'],
 ];
 
+$insertItems = [
+    ['action' => 'insert-table', 'icon' => 'table', 'label' => t('menu.table')],
+    ['separator' => true],
+    ['action' => 'insert-hr',     'icon' => 'hr',    'label' => t('menu.horizontal_rule')],
+    ['action' => 'insert-datetime', 'icon' => 'calendar', 'label' => t('menu.date_time')],
+    ['action' => 'insert-link',   'icon' => 'link',  'label' => t('menu.link')],
+];
+
 /**
  * Render one dropdown menu.
  */
@@ -93,6 +101,7 @@ function npad_render_menu(string $id, string $label, array $items): void
         <?php
         npad_render_menu('fileMenu', t('menu.file'), $fileItems);
         npad_render_menu('editMenu', t('menu.edit'), $editItems);
+        npad_render_menu('insertMenu', t('menu.insert'), $insertItems);
         ?>
     </div>
 

@@ -9,10 +9,12 @@
  */
 
 const DB_NAME = 'npad';
-const DB_VERSION = 4;
+const DB_VERSION = 6;
 const STORE = 'documents';
 const META_STORE = 'metadata';
 const BACKUP_STORE = 'backups';
+const RETIRED_ATTACHMENT_STORE = 'images';
+const RETIRED_ATTACHMENT_KEY_PREFIX = 'npad:img:';
 const LEGACY_ID = 'current';
 const LEGACY_KEY = 'npad:document';
 const FALLBACK_KEY = 'npad:notes';
@@ -28,8 +30,24 @@ const MAX_BACKUPS_TOTAL = 120;
 
 /** @type {Promise<IDBDatabase|null>|null} */
 let connection = null;
+let retiredAttachmentFallbackPurged = false;
+
+/** Remove payloads written by the retired attachment feature. */
+function purgeRetiredAttachmentFallback() {
+    if (retiredAttachmentFallbackPurged) return;
+    retiredAttachmentFallbackPurged = true;
+    try {
+        const keys = [];
+        for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+            if (key?.startsWith(RETIRED_ATTACHMENT_KEY_PREFIX)) keys.push(key);
+        }
+        keys.forEach((key) => localStorage.removeItem(key));
+    } catch { /* storage disabled */ }
+}
 
 function openDatabase() {
+    purgeRetiredAttachmentFallback();
     if (connection) return connection;
 
     connection = new Promise((resolve) => {
@@ -58,6 +76,10 @@ function openDatabase() {
                 const backups = db.createObjectStore(BACKUP_STORE, { keyPath: 'id' });
                 backups.createIndex('noteId', 'noteId', { unique: false });
                 backups.createIndex('createdAt', 'createdAt', { unique: false });
+            }
+            // Version 6 intentionally retires the old image-payload store.
+            if (db.objectStoreNames.contains(RETIRED_ATTACHMENT_STORE)) {
+                db.deleteObjectStore(RETIRED_ATTACHMENT_STORE);
             }
             if (event.oldVersion < 2 && db.objectStoreNames.contains('editorContent')) {
                 try { db.deleteObjectStore('editorContent'); } catch { /* already absent */ }

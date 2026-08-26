@@ -13,6 +13,7 @@ export default async function run(check, group) {
     global.window = window;
     global.localStorage = window.localStorage;
     global.indexedDB = undefined;
+    localStorage.setItem('npad:img:retired', 'payload');
 
     const moduleUrl = pathToFileURL(path.join(ROOT, 'assets/js/storage.js')).href + `?t=${Date.now()}`;
     const storage = await import(moduleUrl);
@@ -26,10 +27,11 @@ export default async function run(check, group) {
     }));
     const migrated = await storage.listNotes();
 
-    check('old single document loads as the first note', () => {
+    check('old single document loads as the first note and retired payloads are purged', () => {
         assert.equal(migrated.length, 1);
         assert.equal(migrated[0].id, 'current');
         assert.equal(migrated[0].html, '<p>Existing note survives</p>');
+        assert.equal(localStorage.getItem('npad:img:retired'), null);
     });
 
     migrated[0].title = 'Migrated';

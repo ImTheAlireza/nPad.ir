@@ -226,6 +226,30 @@ $jsStrings = [
     'spellIgnore'       => t('spell.ignore'),
     'spellNoSuggestions' => t('spell.no_suggestions'),
     'spellSuggestionsFor' => t('spell.suggestions_for'),
+    'tableToolbarLabel' => t('table.toolbar_label'),
+    'tableCellColour'   => t('table.cell_colour'),
+    'tableDialogTitle'  => t('table.dialog_title'),
+    'tablePresetPlain'  => t('table.preset_plain'),
+    'tablePresetHeader' => t('table.preset_header'),
+    'tablePresetClassic' => t('table.preset_classic'),
+    'tableRows'         => t('table.rows'),
+    'tableColumns'      => t('table.columns'),
+    'tableHeaderRow'    => t('table.header_row'),
+    'tableHeaderColumn' => t('table.header_column'),
+    'tableWidth'        => t('table.width'),
+    'tableWidthAuto'    => t('table.width_auto'),
+    'tableWidthFull'    => t('table.width_full'),
+    'tableSizeHint'     => t('table.size_hint'),
+    'tableInsert'       => t('table.insert'),
+    'tableInserted'     => t('table.inserted'),
+    'tableMergeHint'    => t('table.merge_hint'),
+    'tableSplitHint'    => t('table.split_hint'),
+    'tableSortUnsupported' => t('table.sort_unsupported'),
+    'tableDeleteTitle'  => t('table.delete_title'),
+    'tableDeleteBody'   => t('table.delete_body'),
+    'tablePropertiesTitle' => t('table.properties_title'),
+    'tableCaption'      => t('table.caption'),
+    'tableBorders'      => t('table.borders'),
     'noteUntitled'      => t('notes.untitled'),
     'noteEmptyPreview'  => t('notes.empty_preview'),
     'noteTabsLabel'     => t('notes.tabs_label'),
@@ -499,8 +523,9 @@ $jsStrings = [
             </div>
         </div>
 
-        <div class="toolbar" id="toolbar" role="toolbar" aria-label="<?= e(t('toolbar.group_format')) ?>" aria-controls="editor">
+        <div class="toolbar" id="toolbar" data-toolbar-context="base" role="toolbar" aria-label="<?= e(t('toolbar.group_format')) ?>" aria-controls="editor">
 
+        <div class="toolbar__pane" id="toolbarPaneBase" data-toolbar-pane="base">
         <div class="toolbar__group toolbar__group--type" role="group" aria-label="<?= e(t('toolbar.font')) ?>">
             <button type="button" class="font-picker__trigger" id="fontPickerTrigger"
                     aria-label="<?= e(t('toolbar.font')) ?>"
@@ -560,6 +585,142 @@ $jsStrings = [
                 <?= icon('spellcheck') ?>
             </button>
         </div>
+        </div><!-- /toolbarPaneBase -->
+
+        <div class="toolbar__pane" id="toolbarPaneTable" data-toolbar-pane="table" hidden>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_rows')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="row-above"
+                        title="<?= e(t('table.row_above')) ?>" aria-label="<?= e(t('table.row_above')) ?>">
+                    <?= icon('table-row-above') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="row-below"
+                        title="<?= e(t('table.row_below')) ?>" aria-label="<?= e(t('table.row_below')) ?>">
+                    <?= icon('table-row-below') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="row-delete"
+                        title="<?= e(t('table.row_delete')) ?>" aria-label="<?= e(t('table.row_delete')) ?>">
+                    <?= icon('table-row-delete') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_columns')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="col-left"
+                        title="<?= e(t('table.col_left')) ?>" aria-label="<?= e(t('table.col_left')) ?>">
+                    <?= icon('table-col-left') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="col-right"
+                        title="<?= e(t('table.col_right')) ?>" aria-label="<?= e(t('table.col_right')) ?>">
+                    <?= icon('table-col-right') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="col-delete"
+                        title="<?= e(t('table.col_delete')) ?>" aria-label="<?= e(t('table.col_delete')) ?>">
+                    <?= icon('table-col-delete') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_cells')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="merge"
+                        title="<?= e(t('table.merge')) ?>" aria-label="<?= e(t('table.merge')) ?>">
+                    <?= icon('table-merge') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="split"
+                        title="<?= e(t('table.split')) ?>" aria-label="<?= e(t('table.split')) ?>">
+                    <?= icon('table-split') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="clear-cells"
+                        title="<?= e(t('table.clear_cells')) ?>" aria-label="<?= e(t('table.clear_cells')) ?>">
+                    <?= icon('table-clear') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="select-table"
+                        title="<?= e(t('table.select_table')) ?>" aria-label="<?= e(t('table.select_table')) ?>">
+                    <?= icon('table-select') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_headers')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="header-row" aria-pressed="false"
+                        title="<?= e(t('table.header_row')) ?>" aria-label="<?= e(t('table.header_row')) ?>">
+                    <?= icon('table-header-row') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="header-col" aria-pressed="false"
+                        title="<?= e(t('table.header_column')) ?>" aria-label="<?= e(t('table.header_column')) ?>">
+                    <?= icon('table-header-col') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('toolbar.group_align')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="align-left"
+                        title="<?= e(t('toolbar.align_left')) ?>" aria-label="<?= e(t('toolbar.align_left')) ?>">
+                    <?= icon('align-left') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="align-center"
+                        title="<?= e(t('toolbar.align_center')) ?>" aria-label="<?= e(t('toolbar.align_center')) ?>">
+                    <?= icon('align-center') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="align-right"
+                        title="<?= e(t('toolbar.align_right')) ?>" aria-label="<?= e(t('toolbar.align_right')) ?>">
+                    <?= icon('align-right') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_vertical')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="v-align-top"
+                        title="<?= e(t('table.v_align_top')) ?>" aria-label="<?= e(t('table.v_align_top')) ?>">
+                    <?= icon('align-vert-top') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="v-align-middle"
+                        title="<?= e(t('table.v_align_middle')) ?>" aria-label="<?= e(t('table.v_align_middle')) ?>">
+                    <?= icon('align-vert-middle') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="v-align-bottom"
+                        title="<?= e(t('table.v_align_bottom')) ?>" aria-label="<?= e(t('table.v_align_bottom')) ?>">
+                    <?= icon('align-vert-bottom') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="cell-dir-ltr"
+                        title="<?= e(t('table.cell_dir_ltr')) ?>" aria-label="<?= e(t('table.cell_dir_ltr')) ?>">
+                    <?= icon('dir-ltr') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="cell-dir-rtl"
+                        title="<?= e(t('table.cell_dir_rtl')) ?>" aria-label="<?= e(t('table.cell_dir_rtl')) ?>">
+                    <?= icon('dir-rtl') ?>
+                </button>
+            </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_colour')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="cell-colour"
+                        title="<?= e(t('table.cell_colour')) ?>" aria-label="<?= e(t('table.cell_colour')) ?>">
+                    <?= icon('palette') ?>
+                </button>
+            </div>
+            <div class="menu menu--toolbar" id="tableMoreMenu">
+                <button type="button" class="menu__trigger toolbar__btn" id="tableMoreTrigger"
+                        aria-haspopup="true" aria-expanded="false" aria-controls="tableMorePanel"
+                        title="<?= e(t('table.more')) ?>" aria-label="<?= e(t('table.more')) ?>">
+                    <?= icon('more', ['class' => 'icon']) ?>
+                </button>
+                <div class="menu__panel menu__panel--table" id="tableMorePanel" role="menu"
+                     aria-labelledby="tableMoreTrigger" data-open="false">
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="properties">
+                        <?= icon('table-properties') ?><span><?= e(t('table.properties')) ?></span>
+                    </button>
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="borders">
+                        <?= icon('table-borders') ?><span><?= e(t('table.borders')) ?></span>
+                    </button>
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="sort-asc">
+                        <?= icon('sort-asc') ?><span><?= e(t('table.sort_asc')) ?></span>
+                    </button>
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="sort-desc">
+                        <?= icon('sort-desc') ?><span><?= e(t('table.sort_desc')) ?></span>
+                    </button>
+                    <div class="menu__separator" role="separator"></div>
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="move-row-up">
+                        <?= icon('table-move-up') ?><span><?= e(t('table.move_row_up')) ?></span>
+                    </button>
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="move-row-down">
+                        <?= icon('table-move-down') ?><span><?= e(t('table.move_row_down')) ?></span>
+                    </button>
+                    <div class="menu__separator" role="separator"></div>
+                    <button type="button" class="menu__item menu__item--danger" role="menuitem" data-table-action="delete-table">
+                        <?= icon('table-delete') ?><span><?= e(t('table.delete_table')) ?></span>
+                    </button>
+                </div>
+            </div>
+        </div><!-- /toolbarPaneTable -->
+
     </div>
 
     <div class="findbar" id="findBar" role="search" aria-label="<?= e(t('find.label')) ?>" hidden>
@@ -680,6 +841,10 @@ $jsStrings = [
     </div>
     <p class="font-picker__note"><?= e(t('toolbar.fonts_device')) ?></p>
 </div>
+
+<div class="table-context" id="tableContextMenu" role="menu"
+     aria-label="<?= e(t('table.context_menu')) ?>" hidden></div>
+
 
 <dialog class="dialog backup-dialog" id="backupDialog" aria-labelledby="backupDialogTitle">
     <div class="dialog__header">

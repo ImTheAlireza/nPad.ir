@@ -41,6 +41,8 @@ const ALLOWED = new Set([
     'spellcheck_toggled',
     'spell_replace_used',
     'spell_add_word',
+    'table_inserted',
+    'table_tool_used',
 ]);
 
 let enabled = true;

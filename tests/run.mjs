@@ -33,9 +33,15 @@ const suites = [
     ['contrast', './contrast.test.mjs'],
     ['lang', './lang.test.mjs'],
     ['sanitize', './sanitize.test.mjs'],
+    ['table', './table.test.mjs'],
     ['formats', './formats.test.mjs'],
     ['storage', './storage.test.mjs'],
     ['render', './render.test.mjs'],
+    // tables-ui boots its own jsdom page and must run before the behaviour
+    // suite: the behaviour page closes its window with timers still pending
+    // (a jsdom quirk), and a timer firing after that close crashes the
+    // process if anything keeps the event loop alive afterwards.
+    ['tables-ui', './tables-ui.test.mjs'],
     ['behaviour', './behaviour.test.mjs'],
 ];
 

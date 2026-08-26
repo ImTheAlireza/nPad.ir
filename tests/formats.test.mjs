@@ -26,6 +26,13 @@ const rtlRtfHtml = formats.rtfToHtml(formats.htmlToRtf('<p>فارسی</p>', { di
 const docx = formats.htmlToDocx(sourceHtml);
 const docxHtml = await formats.docxToHtml(docx);
 const rtlDocxHtml = await formats.docxToHtml(formats.htmlToDocx('<p>فارسی</p>', { direction: 'rtl' }));
+const tableHtml = '<table><thead><tr><th>Name</th><th style="text-align: center">Count</th></tr></thead>'
+    + '<tbody><tr><td>a|b</td><td>1</td></tr><tr><td>c</td><td>2</td></tr></tbody></table>';
+const plainTableHtml = '<table><tbody><tr><td>x</td><td>y</td></tr></tbody></table>';
+const tableDocxHtml = await formats.docxToHtml(formats.htmlToDocx(tableHtml));
+const mergedTableDocxHtml = await formats.docxToHtml(formats.htmlToDocx(
+    '<table><tbody><tr><td rowspan="2" colspan="2">big</td></tr><tr></tr></tbody></table>',
+));
 
 function testCrc32(bytes) {
     let crc = 0xffffffff;
@@ -123,11 +130,11 @@ endobj
 %%EOF`;
 const unicodePdfHtml = await formats.pdfToHtml(new TextEncoder().encode(unicodePdfSource));
 let encryptedPdfError = '';
-let imageOnlyPdfError = '';
+let nonTextPdfError = '';
 try { await formats.pdfToHtml(new TextEncoder().encode('%PDF-1.4\n/Encrypt 2 0 R')); }
 catch (error) { encryptedPdfError = error.message; }
 try { await formats.pdfToHtml(new TextEncoder().encode('%PDF-1.4\n%%EOF')); }
-catch (error) { imageOnlyPdfError = error.message; }
+catch (error) { nonTextPdfError = error.message; }
 
 export default function run(check, group) {
     group('formats: Markdown and JSON');
@@ -146,6 +153,25 @@ export default function run(check, group) {
         const html = formats.markdownToHtml('[safe](https://example.com) [bad](javascript:alert(1)) <script>x</script>');
         assert.match(html, /https:\/\/example\.com/);
         assert.ok(!/javascript:|<script/i.test(html), html);
+    });
+
+    check('Markdown exports GFM pipe tables and aligns marked cells', () => {
+        const md = formats.htmlToMarkdown(tableHtml);
+        assert.match(md, /^\| Name \| Count \|/m);
+        assert.match(md, /^\| --- \| :---: \|/m);
+        assert.match(md, /a\\\|b/);
+        const back = formats.markdownToHtml(md);
+        assert.match(back, /<table>/);
+        assert.match(back, /<th[^>]*>Name<\/th>/);
+        assert.match(back, /a\|b/);
+        assert.match(back, /text-align: center/);
+    });
+
+    check('headerless tables survive Markdown as raw HTML', () => {
+        const md = formats.htmlToMarkdown(plainTableHtml);
+        assert.match(md, /<table>/);
+        const back = formats.markdownToHtml(md);
+        assert.match(back, /<table><tbody><tr><td>x<\/td><td>y<\/td><\/tr><\/tbody><\/table>/);
     });
 
     check('NPad JSON round-trips metadata and sanitizes HTML', () => {
@@ -201,13 +227,41 @@ export default function run(check, group) {
         assert.match(compressedDocxHtml, /<strong>Compressed DOCX<\/strong>/);
     });
 
+    check('DOCX export writes real tables and re-imports them', () => {
+        assert.match(tableDocxHtml, /<table>/);
+        assert.match(tableDocxHtml, /<th[^>]*>.*?Name.*?<\/th>/);
+        assert.match(tableDocxHtml, /a\|b/);
+        assert.match(mergedTableDocxHtml, /rowspan="2"/);
+        assert.match(mergedTableDocxHtml, /colspan="2"/);
+    });
+
+    check('RTF export flattens tables to tab-separated rows without losing text', () => {
+        const rtf = formats.htmlToRtf(tableHtml);
+        assert.match(rtf, /\\tab/);
+        const html = formats.rtfToHtml(rtf);
+        assert.match(html, /Name/);
+        assert.match(html, /Count/);
+        assert.match(html, /1/);
+    });
+
+    check('format codecs discard retired media markup but retain caption prose', () => {
+        const retired = '<figure><img src="data:image/png;base64,iVBORw0KGgo=" alt="old"><figcaption>Useful caption</figcaption></figure>';
+        const markdown = formats.htmlToMarkdown(retired);
+        const [note] = formats.parseNoteJson({ title: 'Legacy', html: retired });
+        const docxText = new TextDecoder().decode(formats.htmlToDocx(retired));
+        assert.match(markdown, /Useful caption/);
+        assert.match(note.html, /Useful caption/);
+        assert.ok(!/<img|<figure|data:image/i.test(note.html), note.html);
+        assert.ok(!docxText.includes('word/media/'), 'retired media leaked into DOCX');
+    });
+
     check('PDF importer inflates streams and follows Unicode font maps', () => {
         assert.match(pdfHtml, /Hello PDF/);
         assert.match(unicodePdfHtml, /سلام/);
     });
 
-    check('PDF importer rejects encrypted and image-only documents clearly', () => {
+    check('PDF importer rejects encrypted and non-text documents clearly', () => {
         assert.match(encryptedPdfError, /Encrypted/);
-        assert.match(imageOnlyPdfError, /No extractable/);
+        assert.match(nonTextPdfError, /No extractable/);
     });
 }

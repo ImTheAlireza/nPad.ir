@@ -16,7 +16,6 @@ import {
     saveNote,
     saveNoteSync,
     deleteNote,
-    clearNotes,
     getActiveNoteId,
     setActiveNoteId,
     getOpenNoteIds,
@@ -31,6 +30,43 @@ import {
     createTagRecord,
 } from './storage.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
+import {
+    MAX_ROWS as TABLE_MAX_ROWS,
+    MAX_COLS as TABLE_MAX_COLS,
+    createTableHtml,
+    normaliseTables,
+    closestTableCell,
+    closestTable,
+    cellPosition,
+    cellAt,
+    insertRow,
+    insertColumn,
+    deleteRow,
+    deleteColumn,
+    deleteTable,
+    mergeCells,
+    splitCell,
+    setHeaderRow,
+    setHeaderColumn,
+    isHeaderRowActive,
+    isHeaderColumnActive,
+    setCellShading,
+    alignCells,
+    verticalAlignCells,
+    setCellDirection,
+    clearCells,
+    isMergedCell,
+    sortTableByColumn,
+    setTableWidth,
+    toggleBorders,
+    tableBordersOn,
+    setCaption,
+    moveRow,
+    tableGrid,
+    stepCell,
+    placeCaretInCell,
+    selectionRectCells,
+} from './table.js';
 import {
     htmlToMarkdown,
     markdownToHtml,
@@ -131,6 +167,13 @@ export function initEditor({ strings, onEvent }) {
     /* Custom spell checker (self-contained module). */
     const spell = initSpellcheck({ editor, strings, onEvent: track });
 
+    /* The toolbar swaps to table tools when the caret is inside a table cell. */
+    const toolbarPaneBase = document.getElementById('toolbarPaneBase');
+    const toolbarPaneTable = document.getElementById('toolbarPaneTable');
+    const tableContextMenu = document.getElementById('tableContextMenu');
+    const TOOLBAR_LABEL_BASE = toolbar?.getAttribute('aria-label') || '';
+    let toolbarContext = 'base';
+
     /**
      * Editor HTML without transient spell-check marks, for storage and
      * exports. Marks are re-applied automatically after restore.
@@ -143,6 +186,8 @@ export function initEditor({ strings, onEvent }) {
         clone.querySelectorAll('.npad-find-match').forEach((el) => {
             el.replaceWith(...el.childNodes);
         });
+        // The caret highlight is a runtime-only affordance: it never persists.
+        clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
         return clone.innerHTML;
     }
 
@@ -166,7 +211,7 @@ export function initEditor({ strings, onEvent }) {
     function editorText() {
         const BLOCKS = new Set([
             'P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
-            'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL',
+            'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL', 'TABLE', 'TD', 'TH', 'CAPTION',
         ]);
 
         let out = '';
@@ -644,6 +689,10 @@ export function initEditor({ strings, onEvent }) {
         activeNoteId = note.id;
         setActiveNoteId(note.id);
         editor.innerHTML = sanitizeHtml(note.html || '');
+        normaliseTables(editor);
+        // The new note's caret is empty: reset contextual table controls.
+        markActiveCell(null);
+        setToolbarContext('base');
         if (noteTitleInput) noteTitleInput.value = displayTitle(note);
         lastSavedAt = note.updatedAt || 0;
         dirty = false;
@@ -717,7 +766,7 @@ export function initEditor({ strings, onEvent }) {
             : (noteFilter.type === 'tag' ? [noteFilter.id] : []);
         const note = createNoteRecord({
             title: title || strings.noteUntitled,
-            html,
+            html: sanitizeHtml(html),
             pinned,
             folderId: initialFolder,
             tags: initialTags,
@@ -1270,6 +1319,7 @@ export function initEditor({ strings, onEvent }) {
             rememberEditorSelection();
             syncToolbarState();
             updateCounts();
+            updateToolbarContext();
         }
     });
 
@@ -1294,6 +1344,763 @@ export function initEditor({ strings, onEvent }) {
             else exec(command, value ?? null);
         });
     }
+
+    /* ---------------------------------------------------------------------
+       Clipboard and drop normalisation
+       --------------------------------------------------------------------- */
+
+    /** Insert trusted text or sanitised HTML. File-only drops are ignored. */
+    function handleContentData(data) {
+        const html = typeof data?.getData === 'function' ? data.getData('text/html') : '';
+        const text = typeof data?.getData === 'function' ? data.getData('text/plain') : '';
+        const clean = html ? sanitizeHtml(html) : (text ? textToHtml(text) : '');
+        if (!clean) return false;
+        insertHtml(clean);
+        normaliseTables(editor);
+        scheduleSave();
+        updateCounts();
+        spell.refresh();
+        return true;
+    }
+
+    /* ---------------------------------------------------------------------
+       Tables: contextual toolbar, insert dialog, full cell control
+       --------------------------------------------------------------------- */
+
+    function currentCellFromSelection() {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return null;
+        return closestTableCell(selection.anchorNode)
+            || closestTableCell(selection.getRangeAt(0).startContainer);
+    }
+
+    /**
+     * Cell for a table action. Toolbar buttons take focus (which collapses
+     * the live selection), so fall back to the range saved by pointerdown;
+     * otherwise the live caret is the truth.
+     */
+    function currentCellForTableAction() {
+        const cell = currentCellFromSelection();
+        if (cell) return cell;
+        if (restoreEditorSelection()) return currentCellFromSelection();
+        return null;
+    }
+
+    function setToolbarContext(context) {
+        toolbarContext = context;
+        if (toolbarPaneBase) toolbarPaneBase.hidden = context !== 'base';
+        if (toolbarPaneTable) toolbarPaneTable.hidden = context !== 'table';
+        if (toolbar) {
+            toolbar.dataset.toolbarContext = context;
+            toolbar.setAttribute('aria-label', context === 'table'
+                ? (strings.tableToolbarLabel || TOOLBAR_LABEL_BASE)
+                : TOOLBAR_LABEL_BASE);
+        }
+        if (context === 'table') syncTableToolbarState();
+    }
+
+    function syncTableToolbarState() {
+        if (!toolbarPaneTable) return;
+        const cell = currentCellFromSelection();
+        const table = cell?.closest('table') || null;
+        const setDisabled = (action, disabled) => {
+            const button = toolbarPaneTable.querySelector(`[data-table-action="${action}"]`);
+            if (button) button.disabled = disabled;
+        };
+
+        const headerRowBtn = toolbarPaneTable.querySelector('[data-table-action="header-row"]');
+        const headerColBtn = toolbarPaneTable.querySelector('[data-table-action="header-col"]');
+        if (headerRowBtn) {
+            headerRowBtn.setAttribute('aria-pressed', String(table ? isHeaderRowActive(table) : false));
+        }
+        if (headerColBtn) {
+            headerColBtn.setAttribute('aria-pressed', String(table && cell ? isHeaderColumnActive(table, cell) : false));
+        }
+
+        // Action affordances: only show what the current selection can do.
+        const selection = window.getSelection();
+        const anchorCell = closestTableCell(selection?.anchorNode);
+        const focusCell = closestTableCell(selection?.focusNode);
+        const multiCell = !!(anchorCell && focusCell && anchorCell !== focusCell);
+        const pos = table && cell ? cellPosition(table, cell) : null;
+
+        setDisabled('merge', !multiCell);
+        setDisabled('split', !table || !cell || !isMergedCell(table, cell));
+        setDisabled('move-row-up', !pos || pos.row <= 0);
+        setDisabled('move-row-down', !pos || !table || pos.row >= tableGrid(table).rowCount - 1);
+        setDisabled('row-delete', !table);
+        setDisabled('col-delete', !table);
+    }
+
+    function markActiveCell(cell) {
+        editor.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
+        if (cell) cell.classList.add('npad-cell-active');
+    }
+
+    /* Whole-table selection is tracked explicitly: native range selection of
+       a <table> is inconsistent across engines (jsdom folds it into the
+       parent), and the outline is what users see. Cleared on the next
+       pointer/keyboard/typing interaction. */
+    let selectedTableEl = null;
+
+    function clearSelectedTable() {
+        if (!selectedTableEl) return;
+        selectedTableEl.classList.remove('npad-table-selected');
+        selectedTableEl = null;
+    }
+
+    /**
+     * Decide which toolbar pane the current selection asks for:
+     *  - collapsed caret inside a cell         -> table tools
+     *  - the whole <table> element selected     -> table tools
+     *  - a range spanning more than one cell     -> table tools (merge etc.)
+     *  - text selected inside ONE cell           -> default tools (format it)
+     */
+    function contextTableFromSelection(selection) {
+        if (selectedTableEl?.isConnected) return selectedTableEl;
+        if (!selection || !selection.rangeCount) return null;
+        const anchorNode = selection.anchorNode;
+        const focusNode = selection.focusNode;
+        if (!anchorNode || !editor.contains(anchorNode)) return null;
+
+        const anchorTable = anchorNode.nodeType === 1 && anchorNode.tagName === 'TABLE'
+            ? anchorNode
+            : closestTable(anchorNode);
+        if (!anchorTable) return null;
+
+        // A selection that runs out of the table selects text, not a table shape.
+        const focusTable = focusNode && (focusNode.nodeType === 1 && focusNode.tagName === 'TABLE'
+            ? focusNode
+            : closestTable(focusNode));
+        if (focusNode && !focusTable) return null;
+
+        if (selection.isCollapsed) return anchorTable;
+
+        // Both ends inside the same cell = a text selection: default toolbar.
+        const anchorCell = closestTableCell(anchorNode);
+        const focusCell = closestTableCell(focusNode);
+        if (anchorCell && focusCell && anchorCell === focusCell) return null;
+        return anchorTable;
+    }
+
+    function updateToolbarContext() {
+        const selection = window.getSelection();
+        const table = contextTableFromSelection(selection);
+        const collapsedInCell = !!(table && selection?.isCollapsed);
+        markActiveCell(collapsedInCell ? closestTableCell(selection.anchorNode) : null);
+        setToolbarContext(table ? 'table' : 'base');
+    }
+
+    /** Insert a block element around the caret without breaking block structure. */
+    function insertBlockAtSelection(element) {
+        editor.focus();
+        restoreEditorSelection();
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return false;
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+
+        // A block inside a table cell would nest (breaking the grid model and
+        // the DOCX/Markdown exporters), so it lands right after the table the
+        // cell belongs to. Inline text insertion still goes into the cell.
+        const cell = closestTableCell(range.startContainer);
+        if (cell) {
+            const table = cell.closest('table');
+            if (table) {
+                table.after(element);
+                return true;
+            }
+            range.insertNode(element);
+            return true;
+        }
+        let block = range.startContainer.nodeType === 1
+            ? range.startContainer
+            : range.startContainer.parentElement;
+        block = block?.closest?.('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre');
+        if (block && block !== editor) {
+            const empty = !block.textContent.trim() && !block.querySelector('table, ul, ol, blockquote, pre');
+            if (empty) block.replaceWith(element);
+            else block.after(element);
+            return true;
+        }
+        range.insertNode(element);
+        return true;
+    }
+
+    function ensureSpacerAfter(element) {
+        const next = element.nextElementSibling;
+        if (!next || ['P', 'DIV', 'TABLE', 'HR', 'UL', 'OL', 'BLOCKQUOTE', 'PRE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(next.tagName)) {
+            return;
+        }
+        const spacer = document.createElement('p');
+        spacer.appendChild(document.createElement('br'));
+        element.after(spacer);
+    }
+
+    function insertTableFromOptions(options) {
+        editor.focus();
+        restoreEditorSelection();
+
+        // Prefer execCommand('insertHTML') so the browser's own undo stack
+        // covers the insertion; fall back to a direct DOM insert (jsdom,
+        // unsupported engines) where the command is a no-op.
+        const html = createTableHtml(options);
+        const existingTables = new Set(editor.querySelectorAll('table'));
+        try {
+            document.execCommand('insertHTML', false, html);
+        } catch {
+            /* fall through to the range-based insert */
+        }
+        let table = [...editor.querySelectorAll('table')].find((t) => !existingTables.has(t)) || null;
+
+        if (!table) {
+            const template = document.createElement('template');
+            template.innerHTML = html;
+            table = template.content.firstElementChild;
+            if (!insertBlockAtSelection(table)) return;
+        } else if (table.parentNode !== editor || closestTableCell(table)) {
+            // Browser heuristics can leave the new table inside a block or a
+            // cell; keep it a top-level sibling so the grid stays sound.
+            const holder = table.parentNode;
+            const nestingCell = closestTableCell(table);
+            if (nestingCell) nestingCell.closest('table').after(table);
+            else holder?.after(table);
+        }
+
+        ensureSpacerAfter(table);
+        const firstCell = table.querySelector('td, th');
+        if (firstCell) placeCaretInCell(firstCell, { atStart: true });
+        rememberEditorSelection();
+        updateToolbarContext();
+        scheduleSave();
+        updateCounts();
+        spell.refresh();
+        track('table_inserted');
+        if (strings.tableInserted) toast(strings.tableInserted, 'success');
+    }
+
+    function insertHorizontalRule() {
+        const rule = document.createElement('hr');
+        if (!insertBlockAtSelection(rule)) return;
+        const spacer = document.createElement('p');
+        spacer.appendChild(document.createElement('br'));
+        rule.after(spacer);
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.setStart(spacer, 0);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        scheduleSave();
+        updateCounts();
+    }
+
+    function insertDateTime() {
+        const locale = document.documentElement.lang === 'fa' ? 'fa-IR' : 'en-GB';
+        const text = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date());
+        editor.focus();
+        restoreEditorSelection();
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        const node = document.createTextNode(text);
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        scheduleSave();
+        updateCounts();
+    }
+
+    function clampTableSize(value, max) {
+        const number = Number.parseInt(String(value), 10);
+        if (!Number.isInteger(number)) return null;
+        return Math.min(max, Math.max(1, number));
+    }
+
+    async function openTableDialog() {
+        rememberEditorSelection();
+        const state = { rows: 3, cols: 3, headerRow: false, headerColumn: false, width: 'auto' };
+        const presets = [
+            ['plain', 3, 3, false, false, strings.tablePresetPlain],
+            ['header', 4, 3, true, false, strings.tablePresetHeader],
+            ['classic', 5, 4, true, true, strings.tablePresetClassic],
+        ];
+        const presetButtons = presets.map(([id, rows, cols, hr, hc, label]) => `
+            <button type="button" class="table-builder__preset" data-table-preset="${id}"
+                    aria-pressed="false">${escapeHtml(label)}</button>`).join('');
+        const field = (label, control) => `
+            <label class="table-builder__field">
+                <span class="table-builder__field-label">${escapeHtml(label)}</span>
+                ${control}
+            </label>`;
+        const check = (label, key) => `
+            <label class="table-builder__check">
+                <input type="checkbox" data-table-check="${key}">
+                <span>${escapeHtml(label)}</span>
+            </label>`;
+
+        const bodyHtml = `
+            <div class="table-builder">
+                <div class="table-builder__preview" data-table-preview aria-hidden="true"></div>
+                <div class="table-builder__presets" role="group" aria-label="${escapeHtml(strings.tableDialogTitle)}">
+                    ${presetButtons}
+                </div>
+                <div class="table-builder__fields">
+                    ${field(strings.tableRows, `<input type="number" data-table-rows min="1" max="${TABLE_MAX_ROWS}" value="3" inputmode="numeric" autofocus>`)}
+                    ${field(strings.tableColumns, `<input type="number" data-table-cols min="1" max="${TABLE_MAX_COLS}" value="3" inputmode="numeric">`)}
+                    ${field(strings.tableWidth, `
+                        <select data-table-width>
+                            <option value="auto">${escapeHtml(strings.tableWidthAuto)}</option>
+                            <option value="full">${escapeHtml(strings.tableWidthFull)}</option>
+                        </select>`)}
+                    <div class="table-builder__checks">
+                        ${check(strings.tableHeaderRow, 'headerRow')}
+                        ${check(strings.tableHeaderColumn, 'headerColumn')}
+                    </div>
+                </div>
+                <p class="table-builder__hint">${escapeHtml(strings.tableSizeHint)}</p>
+            </div>`;
+
+        const action = await showDialog({
+            title: strings.tableDialogTitle,
+            bodyHtml,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                { label: strings.tableInsert, action: 'insert', variant: 'btn--primary' },
+            ],
+            onOpen(body) {
+                const preview = body.querySelector('[data-table-preview]');
+                const rowsInput = body.querySelector('[data-table-rows]');
+                const colsInput = body.querySelector('[data-table-cols]');
+                const widthSelect = body.querySelector('[data-table-width]');
+
+                const render = () => {
+                    state.rows = clampTableSize(rowsInput.value, TABLE_MAX_ROWS) ?? 3;
+                    state.cols = clampTableSize(colsInput.value, TABLE_MAX_COLS) ?? 3;
+                    state.headerRow = body.querySelector('[data-table-check="headerRow"]').checked;
+                    state.headerColumn = body.querySelector('[data-table-check="headerColumn"]').checked;
+                    state.width = widthSelect.value;
+                    if (preview) {
+                        const previewRows = Math.min(state.rows, 8);
+                        const previewCols = Math.min(state.cols, 8);
+                        preview.innerHTML = createTableHtml({
+                            rows: previewRows,
+                            cols: previewCols,
+                            headerRow: state.headerRow,
+                            headerColumn: state.headerColumn,
+                            width: 'auto',
+                        });
+                    }
+                };
+
+                const applyPreset = (id) => {
+                    const preset = presets.find(([presetId]) => presetId === id);
+                    if (!preset) return;
+                    rowsInput.value = String(preset[1]);
+                    colsInput.value = String(preset[2]);
+                    body.querySelector('[data-table-check="headerRow"]').checked = preset[3];
+                    body.querySelector('[data-table-check="headerColumn"]').checked = preset[4];
+                    body.querySelectorAll('[data-table-preset]').forEach((btn) => {
+                        btn.setAttribute('aria-pressed', String(btn.dataset.tablePreset === id));
+                    });
+                    render();
+                };
+                body.querySelectorAll('[data-table-preset]').forEach((btn) => {
+                    btn.addEventListener('click', () => applyPreset(btn.dataset.tablePreset));
+                });
+                [rowsInput, colsInput, widthSelect].forEach((input) => {
+                    input.addEventListener('input', () => {
+                        body.querySelectorAll('[data-table-preset]')
+                            .forEach((btn) => btn.setAttribute('aria-pressed', 'false'));
+                        render();
+                    });
+                    input.addEventListener('change', render);
+                });
+                body.querySelectorAll('[data-table-check]').forEach((input) => {
+                    input.addEventListener('change', render);
+                });
+                render();
+            },
+        });
+
+        if (action !== 'insert') return;
+        insertTableFromOptions(state);
+    }
+
+    function afterTableOp() {
+        rememberEditorSelection();
+        scheduleSave();
+        updateCounts();
+        spell.refresh();
+        if (findBar && !findBar.hidden) refreshFind(false);
+        track('table_tool_used');
+        updateToolbarContext();
+    }
+
+    async function openTableProperties(table) {
+        const captionEl = table.querySelector(':scope > caption');
+        const bodyHtml = `
+            <div class="table-properties">
+                <label class="table-builder__field">
+                    <span class="table-builder__field-label">${escapeHtml(strings.tableWidth)}</span>
+                    <select data-prop-width>
+                        <option value="auto">${escapeHtml(strings.tableWidthAuto)}</option>
+                        <option value="full">${escapeHtml(strings.tableWidthFull)}</option>
+                    </select>
+                </label>
+                <label class="table-builder__field">
+                    <span class="table-builder__field-label">${escapeHtml(strings.tableCaption)}</span>
+                    <input type="text" data-prop-caption maxlength="200" value="${escapeHtml(captionEl?.textContent || '')}">
+                </label>
+                <label class="table-builder__check">
+                    <input type="checkbox" data-prop-borders>
+                    <span>${escapeHtml(strings.tableBorders)}</span>
+                </label>
+            </div>`;
+        const action = await showDialog({
+            title: strings.tablePropertiesTitle,
+            bodyHtml,
+            buttons: [
+                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
+                { label: strings.apply, action: 'apply', variant: 'btn--primary' },
+            ],
+            onOpen(body) {
+                const widthSelect = body.querySelector('[data-prop-width]');
+                const captionInput = body.querySelector('[data-prop-caption]');
+                const bordersCheck = body.querySelector('[data-prop-borders]');
+                widthSelect.value = table.style.getPropertyValue('width') === '100%' ? 'full' : 'auto';
+                bordersCheck.checked = tableBordersOn(table);
+                captionInput.focus();
+                captionInput.select();
+            },
+        });
+        if (action !== 'apply') return;
+        const width = document.querySelector('#appDialog [data-prop-width]')?.value || 'auto';
+        const caption = document.querySelector('#appDialog [data-prop-caption]')?.value.trim() || '';
+        const borders = document.querySelector('#appDialog [data-prop-borders]')?.checked ?? true;
+        setTableWidth(table, width);
+        setCaption(table, caption);
+        if (borders !== tableBordersOn(table)) toggleBorders(table);
+        afterTableOp();
+    }
+
+    /** Delete a table only after explicit confirmation (shared by delete-table
+        and the last-row/last-column guards). */
+    function confirmDeleteTable(table) {
+        confirmDialog({
+            title: strings.tableDeleteTitle,
+            message: strings.tableDeleteBody,
+            confirmLabel: strings.confirm,
+            cancelLabel: strings.cancel,
+            danger: true,
+        }).then((confirmed) => {
+            if (!confirmed) return;
+            deleteTable(table);
+            clearSelectedTable();
+            setToolbarContext('base');
+            editor.focus();
+            afterTableOp();
+        });
+    }
+
+    function runTableAction(action) {
+        const cell = currentCellForTableAction();
+        const table = cell ? closestTable(cell) : null;
+        if (!table) {
+            setToolbarContext('base');
+            return;
+        }
+
+        // Actions that act on the whole selection (merge, alignment, shading)
+        // must read the pre-click rectangle. Clicking a toolbar button moves
+        // focus there and collapses the live selection, so bring back the
+        // range saved by selectionchange/pointerdown first.
+        const RECT_ACTIONS = [
+            'merge', 'align-left', 'align-center', 'align-right',
+            'cell-colour', 'clear-cells', 'v-align-top', 'v-align-middle',
+            'v-align-bottom', 'cell-dir-ltr', 'cell-dir-rtl',
+        ];
+        if (RECT_ACTIONS.includes(action)) {
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed) restoreEditorSelection();
+        }
+
+        switch (action) {
+            case 'row-above':
+            case 'row-below': {
+                const row = insertRow(table, cell, action === 'row-above');
+                if (row && row.cells[0]) { placeCaretInCell(row.cells[0]); afterTableOp(); }
+                break;
+            }
+            case 'col-left':
+            case 'col-right': {
+                const pos = cellPosition(table, cell);
+                insertColumn(table, cell, action === 'col-left');
+                const target = action === 'col-left' ? (pos?.col ?? 0) : (pos?.col ?? 0) + 1;
+                const moved = cellAt(table, pos?.row ?? 0, target);
+                if (moved) placeCaretInCell(moved);
+                afterTableOp();
+                break;
+            }
+            case 'row-delete': {
+                // Deleting the last row would silently destroy the table;
+                // route to the explicit table-delete confirmation instead.
+                if (table.rows.length <= 1) {
+                    confirmDeleteTable(table);
+                    break;
+                }
+                const removed = deleteRow(table, cell);
+                if (removed) {
+                    const first = table.isConnected ? table.querySelector('td, th') : null;
+                    if (first) placeCaretInCell(first);
+                    afterTableOp();
+                }
+                break;
+            }
+            case 'col-delete': {
+                if (tableGrid(table).colCount <= 1) {
+                    confirmDeleteTable(table);
+                    break;
+                }
+                const removed = deleteColumn(table, cell);
+                if (removed) {
+                    const first = table.isConnected ? table.querySelector('td, th') : null;
+                    if (first) placeCaretInCell(first);
+                    afterTableOp();
+                }
+                break;
+            }
+            case 'merge': {
+                const cells = selectionRectCells(editor);
+                if (cells.length >= 2) {
+                    const merged = mergeCells(table, cells[0], cells[cells.length - 1]);
+                    if (merged) { placeCaretInCell(merged); afterTableOp(); }
+                } else {
+                    toast(strings.tableMergeHint);
+                }
+                break;
+            }
+            case 'split': {
+                if (splitCell(table, cell)) { placeCaretInCell(cell, { atStart: false }); afterTableOp(); }
+                else toast(strings.tableSplitHint);
+                break;
+            }
+            case 'header-row': {
+                // Header toggles rebuild the first row's cells (td <-> th),
+                // which detaches the caret; put it back by grid position.
+                const pos = cellPosition(table, cell);
+                setHeaderRow(table, !isHeaderRowActive(table));
+                if (pos && table.isConnected) {
+                    const restored = cellAt(table, pos.row, pos.col);
+                    if (restored) placeCaretInCell(restored);
+                }
+                afterTableOp();
+                break;
+            }
+            case 'header-col': {
+                const pos = cellPosition(table, cell);
+                setHeaderColumn(table, !isHeaderColumnActive(table, cell));
+                if (pos && table.isConnected) {
+                    const restored = cellAt(table, pos.row, pos.col);
+                    if (restored) placeCaretInCell(restored);
+                }
+                afterTableOp();
+                break;
+            }
+            case 'align-left':
+            case 'align-center':
+            case 'align-right': {
+                const cells = selectionRectCells(editor);
+                alignCells(cells, action === 'align-center' ? 'center' : action === 'align-right' ? 'right' : 'left');
+                afterTableOp();
+                break;
+            }
+            case 'cell-colour': {
+                // Capture the cells before the dialog opens: showModal moves
+                // focus and collapses the live selection.
+                const targetCells = selectionRectCells(editor);
+                const current = targetCells[0]
+                    ?.style?.getPropertyValue('background-color') || '#ffffff';
+                openColourPicker({ dataset: { colorCommand: 'table', color: current }, querySelector: () => null }, (colour) => {
+                    setCellShading(targetCells, colour);
+                    afterTableOp();
+                });
+                break;
+            }
+            case 'clear-cells': {
+                clearCells(selectionRectCells(editor));
+                afterTableOp();
+                break;
+            }
+            case 'select-table': {
+                clearSelectedTable();
+                selectedTableEl = table;
+                table.classList.add('npad-table-selected');
+                // Native selection too, where engines support it: Delete then
+                // removes the whole table.
+                try {
+                    const range = document.createRange();
+                    range.selectNode(table);
+                    const nextSelection = window.getSelection();
+                    nextSelection.removeAllRanges();
+                    nextSelection.addRange(range);
+                } catch {
+                    /* selection is only a visual courtesy */
+                }
+                updateToolbarContext();
+                break;
+            }
+            case 'v-align-top':
+            case 'v-align-middle':
+            case 'v-align-bottom': {
+                verticalAlignCells(
+                    selectionRectCells(editor),
+                    action === 'v-align-top' ? 'top' : action === 'v-align-middle' ? 'middle' : 'bottom',
+                );
+                afterTableOp();
+                break;
+            }
+            case 'cell-dir-ltr':
+            case 'cell-dir-rtl': {
+                setCellDirection(selectionRectCells(editor), action === 'cell-dir-ltr' ? 'ltr' : 'rtl');
+                afterTableOp();
+                break;
+            }
+            case 'sort-asc':
+            case 'sort-desc': {
+                // Sort around the column the user is standing in.
+                const ok = sortTableByColumn(table, cell, action === 'sort-desc' ? 'desc' : 'asc');
+                if (ok) afterTableOp();
+                else toast(strings.tableSortUnsupported);
+                break;
+            }
+            case 'properties':
+                openTableProperties(table);
+                break;
+            case 'borders':
+                toggleBorders(table);
+                afterTableOp();
+                break;
+            case 'move-row-up':
+            case 'move-row-down': {
+                if (moveRow(table, cell, action === 'move-row-up' ? -1 : 1)) afterTableOp();
+                break;
+            }
+            case 'delete-table':
+                confirmDeleteTable(table);
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** One delegated handler covers the table pane, the "more" menu and the
+        right-click context menu; each dismisses itself after firing. */
+    document.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-table-action]');
+        if (!button) return;
+        if (tableContextMenu && !tableContextMenu.hidden) hideTableContextMenu();
+        runTableAction(button.dataset.tableAction);
+    });
+
+    function buildTableContextMenu() {
+        if (!tableContextMenu || !toolbarPaneTable) return;
+        tableContextMenu.innerHTML = '';
+        const collect = (container) => [...container.querySelectorAll('[data-table-action]')];
+        const panes = [
+            ...toolbarPaneTable.querySelectorAll('.toolbar__group'),
+            toolbarPaneTable.querySelector('.menu__panel--table'),
+        ].filter(Boolean);
+
+        panes.forEach((group) => {
+            const buttons = collect(group);
+            if (!buttons.length) return;
+            const section = document.createElement('div');
+            section.className = 'table-context__group';
+            buttons.forEach((original) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'table-context__item';
+                item.dataset.tableAction = original.dataset.tableAction;
+                item.setAttribute('role', 'menuitem');
+                // Impossibile actions stay visible but greyed, matching the
+                // toolbar affordances instead of vanishing.
+                item.disabled = original.disabled;
+                const iconClone = original.querySelector('svg')?.cloneNode(true);
+                if (iconClone) item.appendChild(iconClone);
+                const label = document.createElement('span');
+                label.textContent = original.getAttribute('aria-label')
+                    || original.querySelector('span')?.textContent
+                    || '';
+                item.appendChild(label);
+                section.appendChild(item);
+            });
+            tableContextMenu.appendChild(section);
+        });
+    }
+
+    function showTableContextMenu(x, y) {
+        if (!tableContextMenu) return;
+        syncTableToolbarState();
+        buildTableContextMenu();
+        tableContextMenu.hidden = false;
+        const margin = 8;
+        const rect = tableContextMenu.getBoundingClientRect();
+        const left = Math.min(x, Math.max(margin, window.innerWidth - rect.width - margin));
+        const top = Math.min(y, Math.max(margin, window.innerHeight - rect.height - margin));
+        tableContextMenu.style.left = `${left}px`;
+        tableContextMenu.style.top = `${top}px`;
+    }
+
+    function hideTableContextMenu() {
+        if (tableContextMenu) tableContextMenu.hidden = true;
+    }
+
+    editor.addEventListener('contextmenu', (event) => {
+        if (!closestTableCell(event.target)) return;
+        event.preventDefault();
+        rememberEditorSelection();
+        showTableContextMenu(event.clientX || 0, event.clientY || 0);
+    });
+
+    document.addEventListener('scroll', hideTableContextMenu, true);
+    window.addEventListener('resize', hideTableContextMenu);
+
+    // Any real pointer or typing interaction ends "whole table selected".
+    document.addEventListener('pointerdown', clearSelectedTable, true);
+    editor.addEventListener('keydown', clearSelectedTable);
+
+    // Tab walks cells; at the last cell it appends a row (grid behaviour),
+    // while Shift+Tab steps backwards.
+    editor.addEventListener('keydown', (event) => {
+        if (event.key !== 'Tab' || event.altKey) return;
+        const cell = currentCellFromSelection();
+        if (!cell) return;
+        event.preventDefault();
+        const table = closestTable(cell);
+        const next = stepCell(table, cell, event.shiftKey);
+        if (next) {
+            placeCaretInCell(next, { atStart: event.shiftKey });
+            rememberEditorSelection();
+            updateToolbarContext();
+            return;
+        }
+        if (event.shiftKey) {
+            placeCaretInCell(cell, { atStart: true });
+            return;
+        }
+        const lastRow = table.rows[table.rows.length - 1];
+        const ref = lastRow?.cells[0];
+        if (!ref) return;
+        const row = insertRow(table, ref, false);
+        if (row && row.cells[0]) {
+            placeCaretInCell(row.cells[0]);
+            afterTableOp();
+        }
+    });
 
     /* ---------------------------------------------------------------------
        Searchable font picker
@@ -1576,11 +2383,12 @@ export function initEditor({ strings, onEvent }) {
             .toString(16).padStart(2, '0')).join('')}`;
     }
 
-    async function openColourPicker(button) {
+    async function openColourPicker(button, apply = null) {
         rememberEditorSelection();
         const command = button.dataset.colorCommand;
         const initial = normaliseHex(button.dataset.color) ?? '#000000';
-        const title = command === 'hiliteColor' ? strings.highlightColour : strings.textColour;
+        const title = command === 'hiliteColor' ? strings.highlightColour
+            : command === 'table' ? strings.tableCellColour : strings.textColour;
         let selectedColour = initial;
 
         const presets = COLOUR_PRESETS.map((colour) => `
@@ -1712,6 +2520,11 @@ export function initEditor({ strings, onEvent }) {
         });
 
         if (action !== 'apply') return;
+        const colour = normaliseHex(selectedColour) ?? selectedColour;
+        if (apply) {
+            apply(colour);
+            return;
+        }
         button.dataset.color = selectedColour;
         const swatch = button.querySelector('.colorfield__swatch');
         if (swatch) swatch.style.backgroundColor = selectedColour;
@@ -1787,39 +2600,32 @@ export function initEditor({ strings, onEvent }) {
        Paste — always sanitise, never trust clipboard HTML
        --------------------------------------------------------------------- */
 
+    // Paste and drop share one sanitised text/HTML pipeline. Unsupported
+    // embedded elements are discarded by the allow-list before insertion.
     editor.addEventListener('paste', (event) => {
         event.preventDefault();
-        const clipboard = event.clipboardData;
-        if (!clipboard) return;
-
-        const html = clipboard.getData('text/html');
-        const text = clipboard.getData('text/plain');
-
-        if (html) insertHtml(sanitizeHtml(html));
-        else if (text) insertHtml(textToHtml(text));
-
-        scheduleSave();
-        updateCounts();
+        if (!event.clipboardData) return;
+        handleContentData(event.clipboardData);
     });
 
     // Drag-and-drop is the same untrusted path as paste.
     editor.addEventListener('drop', (event) => {
-        const dt = event.dataTransfer;
-        if (!dt) return;
+        if (!event.dataTransfer) return;
         event.preventDefault();
-        const html = dt.getData('text/html');
-        const text = dt.getData('text/plain');
-        if (html) insertHtml(sanitizeHtml(html));
-        else if (text) insertHtml(textToHtml(text));
-        scheduleSave();
-        updateCounts();
+        handleContentData(event.dataTransfer);
     });
 
     function insertHtml(html) {
         editor.focus();
+        const before = editor.innerHTML;
         try {
             document.execCommand('insertHTML', false, html);
         } catch {
+            /* fall through to the range insert */
+        }
+        // Some webviews return success without mutating anything (and jsdom's
+        // execCommand stub does the same): insert the fragment directly.
+        if (editor.innerHTML === before) {
             const selection = window.getSelection();
             if (!selection || !selection.rangeCount) return;
             const range = selection.getRangeAt(0);
@@ -1993,41 +2799,50 @@ export function initEditor({ strings, onEvent }) {
         track('download_txt');
     }
 
+    function exportHtml() {
+        return cleanHtml();
+    }
+
     function saveAsHtml() {
         const doc = `<!DOCTYPE html>
 <html lang="${document.documentElement.lang || 'en'}" dir="${currentDir()}">
 <meta charset="utf-8">
 <title>NPad note — ${stamp()}</title>
 <style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}</style>
-${cleanHtml()}
+${exportHtml()}
 `;
         download(`${exportBaseName()}.html`, doc, 'text/html;charset=utf-8');
         track('download_html');
     }
 
-    function saveAsMarkdown() {
-        download(`${exportBaseName()}.md`, htmlToMarkdown(cleanHtml()), 'text/markdown;charset=utf-8');
+    async function saveAsMarkdown() {
+        const html = exportHtml();
+        download(`${exportBaseName()}.md`, htmlToMarkdown(html), 'text/markdown;charset=utf-8');
         track('download_markdown');
     }
 
-    function saveAsJson() {
-        download(`${exportBaseName()}.json`, noteToJson(currentExportNote(), organization), 'application/json;charset=utf-8');
+    async function saveAsJson() {
+        const note = currentExportNote();
+        note.html = exportHtml();
+        download(`${exportBaseName()}.json`, noteToJson(note, organization), 'application/json;charset=utf-8');
         track('download_json');
     }
 
-    function saveAsDocx() {
+    async function saveAsDocx() {
+        const html = exportHtml();
         download(
             `${exportBaseName()}.docx`,
-            htmlToDocx(cleanHtml(), { direction: currentDir() }),
+            htmlToDocx(html, { direction: currentDir() }),
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         );
         track('download_docx');
     }
 
-    function saveAsRtf() {
+    async function saveAsRtf() {
+        const html = exportHtml();
         download(
             `${exportBaseName()}.rtf`,
-            htmlToRtf(cleanHtml(), { direction: currentDir() }),
+            htmlToRtf(html, { direction: currentDir() }),
             'application/rtf;charset=utf-8',
         );
         track('download_rtf');
@@ -2293,15 +3108,17 @@ ${cleanHtml()}
             if (!plainOnly && navigator.clipboard && navigator.clipboard.read) {
                 const items = await navigator.clipboard.read();
                 for (const item of items) {
-                    if (item.types.includes('text/html')) {
-                        const blob = await item.getType('text/html');
-                        insertHtml(sanitizeHtml(await blob.text()));
-                        finishPaste(plainOnly);
-                        return;
-                    }
+                    if (!item.types.includes('text/html')) continue;
+                    const source = await (await item.getType('text/html')).text();
+                    const clean = sanitizeHtml(source);
+                    if (!clean) continue;
+                    insertHtml(clean);
+                    finishPaste(false);
+                    return;
                 }
             }
             const text = await navigator.clipboard.readText();
+            if (!text) return;
             insertHtml(textToHtml(text));
             finishPaste(plainOnly);
         } catch {
@@ -2310,6 +3127,7 @@ ${cleanHtml()}
     }
 
     function finishPaste(plainOnly) {
+        normaliseTables(editor);
         scheduleSave();
         updateCounts();
         track(plainOnly ? 'paste_plain_used' : 'paste_used');
@@ -2815,7 +3633,10 @@ ${cleanHtml()}
     editor.addEventListener('npad:spell-render', () => {
         if (findBar && !findBar.hidden) refreshFind(false);
     });
-    window.addEventListener('beforeprint', clearFindVisuals);
+    window.addEventListener('beforeprint', () => {
+        clearFindVisuals();
+        hideTableContextMenu();
+    });
     window.addEventListener('afterprint', () => {
         if (findBar && !findBar.hidden) refreshFind(false);
     });
@@ -2885,6 +3706,10 @@ ${cleanHtml()}
         },
         find: () => openFind(false),
         'find-replace': () => openFind(true),
+        'insert-table': openTableDialog,
+        'insert-hr': insertHorizontalRule,
+        'insert-datetime': insertDateTime,
+        'insert-link': () => promptForLink(),
         'manage-note-tags': manageCurrentTags,
         'toggle-notes': () => setSidebarOpen(!sidebarOpen),
         'toggle-focus': () => applyFocusMode(!document.body.classList.contains('focus-mode')),
@@ -2941,9 +3766,15 @@ ${cleanHtml()}
         }
     });
 
-    // Escape: close the find bar first, then leave focus mode.
+    // Escape: close the table context menu first, then the find bar, then
+    // leave focus mode.
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return;
+        if (tableContextMenu && !tableContextMenu.hidden) {
+            event.preventDefault();
+            hideTableContextMenu();
+            return;
+        }
         if (noteFolderMenu && !noteFolderMenu.hidden) {
             event.preventDefault();
             closeFolderMenu({ returnFocus: true });
@@ -2971,6 +3802,7 @@ ${cleanHtml()}
        --------------------------------------------------------------------- */
 
     editor.addEventListener('input', () => {
+        clearSelectedTable();
         // When a size is chosen at a collapsed caret, the browser creates its
         // temporary size=7 wrapper only after the first character is typed.
         if (pendingFontSize) convertSizeMarkers(pendingFontSize);
@@ -2994,8 +3826,13 @@ ${cleanHtml()}
         notes = notes.map((note) => {
             const folderId = note.folderId && folderIds.has(note.folderId) ? note.folderId : null;
             const tags = note.tags.filter((id) => tagIds.has(id));
-            if (folderId === note.folderId && tags.length === note.tags.length) return note;
-            const updated = { ...note, folderId, tags, updatedAt: Date.now() };
+            // Persist the current allow-list form so unsupported legacy markup
+            // cannot remain hidden in an untouched local note.
+            const html = sanitizeHtml(note.html);
+            if (folderId === note.folderId && tags.length === note.tags.length && html === note.html) {
+                return note;
+            }
+            const updated = { ...note, html, folderId, tags, updatedAt: Date.now() };
             repaired.push(updated);
             return updated;
         });
