@@ -175,6 +175,7 @@ export default async function run(check, group) {
             const insertItems = [...document.querySelectorAll('#insertMenuPanel .menu__item')]
                 .map((item) => item.dataset.action);
             assert.ok(insertItems.includes('insert-table'), 'Insert menu lacks a Table item');
+            assert.ok(insertItems.includes('insert-code'), 'Insert menu lacks a Code block item');
             assert.ok(!insertItems.includes('insert-image'), 'retired Image item remains in the Insert menu');
             assert.equal(document.getElementById('toolbarPaneImage'), null,
                 'retired image toolbar pane remains in the document');

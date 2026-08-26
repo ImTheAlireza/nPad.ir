@@ -43,6 +43,8 @@ const ALLOWED = new Set([
     'spell_add_word',
     'table_inserted',
     'table_tool_used',
+    'code_block_inserted',
+    'code_copied',
 ]);
 
 let enabled = true;

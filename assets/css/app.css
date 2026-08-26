@@ -93,6 +93,19 @@
     /* Spell-check wave — a blue that reads clearly on both surfaces. */
     --spell-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='5' viewBox='0 0 10 5'%3E%3Cpath d='M0 3 Q 2.5 0 5 3 T 10 3' fill='none' stroke='%232563eb' stroke-width='1.7'/%3E%3C/svg%3E");
 
+    /* Code blocks. Every syntax colour is verified at 4.5:1 against
+       --code-bg in both themes (see tests/contrast.test.mjs). */
+    --code-bg: #f6f8fa;
+    --code-border: #d0d7e2;
+    --code-text: #24292f;      /* 13.7:1 */
+    --code-comment: #57606a;   /*  6.0:1 */
+    --code-keyword: #cf222e;   /*  5.0:1 */
+    --code-tag: #116329;       /*  6.9:1 */
+    --code-number: #0550ae;    /*  7.1:1 */
+    --code-string: #0a3069;    /* 12.0:1 */
+    --code-function: #6639ba;  /*  6.9:1 */
+    --code-variable: #953800;  /*  6.9:1 */
+
     /* Shape */
     --radius-sm: 6px;
     --radius-md: 10px;
@@ -158,6 +171,18 @@
     --find-all-bg: rgba(250, 204, 21, 0.26);
     --find-current-bg: #fde047;
     --find-current-text: #1c1917;
+
+    /* Code blocks — same roles as the light theme, verified on --code-bg. */
+    --code-bg: #0d1526;
+    --code-border: #2b3850;
+    --code-text: #cdd9e5;      /* 12.7:1 */
+    --code-comment: #8b98ab;   /*  6.2:1 */
+    --code-keyword: #ff7b72;   /*  7.2:1 */
+    --code-tag: #7ee787;       /* 11.9:1 */
+    --code-number: #79c0ff;    /*  9.4:1 */
+    --code-string: #a5d6ff;    /* 11.9:1 */
+    --code-function: #d2a8ff;  /*  9.4:1 */
+    --code-variable: #ffa657;  /*  9.4:1 */
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
@@ -1806,6 +1831,157 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     color: var(--text-body);
 }
 
+/* Code blocks. Code is always LTR monospace, even in Persian notes. The
+   horizontal scroll lives on the <code> element so the runtime chrome in the
+   pre's top strip never scrolls away with the content. */
+.editor pre {
+    position: relative;
+    margin: 0 0 0.75em;
+    padding: 40px var(--space-3) var(--space-3);
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius-md);
+    color: var(--code-text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    direction: ltr;
+    text-align: left;
+}
+
+.editor pre code {
+    display: block;
+    min-height: 1.6em;
+    padding: 0;
+    overflow-x: auto;
+    background: none;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.6;
+    tab-size: 4;
+    white-space: pre;
+}
+
+/* Runtime chrome: language chip + copy button. The chip's visible label is a
+   CSS attr() so it is not a DOM text node — word counts, find, spellcheck and
+   TXT export see only the code itself. Elements are stripped before save. */
+.codeblock-chrome {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.editor pre:hover .codeblock-chrome,
+.editor pre:focus-within .codeblock-chrome,
+.editor pre.codeblock--editing .codeblock-chrome { opacity: 1; }
+
+@media (hover: none) {
+    /* No hover on touch: keep the copy button permanently reachable. */
+    .codeblock-chrome { opacity: 1; }
+}
+
+.codeblock-chrome button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-width: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast),
+        background-color var(--transition-fast);
+}
+
+.codeblock-chrome button:hover {
+    color: var(--text-strong);
+    border-color: var(--border-strong);
+    background: var(--surface-raised);
+}
+
+.codeblock-chrome button:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+}
+
+.codeblock-lang::before {
+    content: attr(data-lang-label);
+    letter-spacing: 0.02em;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: ltr;
+}
+
+.codeblock-copy {
+    padding: 0 6px !important;
+}
+
+.codeblock-copy svg {
+    width: 15px;
+    height: 15px;
+}
+
+.codeblock-copy--done {
+    color: var(--success) !important;
+    border-color: var(--success) !important;
+}
+
+@media (pointer: coarse) {
+    .codeblock-chrome button { height: 36px; min-width: 36px; }
+    .editor pre { padding-top: 48px; }
+}
+
+/* Syntax highlighting theme (Prism token classes), first-party so it follows
+   the design tokens in both themes instead of shipping a fixed vendor theme. */
+.editor pre .token.comment,
+.editor pre .token.prolog,
+.editor pre .token.doctype,
+.editor pre .token.cdata { color: var(--code-comment); font-style: italic; }
+
+.editor pre .token.punctuation { color: var(--code-text); }
+
+.editor pre .token.property,
+.editor pre .token.tag,
+.editor pre .token.constant,
+.editor pre .token.symbol,
+.editor pre .token.deleted { color: var(--code-tag); }
+
+.editor pre .token.boolean,
+.editor pre .token.number { color: var(--code-number); }
+
+.editor pre .token.selector,
+.editor pre .token.attr-name,
+.editor pre .token.string,
+.editor pre .token.char,
+.editor pre .token.builtin,
+.editor pre .token.inserted { color: var(--code-string); }
+
+.editor pre .token.operator,
+.editor pre .token.entity,
+.editor pre .token.url { color: var(--code-text); }
+
+.editor pre .token.atrule,
+.editor pre .token.attr-value,
+.editor pre .token.keyword { color: var(--code-keyword); font-weight: 600; }
+
+.editor pre .token.function,
+.editor pre .token.class-name { color: var(--code-function); }
+
+.editor pre .token.regex,
+.editor pre .token.important,
+.editor pre .token.variable { color: var(--code-variable); }
+
 /* Tables: default grid styling; inline styles (width, shading, borderless)
    override these as the user changes table properties. */
 .editor table {
@@ -2101,6 +2277,36 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 
 .table-builder__hint {
     margin-top: var(--space-3) !important;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Code block language picker (reuses the dialog shell). */
+.codeblock-langpicker {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.codeblock-langpicker__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.codeblock-langpicker__field span { color: var(--text-body); }
+
+.codeblock-langpicker__field select {
+    min-height: 36px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    color: var(--text-strong);
+}
+
+.codeblock-langpicker__hint {
+    margin: 0;
     font-size: 12px;
     color: var(--text-muted);
 }
@@ -3342,6 +3548,24 @@ body.focus-mode .focus-exit { display: inline-flex; }
 
     .editor a { color: #000; text-decoration: underline; }
     .editor a::after { content: ' (' attr(href) ')'; font-size: 10pt; }
+
+    /* Code prints with the light palette regardless of the viewing theme;
+       the runtime chrome and its extra strip are not part of the note. */
+    .codeblock-chrome { display: none !important; }
+    .editor pre {
+        --code-bg: #f6f8fa;
+        --code-border: #d0d7e2;
+        --code-text: #24292f;
+        --code-comment: #57606a;
+        --code-keyword: #cf222e;
+        --code-tag: #116329;
+        --code-number: #0550ae;
+        --code-string: #0a3069;
+        --code-function: #6639ba;
+        --code-variable: #953800;
+        padding-top: var(--space-3);
+        break-inside: avoid;
+    }
 }
 
 /* --------------------------------------------------------------------------

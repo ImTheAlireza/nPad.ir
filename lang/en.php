@@ -25,6 +25,7 @@ return [
         'edit'        => 'Edit',
         'insert'      => 'Insert',
         'table'       => 'Table…',
+        'code_block'  => 'Code block',
         'horizontal_rule' => 'Horizontal rule',
         'date_time'   => 'Date and time',
         'link'        => 'Link…',
@@ -252,6 +253,22 @@ return [
         'ignore'         => 'Ignore',
         'no_suggestions' => 'No suggestions',
         'suggestions_for' => 'Spelling suggestions for “{word}”',
+    ],
+
+    'codeblock' => [
+        'copy'              => 'Copy code',
+        'copied'            => 'Code copied',
+        'copy_failed'       => 'Copying is blocked here',
+        'inserted'          => 'Code block added',
+        'plain_text'        => 'Plain text',
+        'lang_chip'         => 'Language: {lang}',
+        'lang_change'       => 'Change language',
+        'language_title'    => 'Code language',
+        'language_label'    => 'Highlighting language',
+        'language_hint'     => 'The language is kept in the note and in Markdown exports. Unknown languages stay plain monospace.',
+        'group_web'         => 'Web',
+        'group_data'        => 'Data and configuration',
+        'group_apps'        => 'Programming languages',
     ],
 
     'editor' => [

@@ -61,7 +61,14 @@ function nodeToMarkdown(node, depth = 0) {
     if (tag === 'u') return `<u>${content}</u>`;
     if (tag === 's' || tag === 'del' || tag === 'strike') return `~~${content}~~`;
     if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${node.textContent.replace(/`/g, '\\`')}\``;
-    if (tag === 'pre') return `\`\`\`\n${node.textContent.replace(/\n+$/, '')}\n\`\`\`\n\n`;
+    if (tag === 'pre') {
+        // Carry the highlight language into the fence so a Markdown round
+        // trip keeps code blocks highlighted.
+        const codeEl = node.querySelector('code');
+        const info = (codeEl?.getAttribute('class') || '').match(/language-([a-z0-9_+.#-]{1,24})/i);
+        const lang = info && info[1].toLowerCase() !== 'plain' ? info[1].toLowerCase() : '';
+        return `\`\`\`${lang}\n${node.textContent.replace(/\n+$/, '')}\n\`\`\`\n\n`;
+    }
     if (tag === 'hr') return '---\n\n';
     if (tag === 'table') {
         const rows = [...node.rows].filter((row) => row.closest('table') === node);
@@ -199,11 +206,16 @@ export function markdownToHtml(markdown) {
         const fence = line.match(/^\s*(```|~~~)/);
         if (fence) {
             const marker = fence[1];
+            // First token of the info string is the language (` ```js `).
+            const info = line.slice(line.indexOf(marker) + marker.length)
+                .trim()
+                .match(/^[A-Za-z0-9_+.#-]{1,24}/);
+            const lang = info ? ` class="language-${info[0].toLowerCase()}"` : '';
             const code = [];
             index += 1;
             while (index < lines.length && !lines[index].trim().startsWith(marker)) code.push(lines[index++]);
             if (index < lines.length) index += 1;
-            blocks.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+            blocks.push(`<pre><code${lang}>${escapeHtml(code.join('\n'))}</code></pre>`);
             continue;
         }
 

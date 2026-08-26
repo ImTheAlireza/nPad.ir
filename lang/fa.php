@@ -25,6 +25,7 @@ return [
         'edit'        => 'ویرایش',
         'insert'      => 'درج',
         'table'       => 'جدول…',
+        'code_block'  => 'بلوک کد',
         'horizontal_rule' => 'خط افقی',
         'date_time'   => 'تاریخ و ساعت',
         'link'        => 'پیوند…',
@@ -252,6 +253,22 @@ return [
         'ignore'         => 'نادیده گرفتن',
         'no_suggestions' => 'پیشنهادی نیست',
         'suggestions_for' => 'پیشنهادهای املایی برای «{word}»',
+    ],
+
+    'codeblock' => [
+        'copy'              => 'رونوشت کد',
+        'copied'            => 'کد رونوشت شد',
+        'copy_failed'       => 'رونوشت اینجا مسدود است',
+        'inserted'          => 'بلوک کد افزوده شد',
+        'plain_text'        => 'متن ساده',
+        'lang_chip'         => 'زبان: {lang}',
+        'lang_change'       => 'تغییر زبان',
+        'language_title'    => 'زبان کد',
+        'language_label'    => 'زبان رنگ‌آمیزی',
+        'language_hint'     => 'زبان در یادداشت و خروجی مارک‌داون نگه داشته می‌شود. زبان‌های ناشناخته بدون رنگ‌آمیزی می‌مانند.',
+        'group_web'         => 'وب',
+        'group_data'        => 'داده و پیکربندی',
+        'group_apps'        => 'زبان‌های برنامه‌نویسی',
     ],
 
     'editor' => [

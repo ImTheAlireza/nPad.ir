@@ -80,6 +80,7 @@ import {
 } from './formats.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
+import { initCodeblocks } from './codeblock.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -167,6 +168,17 @@ export function initEditor({ strings, onEvent }) {
     /* Custom spell checker (self-contained module). */
     const spell = initSpellcheck({ editor, strings, onEvent: track });
 
+    /* Syntax-highlighted code blocks (self-contained module). */
+    const code = initCodeblocks({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+    });
+
     /* The toolbar swaps to table tools when the caret is inside a table cell. */
     const toolbarPaneBase = document.getElementById('toolbarPaneBase');
     const toolbarPaneTable = document.getElementById('toolbarPaneTable');
@@ -188,6 +200,9 @@ export function initEditor({ strings, onEvent }) {
         });
         // The caret highlight is a runtime-only affordance: it never persists.
         clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
+        // Code blocks keep only their plain stored form: token spans and the
+        // language/copy chrome are runtime paint, exactly like search marks.
+        code.stripRuntime(clone);
         return clone.innerHTML;
     }
 
@@ -690,6 +705,7 @@ export function initEditor({ strings, onEvent }) {
         setActiveNoteId(note.id);
         editor.innerHTML = sanitizeHtml(note.html || '');
         normaliseTables(editor);
+        code.refreshAll();
         // The new note's caret is empty: reset contextual table controls.
         markActiveCell(null);
         setToolbarContext('base');
@@ -1357,6 +1373,7 @@ export function initEditor({ strings, onEvent }) {
         if (!clean) return false;
         insertHtml(clean);
         normaliseTables(editor);
+        code.refreshAll();
         scheduleSave();
         updateCounts();
         spell.refresh();
@@ -1593,6 +1610,35 @@ export function initEditor({ strings, onEvent }) {
         selection.addRange(range);
         scheduleSave();
         updateCounts();
+    }
+
+    function insertCodeBlock() {
+        editor.focus();
+        restoreEditorSelection();
+        const selection = window.getSelection();
+        const selected = selection && !selection.isCollapsed ? selection.toString() : '';
+
+        const pre = document.createElement('pre');
+        const codeEl = document.createElement('code');
+        if (selected) codeEl.textContent = selected;
+        pre.appendChild(codeEl);
+
+        if (!insertBlockAtSelection(pre)) return;
+        ensureSpacerAfter(pre);
+
+        const range = document.createRange();
+        range.selectNodeContents(codeEl);
+        range.collapse(selected ? false : true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        code.refreshAll();
+        rememberEditorSelection();
+        scheduleSave();
+        updateCounts();
+        spell.refresh();
+        track('code_block_inserted');
+        if (strings.codeInserted) toast(strings.codeInserted, 'success');
     }
 
     function insertDateTime() {
@@ -3708,6 +3754,7 @@ ${exportHtml()}
         'find-replace': () => openFind(true),
         'insert-table': openTableDialog,
         'insert-hr': insertHorizontalRule,
+        'insert-code': insertCodeBlock,
         'insert-datetime': insertDateTime,
         'insert-link': () => promptForLink(),
         'manage-note-tags': manageCurrentTags,
@@ -3735,6 +3782,12 @@ ${exportHtml()}
         event.preventDefault();
         actions[el.dataset.action]();
     });
+
+    // Inside a code block Tab indents and Enter breaks a line instead of
+    // splitting blocks. Capture phase: this wins over the table cell walk.
+    editor.addEventListener('keydown', (event) => {
+        code.insertKeydown(event);
+    }, true);
 
     document.addEventListener('keydown', (event) => {
         const mod = event.ctrlKey || event.metaKey;

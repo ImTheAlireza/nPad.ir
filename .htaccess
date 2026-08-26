@@ -147,7 +147,7 @@ ErrorDocument 404 /404.php
     </FilesMatch>
 
     # Third-party bundles are version-pinned by path and never edited.
-    <FilesMatch "^chart\.umd\.min\.js$">
+    <FilesMatch "^(chart\.umd\.min\.js|prism-1\.30\.0\.min\.js)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
 

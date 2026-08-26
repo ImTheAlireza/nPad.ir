@@ -46,6 +46,7 @@ function npad_icon_paths(): array
         'indent'      => '<path d="M4 6h16"/><path d="M10 12h10"/><path d="M4 18h16"/><path d="m4 10 3 2-3 2z" fill="currentColor"/>',
         'outdent'     => '<path d="M4 6h16"/><path d="M10 12h10"/><path d="M4 18h16"/><path d="m7 10-3 2 3 2z" fill="currentColor"/>',
         'link'        => '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/>',
+        'code'        => '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
         'eraser'      => '<path d="m19 20-9 .01"/><path d="M15 5 5 15a2 2 0 0 0 0 3l2 2h5l8-8a2 2 0 0 0 0-3l-2-2a2 2 0 0 0-3 0z"/>',
         'moon'        => '<path d="M21 13a8.5 8.5 0 0 1-10-10 8.5 8.5 0 1 0 10 10z"/>',
         'sun'         => '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',

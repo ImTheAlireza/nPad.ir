@@ -15,11 +15,20 @@ const ALLOWED_TAGS = new Set([
 
 const ALLOWED_ATTRS = {
     A: new Set(['href', 'title', 'target', 'rel']),
+    CODE: new Set(['class']),
     FONT: new Set(['color', 'face', 'size']),
     TD: new Set(['colspan', 'rowspan']),
     TH: new Set(['colspan', 'rowspan', 'scope']),
     '*': new Set(['style', 'align', 'dir']),
 };
+
+/**
+ * Code blocks carry their language as `class="language-js"` for the syntax
+ * highlighter. Only that one shape is kept, and the language id is bounded,
+ * so a crafted class list cannot smuggle in app-level hooks like spell marks
+ * or search matches.
+ */
+const CODE_CLASS = /^(?:language-)?plain$|^language-[a-z0-9_+.#-]{1,24}$/i;
 
 /** Declarations we keep from inline style attributes. */
 const ALLOWED_STYLES = new Set([
@@ -74,6 +83,13 @@ function cleanElement(el) {
 
         if (name === 'href') {
             if (!SAFE_URL.test(attr.value.trim())) el.removeAttribute(attr.name);
+            continue;
+        }
+
+        if (name === 'class' && tag === 'CODE') {
+            const kept = attr.value.split(/\s+/).filter((token) => CODE_CLASS.test(token));
+            if (kept.length === 1) el.setAttribute('class', kept[0]);
+            else el.removeAttribute('class');
             continue;
         }
 

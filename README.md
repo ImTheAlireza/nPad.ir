@@ -48,8 +48,9 @@ Live: <https://npad.ir>
 │     ├─ analytics.js     Anonymous event reporting
 │     ├─ dashboard.js     Admin charts
 │     ├─ spellcheck.js    Local spell checker with tap/keyboard corrections
+│     ├─ codeblock.js     Code blocks: highlighting, language chip, copy button
 │     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
-│     └─ vendor/          Self-hosted Chart.js 4.5.1
+│     └─ vendor/          Self-hosted Chart.js 4.5.1 + Prism 1.30.0
 │
 ├─ fonts/                 Self-hosted Inter + Vazirmatn (WOFF2, ~96 KB)
 ├─ api/track.php          Event collector
@@ -162,6 +163,25 @@ opens its accessible correction dialog; arrow keys move through suggestions and
 Escape returns focus to the word. Coarse-pointer layouts provide 44 px correction
 targets. The dictionary and custom words remain entirely on the device.
 
+## Code blocks
+
+The **Insert** menu adds a code block: a monospace, always-LTR surface with a
+copy button and a language chip. Languages are highlighted by a self-hosted
+Prism bundle (26 common languages, ~76 KB, lazy-loaded the first time a note
+actually contains a highlighted block — no CDN, no request otherwise). The
+language is picked from a dialog and stored on the block, so Markdown export
+writes fenced code with the info string (```` ```js ````) and import reads it
+back. Inside a block, `Tab` indents and `Enter` breaks a line instead of
+splitting paragraphs.
+
+The stored note keeps the plain form (`<pre><code class="language-js">`),
+while token spans and the block chrome are runtime paint — stripped again
+before every save and export, the same transient-paint rule as search
+highlights. The chip's label is a CSS `attr()` value rather than a text node,
+so word counts, find, spellcheck and TXT export see only the code itself.
+Every syntax colour is a design token verified at WCAG AA against the code
+background in both themes (and in print, where the light palette is forced).
+
 ## Tables
 
 The **Insert** menu (next to Edit) adds a table through a settings dialog:
@@ -211,10 +231,12 @@ Automated coverage includes:
 | `sanitize` | XSS vectors neutralised (including table tags/attrs); spans bounded; formatting preserved |
 | `table` | Grid model: creation, row/column inserts and deletes around spans, merge/split, headers, shading, width, borders, captions, move row, Tab navigation, paste normalisation |
 | `formats` | Markdown/JSON/RTF round trips; GFM pipe tables and DOCX `w:tbl` + merge spans; valid DOCX ZIPs; PDF stream and Unicode-map extraction |
+| `codeblocks` | Sanitiser bounds on `language-*` classes; Markdown fence round trips; the runtime module against the real Prism bundle: chrome, highlight/unhighlight cycles, normalisation, Tab/Enter, copy, spellcheck skip |
 | `storage` | Legacy migration, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
 | `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes; spelling corrections; autosave; Insert menu, table dialog, contextual toolbar, cell control |
 | `tables-ui` | Full awaited end-to-end flow: Insert menu → settings dialog → live table → row/column/merge/split/header tools → properties → delete → context menu |
+| `codeblocks-ui` | Full awaited end-to-end flow: Insert menu → block with chrome → language dialog → Prism highlight → copy → Tab → autosave stores the plain form → markdown paste |
 
 ## Notable decisions
 
@@ -270,4 +292,5 @@ every page view.
 
 - Inter — SIL Open Font License 1.1 (`fonts/LICENSE-Inter.txt`)
 - Vazirmatn — SIL Open Font License 1.1 (`fonts/LICENSE-Vazirmatn.txt`)
-- Chart.js 4.5.1 — MIT
+- Chart.js 4.5.1 — MIT (`assets/js/vendor/LICENSE-chartjs.md`)
+- Prism 1.30.0 — MIT (`assets/js/vendor/LICENSE-prism.md`)
