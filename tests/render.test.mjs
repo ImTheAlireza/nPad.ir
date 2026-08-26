@@ -161,15 +161,20 @@ export default async function run(check, group) {
         });
 
         check('menus are keyboard/touch operable buttons', () => {
-            const triggers = [...document.querySelectorAll('.menu__trigger')];
-            assert.equal(triggers.length, 2, `expected 2 menus, got ${triggers.length}`);
-            triggers.forEach((t) => {
+            const appbarTriggers = [...document.querySelectorAll('.appbar .menu__trigger')];
+            assert.equal(appbarTriggers.length, 3, `expected 3 appbar menus (File, Edit, Insert), got ${appbarTriggers.length}`);
+            const trigers = [...document.querySelectorAll('.menu__trigger')];
+            assert.equal(trigers.length, 4, `expected 3 appbar menus + 1 table "more" menu, got ${trigers.length}`);
+            trigers.forEach((t) => {
                 assert.equal(t.tagName, 'BUTTON', 'trigger is not a button');
                 assert.equal(t.getAttribute('aria-expanded'), 'false');
                 assert.equal(t.getAttribute('aria-haspopup'), 'true');
                 const id = t.getAttribute('aria-controls');
                 assert.ok(id && document.getElementById(id), `aria-controls target missing: ${id}`);
             });
+            const insertTable = [...document.querySelectorAll('#insertMenuPanel .menu__item')]
+                .find((item) => item.dataset.action === 'insert-table');
+            assert.ok(insertTable, 'Insert menu lacks a Table item');
         });
 
         check('skip link resolves', () => {

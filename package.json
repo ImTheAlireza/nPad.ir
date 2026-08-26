@@ -1,6 +1,6 @@
 {
   "name": "npad",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "private": true,
   "description": "NPad — a free, private online notepad. Tooling and test harness.",
   "type": "module",

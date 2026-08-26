@@ -1,9 +1,10 @@
 # NPad
 
 A free, private online notepad. Keep several rich-text notes open in document
-tabs, organize them with folders and color-coded tags, recover content from
-automatic local backups, and move documents through TXT, HTML, Markdown, JSON,
-DOCX, PDF, or RTF. Everything works offline and needs no account.
+tabs, organize them with folders and color-coded tags, build and edit tables,
+recover content from automatic local backups, and move documents through TXT,
+HTML, Markdown, JSON, DOCX, PDF, or RTF. Everything works offline and needs no
+account.
 
 Live: <https://npad.ir>
 
@@ -41,6 +42,7 @@ Live: <https://npad.ir>
 │     ├─ storage.js       Notes, organization, timestamped backups + migration
 │     ├─ formats.js       Local Markdown, JSON, DOCX, PDF and RTF codecs
 │     ├─ sanitize.js      HTML allow-list sanitiser
+│     ├─ table.js         Table grid model: insert/merge/split, rows, cols
 │     ├─ ui.js            Menus, dialogs, toasts
 │     ├─ theme.js         Light/dark
 │     ├─ analytics.js     Anonymous event reporting
@@ -160,6 +162,27 @@ opens its accessible correction dialog; arrow keys move through suggestions and
 Escape returns focus to the word. Coarse-pointer layouts provide 44 px correction
 targets. The dictionary and custom words remain entirely on the device.
 
+## Tables
+
+The **Insert** menu (next to Edit) adds a table through a settings dialog:
+rows and columns, header row and header column, width, presets and a live
+preview. Once the caret is inside a table the toolbar swaps to table tools —
+the same selection-friendly pattern future contexts will use:
+
+- add/delete rows and columns (grid-accurate around merged cells)
+- merge a rectangular selection of cells and split merged cells back
+- toggle the header row (`<thead><th scope="col">`) and header column
+- align cells, set cell background colours, width, borders and a caption
+- move rows and delete the whole table (with confirmation)
+- right-click context menu with the same actions
+- `Tab` / `Shift+Tab` walk cells; `Tab` from the last cell appends a row
+
+Everything stays in the browser. Tables survive local backups, HTML and NPad
+JSON exports, and are serialised to GFM pipe tables in Markdown, real
+`w:tbl` tables in DOCX, and tab-separated rows in RTF; pasted tables from
+Excel, Word or the web are normalised (nested tables lifted, spans bounded)
+before they enter the grid model.
+
 ## Tests
 
 ```bash
@@ -167,18 +190,20 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-239 assertions covering:
+250+ assertions covering:
 
 | Suite | What it proves |
 |---|---|
 | `static` | PHP + JS parse; no CDN, geo-IP, `php_value` or `console.log` regressions; fonts, icons and service-worker precache all resolve; client/server event lists agree |
 | `contrast` | Every token pair meets WCAG AA (4.5:1 text, 3:1 controls) in both themes |
 | `lang` | `en.php` and `fa.php` expose identical key structures |
-| `sanitize` | 22 XSS vectors neutralised; formatting preserved |
-| `formats` | Markdown/JSON/RTF round trips, valid DOCX ZIPs, compressed Open XML, PDF stream and Unicode-map extraction |
+| `sanitize` | XSS vectors neutralised (including table tags/attrs); spans bounded; formatting preserved |
+| `table` | Grid model: creation, row/column inserts and deletes around spans, merge/split, headers, shading, width, borders, captions, move row, Tab navigation, paste normalisation |
+| `formats` | Markdown/JSON/RTF round trips; GFM pipe tables and DOCX `w:tbl` + merge spans; valid DOCX ZIPs; PDF stream and Unicode-map extraction |
 | `storage` | Legacy migration, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
-| `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes and highlighting; tap/keyboard spelling corrections; autosave and editor tools |
+| `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes; spelling corrections; autosave; Insert menu, table dialog, contextual toolbar, cell control |
+| `tables-ui` | Full awaited end-to-end flow: Insert menu → settings dialog → live table → row/column/merge/split/header tools → properties → delete → context menu |
 
 ## Notable decisions
 

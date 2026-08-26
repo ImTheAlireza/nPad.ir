@@ -28,6 +28,8 @@ function escapeXml(value) {
         .replace(/'/g, '&apos;');
 }
 
+import { tableGrid } from './table.js';
+
 function htmlBody(html) {
     return new DOMParser().parseFromString(`<body>${sanitizeHtml(html || '')}</body>`, 'text/html').body;
 }
@@ -58,6 +60,45 @@ function nodeToMarkdown(node, depth = 0) {
     if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${node.textContent.replace(/`/g, '\\`')}\``;
     if (tag === 'pre') return `\`\`\`\n${node.textContent.replace(/\n+$/, '')}\n\`\`\`\n\n`;
     if (tag === 'hr') return '---\n\n';
+    if (tag === 'table') {
+        const rows = [...node.rows].filter((row) => row.closest('table') === node);
+        if (!rows.length) return '';
+
+        const cellText = (cell) => [...cell.childNodes]
+            .map((child) => nodeToMarkdown(child, depth + 1))
+            .join('')
+            .replace(/\s*\n\s*/g, ' ')
+            .replace(/\|/g, '\\|')
+            .trim();
+
+        const hasHeader = [...node.querySelectorAll('th')]
+            .some((th) => th.closest('table') === node);
+
+        // GFM pipe tables always produce a header row, so a headerless table
+        // is emitted as raw HTML to keep the round trip faithful.
+        if (!hasHeader) return `\n${node.outerHTML}\n\n`;
+
+        const alignOf = (cell) => {
+            const style = (cell.getAttribute('style') || '')
+                .match(/text-align\s*:\s*(left|center|right)/i);
+            if (style) return style[1].toLowerCase();
+            const align = (cell.getAttribute('align') || '').toLowerCase();
+            return ['left', 'center', 'right'].includes(align) ? align : '';
+        };
+
+        const firstRow = rows[0];
+        const header = `| ${[...firstRow.cells].map(cellText).join(' | ')} |`;
+        const divider = `| ${[...firstRow.cells].map((cell) => {
+            const align = alignOf(cell);
+            if (align === 'center') return ':---:';
+            if (align === 'right') return '---:';
+            if (align === 'left') return ':---';
+            return '---';
+        }).join(' | ')} |`;
+        const body = rows.slice(1).map((row) =>
+            `| ${[...row.cells].map(cellText).join(' | ')} |`).join('\n');
+        return `${header}\n${divider}${body ? `\n${body}` : ''}\n\n`;
+    }
     if (tag === 'blockquote') {
         return `${content.trim().split('\n').map((line) => `> ${line}`).join('\n')}\n\n`;
     }
@@ -125,8 +166,24 @@ function inlineMarkdown(value) {
 }
 
 function isMarkdownBlock(line) {
-    return /^\s*(#{1,6}\s|>|[-+*]\s|\d+[.)]\s|```|~~~|(?:-{3,}|\*{3,})\s*$)/.test(line);
+    return /^\s*(#{1,6}\s|>|[-+*]\s|\d+[.)]\s|```|~~~|(?:-{3,}|\*{3,})\s*$|<table|<\/table)/i.test(line);
 }
+
+/** Split a GFM table row on unescaped pipes. */
+function splitTableRow(line) {
+    const cells = [];
+    let buffer = '';
+    for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        if (char === '\\' && line[index + 1] === '|') { buffer += '|'; index += 1; continue; }
+        if (char === '|') { cells.push(buffer.trim()); buffer = ''; continue; }
+        buffer += char;
+    }
+    cells.push(buffer.trim());
+    return cells;
+}
+
+const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
 export function markdownToHtml(markdown) {
     const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
@@ -157,6 +214,54 @@ export function markdownToHtml(markdown) {
         if (/^\s*(?:-{3,}|\*{3,})\s*$/.test(line)) {
             blocks.push('<hr>');
             index += 1;
+            continue;
+        }
+
+        // Raw HTML table block (emitted for headerless tables to stay faithful).
+        if (/^\s*<table[\s>]/i.test(line)) {
+            const raw = [line];
+            index += 1;
+            while (index < lines.length && !/<\/table\s*>/i.test(lines[index])) raw.push(lines[index++]);
+            if (index < lines.length) raw.push(lines[index++]);
+            blocks.push(raw.join('\n'));
+            continue;
+        }
+
+        // GFM pipe table: a header line followed immediately by a divider row.
+        if (/^\s*\|/.test(line) && lines[index + 1] && TABLE_DIVIDER.test(lines[index + 1])) {
+            const headerCells = splitTableRow(line.trim().replace(/^\|\s*|\s*\|$/g, ''));
+            const alignCells = splitTableRow(lines[index + 1].trim().replace(/^\|\s*|\s*\|$/g, ''));
+            const aligns = alignCells.map((cell) => {
+                if (cell.startsWith(':') && cell.endsWith(':')) return 'center';
+                if (cell.endsWith(':')) return 'right';
+                if (cell.startsWith(':')) return 'left';
+                return '';
+            });
+            const body = [];
+            index += 2;
+            while (index < lines.length && /^\s*\|/.test(lines[index])) {
+                body.push(splitTableRow(lines[index].trim().replace(/^\|\s*|\s*\|$/g, '')));
+                index += 1;
+            }
+
+            const colCount = Math.max(headerCells.length, ...body.map((row) => row.length));
+            const pad = (row) => {
+                const out = [...row];
+                while (out.length < colCount) out.push('');
+                return out;
+            };
+            const cellHtml = (text, align) => {
+                const style = align ? ` style="text-align: ${align}"` : '';
+                return `<td${style}>${inlineMarkdown(text) || '<br>'}</td>`;
+            };
+            const headerHtml = pad(headerCells).map((text, i) => {
+                const style = aligns[i] ? ` style="text-align: ${aligns[i]}"` : '';
+                return `<th${style}>${inlineMarkdown(text) || '<br>'}</th>`;
+            }).join('');
+            const bodyHtml = body.map((row) => `<tr>${pad(row)
+                .map((text, i) => cellHtml(text, aligns[i])).join('')}</tr>`).join('');
+            blocks.push(`<table><thead><tr>${headerHtml}</tr></thead>` +
+                `<tbody>${bodyHtml}</tbody></table>`);
             continue;
         }
 
@@ -294,6 +399,14 @@ function nodeToRtf(node) {
     if (tag === 'ul') return [...node.children].map((item) => `\\bullet\\tab ${nodeToRtf(item)}\\par\n`).join('');
     if (tag === 'ol') return [...node.children].map((item, index) => `${index + 1}.\\tab ${nodeToRtf(item)}\\par\n`).join('');
     if (tag === 'hr') return '____________________\\par\n';
+    if (tag === 'table') {
+        // RTF tables need a separate complex structure; NPad flattens them to
+        // tab-separated rows so no content is lost (documented limitation).
+        const rows = [...node.rows].filter((row) => row.closest('table') === node);
+        if (!rows.length) return '';
+        return rows.map((row) =>
+            `${[...row.cells].map((cell) => nodeToRtf(cell)).join('\\tab ')}\\par\n`).join('');
+    }
     return content;
 }
 
@@ -635,10 +748,77 @@ function paragraphToWord(element, prefix = '', documentDirection = 'ltr') {
     const direction = element.getAttribute?.('dir') || documentDirection;
     const properties = [
         heading ? `<w:pStyle w:val="Heading${heading[1]}"/>` : '',
+        element.tagName === 'TABLE' ? '' : '',
         direction === 'rtl' ? '<w:bidi/><w:jc w:val="right"/>' : '',
     ].join('');
     const pPr = properties ? `<w:pPr>${properties}</w:pPr>` : '';
     return `<w:p>${pPr}${prefix ? wordRun(prefix) : ''}${htmlNodeToWord(element)}</w:p>`;
+}
+
+function tableToWord(table, documentDirection) {
+    const gridData = tableGrid(table);
+    if (!gridData.rows.length) return '';
+    const colCount = Math.max(gridData.colCount, 1);
+
+    const tblPr = '<w:tblPr><w:tblW w:w="0" w:type="auto"/>' +
+        '<w:tblBorders>' + ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
+            .map((edge) => `<w:${edge} w:val="single" w:sz="4" w:space="0" w:color="808080"/>`)
+            .join('') + '</w:tblBorders><w:tblLayout w:type="autofit"/></w:tblPr>';
+    const grid = `<w:tblGrid>${'<w:gridCol w:w="2400"/>'.repeat(colCount)}</w:tblGrid>`;
+
+    const cellXml = (cell, { gridSpan = 1, vMerge = null } = {}) => {
+        const backgroundColor = (cell.getAttribute('style') || '')
+            .match(/background-color\s*:\s*#?([0-9a-f]{6})/i);
+        const isHeader = cell.tagName === 'TH';
+        const fill = backgroundColor?.[1]?.toUpperCase();
+        const props = [
+            gridSpan > 1 ? `<w:gridSpan w:val="${gridSpan}"/>` : '',
+            vMerge === 'start' ? '<w:vMerge w:val="restart"/>' : '',
+            vMerge === 'continue' ? '<w:vMerge/>' : '',
+            isHeader ? '<w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>' : '',
+            fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>` : '',
+            documentDirection === 'rtl' ? '<w:bidi/>' : '',
+        ].filter(Boolean).join('');
+        const tcPr = props ? `<w:tcPr>${props}</w:tcPr>` : '';
+        const content = vMerge === 'continue'
+            ? ''
+            : [...cell.childNodes].map((child) => htmlNodeToWord(child)).join('');
+        const pPr = documentDirection === 'rtl'
+            ? '<w:pPr><w:bidi/><w:jc w:val="right"/></w:pPr>' : '';
+        return `<w:tc>${tcPr}<w:p>${pPr}${content}</w:p></w:tc>`;
+    };
+
+    const rowsXml = gridData.rows.map((rowEl, row) => {
+        const cells = [];
+        for (let col = 0; col < colCount; col += 1) {
+            const cell = gridData.grid[row]?.[col];
+            if (!cell) continue;
+            const pos = gridData.startOf.get(cell);
+            const rowspan = spanWord(cell, 'rowspan', 1);
+            const colspan = spanWord(cell, 'colspan', 1);
+            if (pos.row < row && pos.col === col) {
+                // Continuation of a vertically merged cell from above: one
+                // empty continue cell per column the merge covers.
+                for (let c = 0; c < colspan; c += 1) {
+                    cells.push(cellXml(cell, { vMerge: 'continue' }));
+                }
+                continue;
+            }
+            if (pos.col !== col || pos.row !== row) continue; // covered to the left/above
+            cells.push(cellXml(cell, { gridSpan: colspan, vMerge: rowspan > 1 ? 'start' : null }));
+        }
+        // Header rows re-import as <th scope="col">.
+        const header = rowEl.parentNode?.tagName === 'THEAD'
+            ? '<w:trPr><w:tblHeader/></w:trPr>' : '';
+        return `<w:tr>${header}${cells.join('')}</w:tr>`;
+    }).join('');
+
+    return `<w:tbl>${tblPr}${grid}${rowsXml}</w:tbl>`;
+}
+
+function spanWord(cell, name, fallback) {
+    const value = Number.parseInt(cell.getAttribute(name) || '', 10);
+    return Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
 function htmlToWordBody(html, documentDirection) {
@@ -648,6 +828,8 @@ function htmlToWordBody(html, documentDirection) {
         if (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) {
             const bidi = documentDirection === 'rtl' ? '<w:pPr><w:bidi/><w:jc w:val="right"/></w:pPr>' : '';
             paragraphs.push(`<w:p>${bidi}${wordRun(node.nodeValue)}</w:p>`);
+        } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'TABLE') {
+            paragraphs.push(tableToWord(node, documentDirection));
         } else if (node.nodeType === Node.ELEMENT_NODE && ['UL', 'OL'].includes(node.tagName)) {
             [...node.children].forEach((item, index) => paragraphs.push(paragraphToWord(
                 item,
@@ -707,29 +889,113 @@ function docxRunToHtml(run) {
     return text;
 }
 
+function docxParagraphToHtml(paragraph) {
+    const properties = firstChildByLocalName(paragraph, 'pPr');
+    const styleNode = properties && firstChildByLocalName(properties, 'pStyle');
+    const styleName = styleNode?.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'val')
+        || styleNode?.getAttribute('w:val') || '';
+    const heading = /heading\s*([1-6])/i.exec(styleName);
+    const direction = properties && firstChildByLocalName(properties, 'bidi') ? ' dir="rtl"' : '';
+    let content = '';
+    for (const child of paragraph.children) {
+        if (child.localName === 'r') content += docxRunToHtml(child);
+        else if (child.localName === 'hyperlink') {
+            content += [...child.children].filter((item) => item.localName === 'r').map(docxRunToHtml).join('');
+        }
+    }
+    const tag = heading ? `h${heading[1]}` : 'p';
+    return `<${tag}${direction}>${content || '<br>'}</${tag}>`;
+}
+
+function docxTableCellToHtml(tc) {
+    const properties = firstChildByLocalName(tc, 'tcPr');
+    const gridSpan = properties && firstChildByLocalName(properties, 'gridSpan');
+    const colspanValue = gridSpan ? Number.parseInt(
+        gridSpan.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'val')
+            || gridSpan.getAttribute('w:val') || '1', 10) : 1;
+    const colspan = Number.isInteger(colspanValue) && colspanValue > 1 ? colspanValue : 0;
+    const vMerge = properties && firstChildByLocalName(properties, 'vMerge');
+    const mergeValue = vMerge
+        ? (vMerge.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'val')
+            || vMerge.getAttribute('w:val') || 'continue') : null;
+    const shadingNode = properties && firstChildByLocalName(properties, 'shd');
+    const fill = shadingNode
+        ? (shadingNode.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fill')
+            || shadingNode.getAttribute('w:fill') || '') : '';
+    const style = fill && /^[0-9a-f]{6}$/i.test(fill)
+        ? ` style="background-color: #${fill}"` : '';
+    const paragraphs = [...tc.children]
+        .filter((child) => child.localName === 'p')
+        .map(docxParagraphToHtml)
+        .join('');
+    return { colspan, mergeValue, html: `<td${style}>${paragraphs || '<br>'}</td>` };
+}
+
+function docxTableToHtml(tbl) {
+    const rows = [...tbl.children].filter((child) => child.localName === 'tr');
+    if (!rows.length) return '';
+    const tokens = rows.map((tr) => {
+        const rowProperties = firstChildByLocalName(tr, 'trPr');
+        const header = !!(rowProperties && firstChildByLocalName(rowProperties, 'tblHeader'));
+        const cells = [];
+        let col = 0;
+        for (const tc of [...tr.children].filter((child) => child.localName === 'tc')) {
+            const parsed = docxTableCellToHtml(tc);
+            cells.push({ ...parsed, col, rowspan: 1, header });
+            col += parsed.colspan || 1;
+        }
+        return cells;
+    });
+
+    // Two passes so vertical merges (vMerge restart/continue) become rowspans.
+    for (let r = 0; r < tokens.length; r += 1) {
+        for (const token of tokens[r]) {
+            if (token.mergeValue !== 'restart') continue;
+            let count = 1;
+            for (let rr = r + 1; rr < tokens.length; rr += 1) {
+                const continued = tokens[rr].find((other) =>
+                    other.col === token.col && other.mergeValue === 'continue');
+                if (!continued) break;
+                count += 1;
+            }
+            token.rowspan = count;
+        }
+    }
+
+    const rowsHtml = tokens.map((rowTokens) => {
+        const anyHeader = rowTokens.some((token) => token.header);
+        const tag = anyHeader ? 'th' : 'td';
+        const headerAttr = anyHeader ? ' scope="col"' : '';
+        const cellsHtml = rowTokens
+            .filter((token) => token.mergeValue !== 'continue')
+            .map((token) => {
+                const attrs = [
+                    token.colspan > 1 ? ` colspan="${token.colspan}"` : '',
+                    token.rowspan > 1 ? ` rowspan="${token.rowspan}"` : '',
+                ].join('');
+                const inner = token.html.match(/<td([^>]*)>([\s\S]*)<\/td>/);
+                const styleAttr = inner?.[1] || '';
+                const content = inner?.[2] || '<br>';
+                return `<${tag}${styleAttr}${attrs}${headerAttr}>${content}</${tag}>`;
+            }).join('');
+        return `<tr>${cellsHtml}</tr>`;
+    }).join('');
+
+    return `<table>${rowsHtml}</table>`;
+}
+
 export async function docxToHtml(buffer) {
     const entries = await unzip(buffer, new Set(['word/document.xml']));
     const documentData = entries.get('word/document.xml');
     if (!documentData) throw new Error('DOCX document.xml missing');
     const xml = new DOMParser().parseFromString(utf8Decoder.decode(documentData), 'application/xml');
     if (xml.querySelector('parsererror')) throw new Error('Invalid DOCX XML');
+    const body = xml.getElementsByTagNameNS('*', 'body')[0];
+    if (!body) throw new Error('Invalid DOCX body');
     const blocks = [];
-    for (const paragraph of [...xml.getElementsByTagNameNS('*', 'p')]) {
-        const properties = firstChildByLocalName(paragraph, 'pPr');
-        const styleNode = properties && firstChildByLocalName(properties, 'pStyle');
-        const styleName = styleNode?.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'val')
-            || styleNode?.getAttribute('w:val') || '';
-        const heading = /heading\s*([1-6])/i.exec(styleName);
-        const direction = properties && firstChildByLocalName(properties, 'bidi') ? ' dir="rtl"' : '';
-        let content = '';
-        for (const child of paragraph.children) {
-            if (child.localName === 'r') content += docxRunToHtml(child);
-            else if (child.localName === 'hyperlink') {
-                content += [...child.children].filter((item) => item.localName === 'r').map(docxRunToHtml).join('');
-            }
-        }
-        const tag = heading ? `h${heading[1]}` : 'p';
-        blocks.push(`<${tag}${direction}>${content || '<br>'}</${tag}>`);
+    for (const child of body.children) {
+        if (child.localName === 'p') blocks.push(docxParagraphToHtml(child));
+        else if (child.localName === 'tbl') blocks.push(docxTableToHtml(child));
     }
     return sanitizeHtml(blocks.join(''));
 }

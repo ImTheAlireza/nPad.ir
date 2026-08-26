@@ -118,6 +118,43 @@ export default function run(check, group) {
         assert.equal(sanitizeHtml(null), '');
     });
 
+    group('sanitize: tables');
+
+    const tableHtml = '<table style="width: 100%"><caption>Data</caption>'
+        + '<thead><tr><th scope="col">Name</th><th scope="col">Count</th></tr></thead>'
+        + '<tbody><tr><td colspan="2" rowspan="3">All</td></tr></tbody></table>';
+
+    check('keeps table structure, spans and scoped headers', () => {
+        const out = sanitizeHtml(tableHtml);
+        ['<table', '<caption>', '<thead>', '<tbody>', '<th scope="col"', '<td colspan="2" rowspan="3"']
+            .forEach((piece) => assert.ok(out.includes(piece), `${piece} missing from ${out}`));
+    });
+
+    check('keeps allowed table styles and drops the rest', () => {
+        const out = sanitizeHtml('<table><tbody><tr>'
+            + '<td style="background-color: #eee; width: 120px; position: fixed">x</td>'
+            + '</tr></tbody></table>');
+        assert.ok(/background-color/.test(out), out);
+        assert.ok(/width:\s*120px/.test(out), out);
+        assert.ok(!/position/.test(out), out);
+    });
+
+    check('drops unbounded colspans and rowspans', () => {
+        const out = sanitizeHtml('<table><tbody><tr>'
+            + '<td colspan="999999" rowspan="-3">x</td><td rowspan="abc">y</td>'
+            + '</tr></tbody></table>');
+        assert.ok(!/colspan/.test(out), out);
+        assert.ok(!/rowspan/.test(out), out);
+    });
+
+    check('removes event handlers and class names from table cells', () => {
+        const out = sanitizeHtml('<table><tbody><tr>'
+            + '<td class="evil" onclick="steal()">safe</td>'
+            + '</tr></tbody></table>');
+        assert.ok(!/onclick|class=/i.test(out), out);
+        assert.ok(out.includes('safe'), out);
+    });
+
     group('sanitize: textToHtml');
 
     check('escapes angle brackets', () => {

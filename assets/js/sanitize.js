@@ -10,14 +10,17 @@
  */
 
 const ALLOWED_TAGS = new Set([
-    'A', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DIV', 'EM', 'FONT', 'H1', 'H2',
+    'A', 'B', 'BLOCKQUOTE', 'BR', 'CAPTION', 'CODE', 'DIV', 'EM', 'FONT', 'H1', 'H2',
     'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'LI', 'MARK', 'OL', 'P', 'PRE', 'S',
-    'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'U', 'UL',
+    'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'TABLE', 'TBODY', 'TD', 'TFOOT',
+    'TH', 'THEAD', 'TR', 'U', 'UL',
 ]);
 
 const ALLOWED_ATTRS = {
     A: new Set(['href', 'title', 'target', 'rel']),
     FONT: new Set(['color', 'face', 'size']),
+    TD: new Set(['colspan', 'rowspan']),
+    TH: new Set(['colspan', 'rowspan', 'scope']),
     '*': new Set(['style', 'align', 'dir']),
 };
 
@@ -26,6 +29,8 @@ const ALLOWED_STYLES = new Set([
     'color', 'background-color', 'font-family', 'font-size', 'font-weight',
     'font-style', 'text-align', 'text-decoration', 'text-decoration-line',
     'margin-left', 'margin-right', 'padding-left', 'padding-right', 'direction',
+    'width', 'min-width', 'max-width', 'border', 'border-collapse',
+    'border-color', 'border-style', 'border-width', 'vertical-align',
 ]);
 
 const SAFE_URL = /^(https?:|mailto:|tel:|#|\/)/i;
@@ -78,6 +83,23 @@ function cleanElement(el) {
             const cleaned = sanitiseStyle(attr.value);
             if (cleaned) el.setAttribute('style', cleaned);
             else el.removeAttribute('style');
+        }
+
+        // Table spans are bounded so a malformed paste cannot ask a browser
+        // to lay out a 9999-column grid that freezes the tab.
+        if ((tag === 'TD' || tag === 'TH') && (name === 'colspan' || name === 'rowspan')) {
+            const span = Number.parseInt(attr.value, 10);
+            if (!Number.isInteger(span) || span < 1 || span > 100) {
+                el.removeAttribute(attr.name);
+                continue;
+            }
+            el.setAttribute(name, String(span));
+        }
+
+        if (tag === 'TH' && name === 'scope') {
+            if (!['col', 'row', 'colgroup', 'rowgroup'].includes(attr.value.trim().toLowerCase())) {
+                el.removeAttribute(attr.name);
+            }
         }
     }
 

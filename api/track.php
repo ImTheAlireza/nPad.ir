@@ -95,6 +95,8 @@ const ALLOWED_EVENTS = [
     'spellcheck_toggled',
     'spell_replace_used',
     'spell_add_word',
+    'table_inserted',
+    'table_tool_used',
 ];
 
 $event = trim((string) ($_POST['event'] ?? ''));

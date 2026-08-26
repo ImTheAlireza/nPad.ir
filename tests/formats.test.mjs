@@ -26,6 +26,13 @@ const rtlRtfHtml = formats.rtfToHtml(formats.htmlToRtf('<p>فارسی</p>', { di
 const docx = formats.htmlToDocx(sourceHtml);
 const docxHtml = await formats.docxToHtml(docx);
 const rtlDocxHtml = await formats.docxToHtml(formats.htmlToDocx('<p>فارسی</p>', { direction: 'rtl' }));
+const tableHtml = '<table><thead><tr><th>Name</th><th style="text-align: center">Count</th></tr></thead>'
+    + '<tbody><tr><td>a|b</td><td>1</td></tr><tr><td>c</td><td>2</td></tr></tbody></table>';
+const plainTableHtml = '<table><tbody><tr><td>x</td><td>y</td></tr></tbody></table>';
+const tableDocxHtml = await formats.docxToHtml(formats.htmlToDocx(tableHtml));
+const mergedTableDocxHtml = await formats.docxToHtml(formats.htmlToDocx(
+    '<table><tbody><tr><td rowspan="2" colspan="2">big</td></tr><tr></tr></tbody></table>',
+));
 
 function testCrc32(bytes) {
     let crc = 0xffffffff;
@@ -148,6 +155,25 @@ export default function run(check, group) {
         assert.ok(!/javascript:|<script/i.test(html), html);
     });
 
+    check('Markdown exports GFM pipe tables and aligns marked cells', () => {
+        const md = formats.htmlToMarkdown(tableHtml);
+        assert.match(md, /^\| Name \| Count \|/m);
+        assert.match(md, /^\| --- \| :---: \|/m);
+        assert.match(md, /a\\\|b/);
+        const back = formats.markdownToHtml(md);
+        assert.match(back, /<table>/);
+        assert.match(back, /<th[^>]*>Name<\/th>/);
+        assert.match(back, /a\|b/);
+        assert.match(back, /text-align: center/);
+    });
+
+    check('headerless tables survive Markdown as raw HTML', () => {
+        const md = formats.htmlToMarkdown(plainTableHtml);
+        assert.match(md, /<table>/);
+        const back = formats.markdownToHtml(md);
+        assert.match(back, /<table><tbody><tr><td>x<\/td><td>y<\/td><\/tr><\/tbody><\/table>/);
+    });
+
     check('NPad JSON round-trips metadata and sanitizes HTML', () => {
         const json = formats.noteToJson({
             title: 'Portable', html: '<p>Hi</p>', pinned: true, folderId: 'f1', tags: ['t1'],
@@ -199,6 +225,23 @@ export default function run(check, group) {
 
     check('DOCX importer reads ordinary deflate-compressed Open XML', () => {
         assert.match(compressedDocxHtml, /<strong>Compressed DOCX<\/strong>/);
+    });
+
+    check('DOCX export writes real tables and re-imports them', () => {
+        assert.match(tableDocxHtml, /<table>/);
+        assert.match(tableDocxHtml, /<th[^>]*>.*?Name.*?<\/th>/);
+        assert.match(tableDocxHtml, /a\|b/);
+        assert.match(mergedTableDocxHtml, /rowspan="2"/);
+        assert.match(mergedTableDocxHtml, /colspan="2"/);
+    });
+
+    check('RTF export flattens tables to tab-separated rows without losing text', () => {
+        const rtf = formats.htmlToRtf(tableHtml);
+        assert.match(rtf, /\\tab/);
+        const html = formats.rtfToHtml(rtf);
+        assert.match(html, /Name/);
+        assert.match(html, /Count/);
+        assert.match(html, /1/);
     });
 
     check('PDF importer inflates streams and follows Unicode font maps', () => {

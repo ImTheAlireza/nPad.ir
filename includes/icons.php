@@ -76,6 +76,28 @@ function npad_icon_paths(): array
         'pin'         => '<path d="M12 17v5"/><path d="m5 17 3-4V6L6 4V2h12v2l-2 2v7l3 4z"/>',
         'sidebar'     => '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
         'tag'         => '<path d="M20 13 13 20l-9-9V4h7z"/><circle cx="8.5" cy="8.5" r="1.5"/>',
+        /* Tables */
+        'table'           => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/>',
+        'table-row-above' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/><path d="M6 14h12" />',
+        'table-row-below' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/><path d="M12 6v8"/>',
+        'table-col-left'  => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="M6 12v6"/>',
+        'table-col-right' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M3 10h18M3 14h18"/><path d="M18 6v6"/>',
+        'table-row-delete' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/><path d="m8 5 8 10"/><path d="m16 5-8 10"/>',
+        'table-col-delete' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="m5 7 8 10"/><path d="m13 7-8 10"/>',
+        'table-delete'    => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="m6 7 12 10"/><path d="m18 7-12 10"/>',
+        'table-merge'     => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="m6 8 6 4-6 4"/>',
+        'table-split'     => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="M18 8v8"/>',
+        'table-header-row' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4H3z"/>',
+        'table-header-col' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="M3 6a2 2 0 0 1 2-2h4v16H5a2 2 0 0 1-2-2z"/>',
+        'table-borders'   => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16M3 14h18"/>',
+        'table-caption'   => '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M13 9h8v8h-8z"/><path d="M3 9h8"/>',
+        'table-properties' => '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M12 4v5.5M12 14.5V20M4 12h5.5M14.5 12H20"/>',
+        'table-move-up'   => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="M12 12V7"/><path d="m9 9 3 3 3-3"/>',
+        'table-move-down' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 10h18M3 14h18"/><path d="M12 8v5"/><path d="m9 11 3 3 3-3"/>',
+        'more'        => '<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>',
+        'hr'          => '<path d="M3 12h18"/><path d="M6 9v6M18 9v6" stroke-width="1.6"/>',
+        'calendar'    => '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
+        'arrow-down'  => '<path d="M12 5v14"/><path d="m5 12 7 7 7-7"/>',
     ];
 }
 

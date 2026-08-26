@@ -14,7 +14,7 @@ import path from 'node:path';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 async function renderIndex() {
-    const rt = await loadNodeRuntime('8.2', { emscriptenOptions: { processId: 1 } });
+    const rt = await loadNodeRuntime("8.2", { emscriptenOptions: { processId: 1 } });
     const php = new PHP(rt);
     (function mirror(host, vfs) {
         php.mkdir(vfs);
@@ -60,7 +60,6 @@ export default async function run(check, group) {
     const consoleErrors = [];
     virtualConsole.on('jsdomError', (e) => consoleErrors.push(e.message));
     virtualConsole.on('error', (m) => consoleErrors.push(String(m)));
-
     const dom = new JSDOM(html, {
         url: 'https://npad.ir/',
         runScripts: 'dangerously',
@@ -639,6 +638,179 @@ export default async function run(check, group) {
     document.querySelector('#backupDialog [data-backup-action="close"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
+
+    group('behaviour: tables (Insert menu, dialog, contextual toolbar)');
+
+    const tablePaneBase = document.getElementById('toolbarPaneBase');
+    const tablePaneTable = document.getElementById('toolbarPaneTable');
+    const tableContextMenu = document.getElementById('tableContextMenu');
+    const insertMenuTrigger = document.getElementById('insertMenuTrigger');
+    const insertMenuPanel = document.getElementById('insertMenuPanel');
+    const clickMenu = (action) => {
+        insertMenuTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        insertMenuPanel.querySelector(`[data-action="${action}"]`)
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    };
+    const clickTool = (action) => {
+        tablePaneTable.querySelector(`[data-table-action="${action}"]`)
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    };
+    const putCaretInCell = (node, atEnd = false) => {
+        const range = document.createRange();
+        if (atEnd) {
+            range.selectNodeContents(node);
+            range.collapse(false);
+        } else {
+            range.setStart(node, 0);
+            range.collapse(true);
+        }
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+    };
+
+    check('Insert menu opens next to Edit and reveals the table item', () => {
+        insertMenuTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(insertMenuPanel.dataset.open, 'true', 'Insert menu did not open');
+        assert.ok(insertMenuPanel.querySelector('[data-action="insert-table"]'), 'table item missing');
+        assert.ok(insertMenuPanel.querySelector('[data-action="insert-hr"]'), 'hr item missing');
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    check('table dialog opens with presets, steppers and a live preview', () => {
+        editor.innerHTML = '<p>before</p><p><br></p>';
+        putCaretInCell(editor.querySelector('p:last-child'));
+        clickMenu('insert-table');
+
+        const dialog = document.getElementById('appDialog');
+        assert.equal(dialog.open, true, 'table dialog did not open');
+        assert.ok(dialog.querySelector('[data-table-rows]'), 'rows stepper missing');
+        assert.ok(dialog.querySelector('[data-table-cols]'), 'columns stepper missing');
+        assert.ok(dialog.querySelector('[data-table-preset="header"]'), 'presets missing');
+        assert.ok(dialog.querySelector('[data-table-preview] table'), 'live preview missing');
+        dialog.close();
+    });
+
+    // The full click-insert flow (dialog -> settings -> table in the editor)
+    // is covered by tests/tables-ui.test.mjs, which awaits the asynchronous
+    // dialog continuations. Here we place the caret and drive the toolbar,
+    // which is fully synchronous once the table exists in the editor.
+    check('caret inside a table swaps the toolbar to table tools', () => {
+        editor.innerHTML = '<p>before</p>'
+            + '<table><thead><tr><th scope="col">A</th><th scope="col">B</th></tr></thead>'
+            + '<tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table>'
+            + '<p><br></p>';
+        const table = editor.querySelector('table');
+        putCaretInCell(table.tBodies[0].rows[1].cells[0], true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+
+        assert.equal(tablePaneBase.hidden, true, 'base toolbar still visible inside a table');
+        assert.equal(tablePaneTable.hidden, false, 'table toolbar not shown');
+        const headerRowBtn = tablePaneTable.querySelector('[data-table-action="header-row"]');
+        const headerColBtn = tablePaneTable.querySelector('[data-table-action="header-col"]');
+        assert.equal(headerRowBtn.getAttribute('aria-pressed'), 'true', 'header row state not reflected');
+        assert.equal(headerColBtn.getAttribute('aria-pressed'), 'false');
+    });
+
+    check('row and column controls mutate a real table grid', () => {
+        const table = editor.querySelector('table');
+        clickTool('row-above');
+        assert.equal(table.rows.length, 4, 'row-above did nothing');
+        clickTool('row-below');
+        assert.equal(table.rows.length, 5, 'row-below did nothing');
+        clickTool('col-right');
+        assert.equal(table.rows[0].cells.length, 3, 'col-right did nothing');
+        clickTool('row-delete');
+        assert.equal(table.rows.length, 4, 'row-delete did nothing');
+        clickTool('col-delete');
+        assert.equal(table.rows[0].cells.length, 2, 'col-delete did nothing');
+        assert.ok(tracked.includes('table_tool_used'), 'table_tool_used not tracked');
+    });
+
+    check('header, merge and split controls work on the live table', () => {
+        const table = editor.querySelector('table');
+        const body = table.tBodies[0];
+        putCaretInCell(body.rows[0].cells[0], true);
+        const headerColBtn = tablePaneTable.querySelector('[data-table-action="header-col"]');
+        headerColBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(body.rows[0].cells[0].tagName, 'TH', 'header column not applied');
+        assert.equal(body.rows[0].cells[0].getAttribute('scope'), 'row');
+        assert.equal(headerColBtn.getAttribute('aria-pressed'), 'true');
+
+        const headerRowBtn = tablePaneTable.querySelector('[data-table-action="header-row"]');
+        headerRowBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(table.tHead, null, 'header row did not unwrap');
+        headerRowBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(table.tHead, 'header row did not re-wrap');
+
+        const [first, second] = [...table.tBodies[0].rows[0].cells].slice(0, 2);
+        const range = document.createRange();
+        range.setStart(first, 0);
+        range.setEnd(second, 0);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        clickTool('merge');
+        assert.equal(table.tBodies[0].rows[0].cells[0].getAttribute('colspan'), '2', 'cells did not merge');
+        clickTool('split');
+        assert.equal(table.tBodies[0].rows[0].cells[0].getAttribute('colspan'), null, 'cells did not split');
+    });
+
+    check('Tab walks cells and appends a row at the end', () => {
+        const table = editor.querySelector('table');
+        const cells = [...table.querySelectorAll('td, th')].filter((c) => c.closest('table') === table);
+        putCaretInCell(cells[cells.length - 1], true);
+        const before = table.rows.length;
+
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+        assert.equal(table.rows.length, before + 1, 'Tab did not append a row');
+        const anchor = window.getSelection().anchorNode;
+        const anchorCell = anchor?.nodeType === 1 ? anchor : anchor?.parentElement;
+        assert.ok(anchorCell?.closest('table'), 'caret did not move into the appended row');
+
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'Tab', shiftKey: true, bubbles: true, cancelable: true,
+        }));
+        assert.ok(window.getSelection().anchorNode, 'Shift+Tab left no caret');
+    });
+
+    check('right-click opens the table context menu and Escape closes it', () => {
+        const table = editor.querySelector('table');
+        table.querySelector('td, th').dispatchEvent(new window.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 30, clientY: 30,
+        }));
+        assert.equal(tableContextMenu.hidden, false, 'context menu did not open');
+        assert.ok(tableContextMenu.querySelector('[data-table-action="merge"]'), 'context menu missing actions');
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(tableContextMenu.hidden, true, 'Escape did not close the context menu');
+    });
+
+    check('properties button opens the table settings dialog', () => {
+        clickTool('properties');
+        const dialog = document.getElementById('appDialog');
+        assert.equal(dialog.open, true, 'properties dialog did not open');
+        assert.ok(dialog.querySelector('[data-prop-caption]'), 'caption field missing');
+        assert.ok(dialog.querySelector('[data-prop-borders]'), 'borders checkbox missing');
+        dialog.close();
+    });
+
+    check('delete table asks for confirmation', () => {
+        clickTool('delete-table');
+        const dialog = document.getElementById('appDialog');
+        assert.equal(dialog.open, true, 'delete confirmation did not open');
+        dialog.close();
+    });
+
+    check('horizontal rule inserts straight from the menu', () => {
+        const range = document.createRange();
+        range.setStart(editor, editor.childNodes.length);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        clickMenu('insert-hr');
+        assert.ok(editor.querySelector('hr'), 'horizontal rule not inserted');
+    });
 
     group('behaviour: find & replace');
 
