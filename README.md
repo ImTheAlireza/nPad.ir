@@ -166,15 +166,23 @@ targets. The dictionary and custom words remain entirely on the device.
 
 The **Insert** menu (next to Edit) adds a table through a settings dialog:
 rows and columns, header row and header column, width, presets and a live
-preview. Once the caret is inside a table the toolbar swaps to table tools —
-the same selection-friendly pattern future contexts will use:
+preview. The toolbar is **selection-friendly**: it swaps to table tools for a
+collapsed caret in a cell, a whole-table selection or a multi-cell selection,
+and back to the default tools while you select text inside a single cell so
+bold, italics and the rest keep working:
 
 - add/delete rows and columns (grid-accurate around merged cells)
 - merge a rectangular selection of cells and split merged cells back
 - toggle the header row (`<thead><th scope="col">`) and header column
-- align cells, set cell background colours, width, borders and a caption
-- move rows and delete the whole table (with confirmation)
-- right-click context menu with the same actions
+- horizontal alignment plus vertical alignment (top/middle/bottom)
+- cell text direction (LTR/RTL), background colour, width, borders, caption
+- clear cell content and select the whole table (marked with an outline)
+- sort a column ascending/descending (skips tables with merged cells)
+- move rows and delete the whole table (with confirmation — also used when
+  deleting the last row or column)
+- right-click context menu with the same actions, greyed out when impossible
+- buttons for impossible actions are disabled (merge without a multi-cell
+  selection, split an unmerged cell, move at the ends of the table)
 - `Tab` / `Shift+Tab` walk cells; `Tab` from the last cell appends a row
 - inserted tables go through `execCommand('insertHTML')`, so `Ctrl+Z` undoes
   the insertion; a new table never nests inside a cell (it lands beside the
@@ -193,7 +201,7 @@ npm install     # dev-only; the site itself ships no JS dependencies
 npm test
 ```
 
-283 assertions covering:
+290 assertions covering:
 
 | Suite | What it proves |
 |---|---|

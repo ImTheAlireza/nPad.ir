@@ -712,6 +712,81 @@ export default async function run(check, group) {
         assert.equal(headerColBtn.getAttribute('aria-pressed'), 'false');
     });
 
+    check('text selected inside one cell returns to the default toolbar', () => {
+        const table = editor.querySelector('table');
+        const cell = table.tBodies[0].rows[0].cells[0];
+        cell.textContent = 'highlight me';
+        putCaretInCell(cell, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        assert.equal(tablePaneTable.hidden, false, 'collapsed caret should show table tools');
+
+        // Select a word inside the cell: text formatting needs the base toolbar.
+        const textNode = cell.firstChild;
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, 4);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new window.Event('selectionchange'));
+
+        assert.equal(tablePaneTable.hidden, true, 'text selection kept the table toolbar');
+        assert.equal(tablePaneBase.hidden, false, 'default toolbar not restored for text selection');
+
+        // Selection spanning two cells is a table operation again.
+        const other = table.tBodies[0].rows[0].cells[1];
+        const range2 = document.createRange();
+        range2.setStart(textNode, 0);
+        range2.setEnd(other, 0);
+        selection.removeAllRanges();
+        selection.addRange(range2);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        assert.equal(tablePaneTable.hidden, false, 'multi-cell selection should show table tools');
+
+        // Reset to a collapsed caret for the following checks.
+        putCaretInCell(cell, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+    });
+
+    check('table toolbar exposes the common cell options', () => {
+        const actions = [
+            'merge', 'split', 'clear-cells', 'select-table',
+            'v-align-top', 'v-align-middle', 'v-align-bottom',
+            'cell-dir-ltr', 'cell-dir-rtl', 'cell-colour',
+        ];
+        actions.forEach((action) => {
+            assert.ok(tablePaneTable.querySelector(`[data-table-action="${action}"]`),
+                `${action} missing from the table toolbar`);
+        });
+        const morePanel = document.getElementById('tableMorePanel');
+        assert.ok(morePanel.querySelector('[data-table-action="sort-asc"]'), 'sort ascending missing');
+        assert.ok(morePanel.querySelector('[data-table-action="sort-desc"]'), 'sort descending missing');
+    });
+
+    check('merge and split affordances follow the selection', () => {
+        const table = editor.querySelector('table');
+        putCaretInCell(table.tBodies[0].rows[0].cells[0], true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        const mergeBtn = tablePaneTable.querySelector('[data-table-action="merge"]');
+        const splitBtn = tablePaneTable.querySelector('[data-table-action="split"]');
+        assert.equal(mergeBtn.disabled, true, 'merge should be disabled for a collapsed caret');
+        assert.equal(splitBtn.disabled, true, 'split should be disabled for a plain cell');
+
+        const first = table.tBodies[0].rows[0].cells[0];
+        const second = table.tBodies[0].rows[0].cells[1];
+        const range = document.createRange();
+        range.setStart(first, 0);
+        range.setEnd(second, 0);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        assert.equal(mergeBtn.disabled, false, 'merge should be enabled for a multi-cell selection');
+
+        putCaretInCell(first, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+    });
+
     check('row and column controls mutate a real table grid', () => {
         const table = editor.querySelector('table');
         clickTool('row-above');

@@ -1478,6 +1478,16 @@ html[lang='fa'] .document-folder__menu-label { letter-spacing: 0; }
     box-shadow: inset 0 0 0 1px var(--accent-ring);
 }
 
+.toolbar__btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.toolbar__btn:disabled:hover {
+    background: transparent;
+    color: var(--text-body);
+}
+
 /* Custom searchable font picker. The popup sits outside the editor shell and
    is positioned by JS, so the mobile toolbar's horizontal scroller cannot
    clip the long list. */
@@ -1835,6 +1845,11 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     outline-offset: -2px;
 }
 
+.editor .npad-table-selected {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: -2px;
+}
+
 .editor table[style*="width:100%"] { width: 100%; }
 
 @media (max-width: 640px) {
@@ -2146,6 +2161,16 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 .table-context__item:focus-visible {
     background: var(--surface-hover);
     color: var(--text-strong);
+}
+
+.table-context__item:disabled {
+    opacity: 0.38;
+    cursor: default;
+}
+
+.table-context__item:disabled:hover {
+    background: transparent;
+    color: var(--text-body);
 }
 
 .table-context__item .icon { width: 16px; height: 16px; flex: none; }

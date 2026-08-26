@@ -244,6 +244,7 @@ $jsStrings = [
     'tableInserted'     => t('table.inserted'),
     'tableMergeHint'    => t('table.merge_hint'),
     'tableSplitHint'    => t('table.split_hint'),
+    'tableSortUnsupported' => t('table.sort_unsupported'),
     'tableDeleteTitle'  => t('table.delete_title'),
     'tableDeleteBody'   => t('table.delete_body'),
     'tablePropertiesTitle' => t('table.properties_title'),
@@ -624,6 +625,14 @@ $jsStrings = [
                         title="<?= e(t('table.split')) ?>" aria-label="<?= e(t('table.split')) ?>">
                     <?= icon('table-split') ?>
                 </button>
+                <button type="button" class="toolbar__btn" data-table-action="clear-cells"
+                        title="<?= e(t('table.clear_cells')) ?>" aria-label="<?= e(t('table.clear_cells')) ?>">
+                    <?= icon('table-clear') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="select-table"
+                        title="<?= e(t('table.select_table')) ?>" aria-label="<?= e(t('table.select_table')) ?>">
+                    <?= icon('table-select') ?>
+                </button>
             </div>
             <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_headers')) ?>">
                 <button type="button" class="toolbar__btn" data-table-action="header-row" aria-pressed="false"
@@ -649,6 +658,28 @@ $jsStrings = [
                     <?= icon('align-right') ?>
                 </button>
             </div>
+            <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_vertical')) ?>">
+                <button type="button" class="toolbar__btn" data-table-action="v-align-top"
+                        title="<?= e(t('table.v_align_top')) ?>" aria-label="<?= e(t('table.v_align_top')) ?>">
+                    <?= icon('align-vert-top') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="v-align-middle"
+                        title="<?= e(t('table.v_align_middle')) ?>" aria-label="<?= e(t('table.v_align_middle')) ?>">
+                    <?= icon('align-vert-middle') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="v-align-bottom"
+                        title="<?= e(t('table.v_align_bottom')) ?>" aria-label="<?= e(t('table.v_align_bottom')) ?>">
+                    <?= icon('align-vert-bottom') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="cell-dir-ltr"
+                        title="<?= e(t('table.cell_dir_ltr')) ?>" aria-label="<?= e(t('table.cell_dir_ltr')) ?>">
+                    <?= icon('dir-ltr') ?>
+                </button>
+                <button type="button" class="toolbar__btn" data-table-action="cell-dir-rtl"
+                        title="<?= e(t('table.cell_dir_rtl')) ?>" aria-label="<?= e(t('table.cell_dir_rtl')) ?>">
+                    <?= icon('dir-rtl') ?>
+                </button>
+            </div>
             <div class="toolbar__group" role="group" aria-label="<?= e(t('table.group_colour')) ?>">
                 <button type="button" class="toolbar__btn" data-table-action="cell-colour"
                         title="<?= e(t('table.cell_colour')) ?>" aria-label="<?= e(t('table.cell_colour')) ?>">
@@ -669,6 +700,13 @@ $jsStrings = [
                     <button type="button" class="menu__item" role="menuitem" data-table-action="borders">
                         <?= icon('table-borders') ?><span><?= e(t('table.borders')) ?></span>
                     </button>
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="sort-asc">
+                        <?= icon('sort-asc') ?><span><?= e(t('table.sort_asc')) ?></span>
+                    </button>
+                    <button type="button" class="menu__item" role="menuitem" data-table-action="sort-desc">
+                        <?= icon('sort-desc') ?><span><?= e(t('table.sort_desc')) ?></span>
+                    </button>
+                    <div class="menu__separator" role="separator"></div>
                     <button type="button" class="menu__item" role="menuitem" data-table-action="move-row-up">
                         <?= icon('table-move-up') ?><span><?= e(t('table.move_row_up')) ?></span>
                     </button>

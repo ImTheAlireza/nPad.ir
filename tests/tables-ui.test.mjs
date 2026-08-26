@@ -257,7 +257,55 @@ export default async function run(check, group) {
         assert.ok(tracked.includes('table_tool_used'), 'table_tool_used not tracked');
     });
 
+    await step('select table selects the whole table and keeps table tools', () => {
+        editor.innerHTML = '<table><tbody><tr><td>x</td><td>y</td></tr>'
+            + '<tr><td>z</td><td>w</td></tr></tbody></table><p><br></p>';
+        const table = editor.querySelector('table');
+        putCaretInCell(table.tBodies[0].rows[0].cells[0], true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickTool('select-table');
+
+        assert.ok(table.classList.contains('npad-table-selected'), 'whole table not marked selected');
+        assert.equal(tablePaneTable.hidden, false, 'table tools lost after selecting the table');
+        // Any new pointer interaction ends the whole-table selection.
+        document.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+        assert.equal(table.classList.contains('npad-table-selected'), false, 'selection not cleared on pointerdown');
+    });
+
+    await step('sorting a column reorders the body rows', () => {
+        editor.innerHTML = '<table><thead><tr><th>Name</th><th>Value</th></tr></thead>'
+            + '<tbody><tr><td>b</td><td>2</td></tr><tr><td>a</td><td>1</td></tr>'
+            + '<tr><td>c</td><td>3</td></tr></tbody></table><p><br></p>';
+        const table = editor.querySelector('table');
+        putCaretInCell(table.tBodies[0].rows[0].cells[0], true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        click(document.getElementById('tableMorePanel')
+            .querySelector('[data-table-action="sort-asc"]'));
+
+        const names = [...table.tBodies[0].rows].map((row) => row.cells[0].textContent);
+        assert.deepEqual(names, ['a', 'b', 'c'], 'rows not sorted');
+    });
+
+    await step('deleting the last row asks to delete the table instead', async () => {
+        editor.innerHTML = '<table><tbody><tr><td>only</td><td>row</td></tr></tbody></table><p><br></p>';
+        const table = editor.querySelector('table');
+        putCaretInCell(table.tBodies[0].rows[0].cells[0], true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickTool('row-delete');
+
+        assert.equal(dialog.open, true, 'last-row delete did not ask for confirmation');
+        assert.ok(dialog.querySelector('[data-action="confirm"]'), 'no confirm button');
+        click(dialog.querySelector('[data-action="confirm"]'));
+        await flush();
+
+        assert.equal(editor.querySelector('table'), null, 'table not deleted after confirm');
+        assert.equal(tablePaneBase.hidden, false, 'base toolbar not restored');
+    });
+
     await step('deleting the table restores the base toolbar', async () => {
+        editor.innerHTML = '<table><tbody><tr><td>x</td></tr></tbody></table><p><br></p>';
+        putCaretInCell(editor.querySelector('td'), true);
+        document.dispatchEvent(new window.Event('selectionchange'));
         clickTool('delete-table');
         assert.equal(dialog.open, true, 'delete confirmation did not open');
         click(dialog.querySelector('[data-action="confirm"]'));

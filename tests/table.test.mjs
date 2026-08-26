@@ -199,6 +199,54 @@ export default function run(check, group) {
         assert.ok(/text-align:\s*center/.test(cells[1].getAttribute('style') || ''), 'alignment missing');
     });
 
+    check('vertical alignment, cell direction and clear cells', () => {
+        const table = mount(tableModule.createTableHtml({ rows: 2, cols: 2 }));
+        const cells = [...table.rows[0].cells];
+        cells[0].textContent = 'keep';
+        tableModule.verticalAlignCells(cells, 'middle');
+        assert.ok(/vertical-align:\s*middle/.test(cells[0].getAttribute('style') || ''), 'vertical align missing');
+        tableModule.setCellDirection(cells, 'rtl');
+        assert.equal(cells[0].getAttribute('dir'), 'rtl');
+        tableModule.setCellDirection(cells, 'ltr');
+        assert.equal(cells[0].getAttribute('dir'), 'ltr');
+        tableModule.clearCells(cells);
+        assert.equal(cells[0].innerHTML, '<br>', 'cell not cleared');
+        assert.equal(cells[1].innerHTML, '<br>');
+    });
+
+    check('isMergedCell reports merged and plain cells', () => {
+        const table = mount('<table><tbody><tr><td rowspan="2" colspan="2">A</td></tr>'
+            + '<tr></tr><tr><td>B</td><td>C</td></tr></tbody></table>');
+        assert.equal(tableModule.isMergedCell(table, table.rows[0].cells[0]), true);
+        assert.equal(tableModule.isMergedCell(table, table.rows[2].cells[0]), false);
+    });
+
+    check('sortTableByColumn sorts body rows numerically and alphabetically', () => {
+        const table = mount('<table><thead><tr><th>Name</th><th>Value</th></tr></thead>'
+            + '<tbody><tr><td>b</td><td>2</td></tr><tr><td>a</td><td>10</td></tr>'
+            + '<tr><td>c</td><td>1</td></tr></tbody></table>');
+        const valueColCell = table.tBodies[0].rows[0].cells[1];
+        tableModule.sortTableByColumn(table, valueColCell, 'asc');
+        let values = [...table.tBodies[0].rows].map((row) => row.cells[1].textContent);
+        assert.deepEqual(values, ['1', '2', '10'], 'numeric sort out of order');
+        tableModule.sortTableByColumn(table, valueColCell, 'desc');
+        values = [...table.tBodies[0].rows].map((row) => row.cells[1].textContent);
+        assert.deepEqual(values, ['10', '2', '1'], 'descending sort out of order');
+
+        const nameColCell = table.tBodies[0].rows[0].cells[0];
+        tableModule.sortTableByColumn(table, nameColCell, 'asc');
+        const names = [...table.tBodies[0].rows].map((row) => row.cells[0].textContent);
+        assert.deepEqual(names, ['a', 'b', 'c'], 'alphabetical sort out of order');
+    });
+
+    check('sortTableByColumn refuses merged or single-row tables', () => {
+        const merged = mount('<table><tbody><tr><td rowspan="2">A</td><td>1</td></tr>'
+            + '<tr><td>2</td></tr></tbody></table>');
+        assert.equal(tableModule.sortTableByColumn(merged, merged.rows[0].cells[0], 'asc'), false);
+        const single = mount('<table><tbody><tr><td>only</td></tr></tbody></table>');
+        assert.equal(tableModule.sortTableByColumn(single, single.rows[0].cells[0], 'asc'), false);
+    });
+
     check('width and borders properties round-trip', () => {
         const table = mount(tableModule.createTableHtml({ rows: 2, cols: 2 }));
         tableModule.setTableWidth(table, 'full');

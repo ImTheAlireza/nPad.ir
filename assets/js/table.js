@@ -566,6 +566,72 @@ export function alignCells(cells, value) {
     }
 }
 
+export function verticalAlignCells(cells, value) {
+    for (const cell of cells) {
+        if (value) cell.style.setProperty('vertical-align', value);
+        else cell.style.removeProperty('vertical-align');
+    }
+}
+
+export function setCellDirection(cells, dir) {
+    for (const cell of cells) {
+        if (dir === 'ltr' || dir === 'rtl') cell.setAttribute('dir', dir);
+        else cell.removeAttribute('dir');
+    }
+}
+
+/** Replace the content of cells with a single line break (empty cell). */
+export function clearCells(cells) {
+    for (const cell of cells) {
+        cell.innerHTML = '';
+        cell.appendChild(document.createElement('br'));
+    }
+}
+
+/** True when a cell carries a rowspan or colspan greater than one. */
+export function isMergedCell(table, cell) {
+    const { startOf } = tableGrid(table);
+    if (!startOf.has(cell)) return false;
+    return spanOf(cell, 'rowspan', 1) > 1 || spanOf(cell, 'colspan', 1) > 1;
+}
+
+/**
+ * Sort the body rows by the column containing `cell`. Returns false (leaving
+ * the table untouched) when the body has fewer than two rows or contains any
+ * merged cell — sorting those would tear the grid apart.
+ */
+export function sortTableByColumn(table, cell, direction = 'asc') {
+    const gridData = tableGrid(table);
+    const pos = gridData.startOf.get(cell);
+    if (!pos) return false;
+    const col = pos.col;
+
+    const bodyRows = gridData.rows.filter((row) => row && row.parentNode?.tagName !== 'THEAD');
+    if (bodyRows.length < 2) return false;
+    for (const row of bodyRows) {
+        for (const bodyCell of rowCells(row)) {
+            if (spanOf(bodyCell, 'rowspan', 1) > 1 || spanOf(bodyCell, 'colspan', 1) > 1) return false;
+        }
+    }
+
+    const key = (row) => (rowCells(row)[col]?.textContent || '').trim();
+    const numeric = bodyRows.every((row) => /^-?\d+(?:[.,]\d+)?$/.test(key(row)));
+    const compare = (a, b) => {
+        const ka = key(a);
+        const kb = key(b);
+        const cmp = numeric
+            ? Number(ka.replace(',', '.')) - Number(kb.replace(',', '.'))
+            : ka.localeCompare(kb, undefined, { numeric: true, sensitivity: 'base' });
+        return direction === 'desc' ? -cmp : cmp;
+    };
+
+    const sorted = [...bodyRows].sort(compare);
+    const tbody = bodyRows[0].parentNode;
+    if (!tbody) return false;
+    for (const row of sorted) tbody.appendChild(row);
+    return true;
+}
+
 export function setTableWidth(table, mode) {
     if (mode === 'full') table.style.setProperty('width', '100%');
     else table.style.removeProperty('width');

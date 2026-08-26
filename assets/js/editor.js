@@ -53,11 +53,17 @@ import {
     isHeaderColumnActive,
     setCellShading,
     alignCells,
+    verticalAlignCells,
+    setCellDirection,
+    clearCells,
+    isMergedCell,
+    sortTableByColumn,
     setTableWidth,
     toggleBorders,
     tableBordersOn,
     setCaption,
     moveRow,
+    tableGrid,
     stepCell,
     placeCaretInCell,
     selectionRectCells,
@@ -1382,6 +1388,11 @@ export function initEditor({ strings, onEvent }) {
         if (!toolbarPaneTable) return;
         const cell = currentCellFromSelection();
         const table = cell?.closest('table') || null;
+        const setDisabled = (action, disabled) => {
+            const button = toolbarPaneTable.querySelector(`[data-table-action="${action}"]`);
+            if (button) button.disabled = disabled;
+        };
+
         const headerRowBtn = toolbarPaneTable.querySelector('[data-table-action="header-row"]');
         const headerColBtn = toolbarPaneTable.querySelector('[data-table-action="header-col"]');
         if (headerRowBtn) {
@@ -1390,6 +1401,20 @@ export function initEditor({ strings, onEvent }) {
         if (headerColBtn) {
             headerColBtn.setAttribute('aria-pressed', String(table && cell ? isHeaderColumnActive(table, cell) : false));
         }
+
+        // Action affordances: only show what the current selection can do.
+        const selection = window.getSelection();
+        const anchorCell = closestTableCell(selection?.anchorNode);
+        const focusCell = closestTableCell(selection?.focusNode);
+        const multiCell = !!(anchorCell && focusCell && anchorCell !== focusCell);
+        const pos = table && cell ? cellPosition(table, cell) : null;
+
+        setDisabled('merge', !multiCell);
+        setDisabled('split', !table || !cell || !isMergedCell(table, cell));
+        setDisabled('move-row-up', !pos || pos.row <= 0);
+        setDisabled('move-row-down', !pos || !table || pos.row >= tableGrid(table).rowCount - 1);
+        setDisabled('row-delete', !table);
+        setDisabled('col-delete', !table);
     }
 
     function markActiveCell(cell) {
@@ -1397,10 +1422,57 @@ export function initEditor({ strings, onEvent }) {
         if (cell) cell.classList.add('npad-cell-active');
     }
 
+    /* Whole-table selection is tracked explicitly: native range selection of
+       a <table> is inconsistent across engines (jsdom folds it into the
+       parent), and the outline is what users see. Cleared on the next
+       pointer/keyboard/typing interaction. */
+    let selectedTableEl = null;
+
+    function clearSelectedTable() {
+        if (!selectedTableEl) return;
+        selectedTableEl.classList.remove('npad-table-selected');
+        selectedTableEl = null;
+    }
+
+    /**
+     * Decide which toolbar pane the current selection asks for:
+     *  - collapsed caret inside a cell         -> table tools
+     *  - the whole <table> element selected     -> table tools
+     *  - a range spanning more than one cell     -> table tools (merge etc.)
+     *  - text selected inside ONE cell           -> default tools (format it)
+     */
+    function contextTableFromSelection(selection) {
+        if (selectedTableEl?.isConnected) return selectedTableEl;
+        if (!selection || !selection.rangeCount) return null;
+        const anchorNode = selection.anchorNode;
+        const focusNode = selection.focusNode;
+        if (!anchorNode || !editor.contains(anchorNode)) return null;
+
+        const anchorTable = anchorNode.nodeType === 1 && anchorNode.tagName === 'TABLE'
+            ? anchorNode
+            : closestTable(anchorNode);
+        if (!anchorTable) return null;
+
+        // A selection that runs out of the table selects text, not a table shape.
+        const focusTable = focusNode && (focusNode.nodeType === 1 && focusNode.tagName === 'TABLE'
+            ? focusNode
+            : closestTable(focusNode));
+        if (focusNode && !focusTable) return null;
+
+        if (selection.isCollapsed) return anchorTable;
+
+        // Both ends inside the same cell = a text selection: default toolbar.
+        const anchorCell = closestTableCell(anchorNode);
+        const focusCell = closestTableCell(focusNode);
+        if (anchorCell && focusCell && anchorCell === focusCell) return null;
+        return anchorTable;
+    }
+
     function updateToolbarContext() {
-        const cell = currentCellFromSelection();
-        const table = cell ? closestTable(cell) : null;
-        markActiveCell(cell && table ? cell : null);
+        const selection = window.getSelection();
+        const table = contextTableFromSelection(selection);
+        const collapsedInCell = !!(table && selection?.isCollapsed);
+        markActiveCell(collapsedInCell ? closestTableCell(selection.anchorNode) : null);
         setToolbarContext(table ? 'table' : 'base');
     }
 
@@ -1700,6 +1772,25 @@ export function initEditor({ strings, onEvent }) {
         afterTableOp();
     }
 
+    /** Delete a table only after explicit confirmation (shared by delete-table
+        and the last-row/last-column guards). */
+    function confirmDeleteTable(table) {
+        confirmDialog({
+            title: strings.tableDeleteTitle,
+            message: strings.tableDeleteBody,
+            confirmLabel: strings.confirm,
+            cancelLabel: strings.cancel,
+            danger: true,
+        }).then((confirmed) => {
+            if (!confirmed) return;
+            deleteTable(table);
+            clearSelectedTable();
+            setToolbarContext('base');
+            editor.focus();
+            afterTableOp();
+        });
+    }
+
     function runTableAction(action) {
         const cell = currentCellForTableAction();
         const table = cell ? closestTable(cell) : null;
@@ -1712,7 +1803,11 @@ export function initEditor({ strings, onEvent }) {
         // must read the pre-click rectangle. Clicking a toolbar button moves
         // focus there and collapses the live selection, so bring back the
         // range saved by selectionchange/pointerdown first.
-        const RECT_ACTIONS = ['merge', 'align-left', 'align-center', 'align-right', 'cell-colour'];
+        const RECT_ACTIONS = [
+            'merge', 'align-left', 'align-center', 'align-right',
+            'cell-colour', 'clear-cells', 'v-align-top', 'v-align-middle',
+            'v-align-bottom', 'cell-dir-ltr', 'cell-dir-rtl',
+        ];
         if (RECT_ACTIONS.includes(action)) {
             const selection = window.getSelection();
             if (!selection || selection.isCollapsed) restoreEditorSelection();
@@ -1736,22 +1831,30 @@ export function initEditor({ strings, onEvent }) {
                 break;
             }
             case 'row-delete': {
+                // Deleting the last row would silently destroy the table;
+                // route to the explicit table-delete confirmation instead.
+                if (table.rows.length <= 1) {
+                    confirmDeleteTable(table);
+                    break;
+                }
                 const removed = deleteRow(table, cell);
                 if (removed) {
                     const first = table.isConnected ? table.querySelector('td, th') : null;
                     if (first) placeCaretInCell(first);
                     afterTableOp();
-                    if (!table.isConnected) setToolbarContext('base');
                 }
                 break;
             }
             case 'col-delete': {
+                if (tableGrid(table).colCount <= 1) {
+                    confirmDeleteTable(table);
+                    break;
+                }
                 const removed = deleteColumn(table, cell);
                 if (removed) {
                     const first = table.isConnected ? table.querySelector('td, th') : null;
                     if (first) placeCaretInCell(first);
                     afterTableOp();
-                    if (!table.isConnected) setToolbarContext('base');
                 }
                 break;
             }
@@ -1812,6 +1915,53 @@ export function initEditor({ strings, onEvent }) {
                 });
                 break;
             }
+            case 'clear-cells': {
+                clearCells(selectionRectCells(editor));
+                afterTableOp();
+                break;
+            }
+            case 'select-table': {
+                clearSelectedTable();
+                selectedTableEl = table;
+                table.classList.add('npad-table-selected');
+                // Native selection too, where engines support it: Delete then
+                // removes the whole table.
+                try {
+                    const range = document.createRange();
+                    range.selectNode(table);
+                    const nextSelection = window.getSelection();
+                    nextSelection.removeAllRanges();
+                    nextSelection.addRange(range);
+                } catch {
+                    /* selection is only a visual courtesy */
+                }
+                updateToolbarContext();
+                break;
+            }
+            case 'v-align-top':
+            case 'v-align-middle':
+            case 'v-align-bottom': {
+                verticalAlignCells(
+                    selectionRectCells(editor),
+                    action === 'v-align-top' ? 'top' : action === 'v-align-middle' ? 'middle' : 'bottom',
+                );
+                afterTableOp();
+                break;
+            }
+            case 'cell-dir-ltr':
+            case 'cell-dir-rtl': {
+                setCellDirection(selectionRectCells(editor), action === 'cell-dir-ltr' ? 'ltr' : 'rtl');
+                afterTableOp();
+                break;
+            }
+            case 'sort-asc':
+            case 'sort-desc': {
+                // Sort around the column the user is standing in.
+                const ok = sortTableByColumn(table, cell, action === 'sort-desc' ? 'desc' : 'asc');
+                if (ok) afterTableOp();
+                else toast(strings.tableSortUnsupported);
+                break;
+            }
             case 'properties':
                 openTableProperties(table);
                 break;
@@ -1824,22 +1974,9 @@ export function initEditor({ strings, onEvent }) {
                 if (moveRow(table, cell, action === 'move-row-up' ? -1 : 1)) afterTableOp();
                 break;
             }
-            case 'delete-table': {
-                confirmDialog({
-                    title: strings.tableDeleteTitle,
-                    message: strings.tableDeleteBody,
-                    confirmLabel: strings.confirm,
-                    cancelLabel: strings.cancel,
-                    danger: true,
-                }).then((confirmed) => {
-                    if (!confirmed) return;
-                    deleteTable(table);
-                    setToolbarContext('base');
-                    editor.focus();
-                    afterTableOp();
-                });
+            case 'delete-table':
+                confirmDeleteTable(table);
                 break;
-            }
             default:
                 break;
         }
@@ -1857,8 +1994,14 @@ export function initEditor({ strings, onEvent }) {
     function buildTableContextMenu() {
         if (!tableContextMenu || !toolbarPaneTable) return;
         tableContextMenu.innerHTML = '';
-        toolbarPaneTable.querySelectorAll('.toolbar__group').forEach((group) => {
-            const buttons = [...group.querySelectorAll('button[data-table-action]')];
+        const collect = (container) => [...container.querySelectorAll('[data-table-action]')];
+        const panes = [
+            ...toolbarPaneTable.querySelectorAll('.toolbar__group'),
+            toolbarPaneTable.querySelector('.menu__panel--table'),
+        ].filter(Boolean);
+
+        panes.forEach((group) => {
+            const buttons = collect(group);
             if (!buttons.length) return;
             const section = document.createElement('div');
             section.className = 'table-context__group';
@@ -1868,10 +2011,15 @@ export function initEditor({ strings, onEvent }) {
                 item.className = 'table-context__item';
                 item.dataset.tableAction = original.dataset.tableAction;
                 item.setAttribute('role', 'menuitem');
+                // Impossibile actions stay visible but greyed, matching the
+                // toolbar affordances instead of vanishing.
+                item.disabled = original.disabled;
                 const iconClone = original.querySelector('svg')?.cloneNode(true);
                 if (iconClone) item.appendChild(iconClone);
                 const label = document.createElement('span');
-                label.textContent = original.getAttribute('aria-label') || '';
+                label.textContent = original.getAttribute('aria-label')
+                    || original.querySelector('span')?.textContent
+                    || '';
                 item.appendChild(label);
                 section.appendChild(item);
             });
@@ -1881,6 +2029,7 @@ export function initEditor({ strings, onEvent }) {
 
     function showTableContextMenu(x, y) {
         if (!tableContextMenu) return;
+        syncTableToolbarState();
         buildTableContextMenu();
         tableContextMenu.hidden = false;
         const margin = 8;
@@ -1904,6 +2053,10 @@ export function initEditor({ strings, onEvent }) {
 
     document.addEventListener('scroll', hideTableContextMenu, true);
     window.addEventListener('resize', hideTableContextMenu);
+
+    // Any real pointer or typing interaction ends "whole table selected".
+    document.addEventListener('pointerdown', clearSelectedTable, true);
+    editor.addEventListener('keydown', clearSelectedTable);
 
     // Tab walks cells; at the last cell it appends a row (grid behaviour),
     // while Shift+Tab steps backwards.
@@ -3634,6 +3787,7 @@ ${cleanHtml()}
        --------------------------------------------------------------------- */
 
     editor.addEventListener('input', () => {
+        clearSelectedTable();
         // When a size is chosen at a collapsed caret, the browser creates its
         // temporary size=7 wrapper only after the first character is typed.
         if (pendingFontSize) convertSizeMarkers(pendingFontSize);
