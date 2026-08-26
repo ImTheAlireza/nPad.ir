@@ -80,7 +80,7 @@ import {
 } from './formats.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
-import { initCodeblocks } from './codeblock.js';
+import { initCodeblocks, detectLanguage } from './codeblock.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -1374,6 +1374,8 @@ export function initEditor({ strings, onEvent }) {
         insertHtml(clean);
         normaliseTables(editor);
         code.refreshAll();
+        // Code pasted into a plain code block gets a language guess.
+        code.autodetectCaretBlock();
         scheduleSave();
         updateCounts();
         spell.refresh();
@@ -1614,13 +1616,27 @@ export function initEditor({ strings, onEvent }) {
 
     function insertCodeBlock() {
         editor.focus();
-        restoreEditorSelection();
-        const selection = window.getSelection();
-        const selected = selection && !selection.isCollapsed ? selection.toString() : '';
+        // A live selection inside the editor is the truth (it survives the
+        // menu click); the remembered range is only a fallback for engines
+        // that drop the selection when focus moved to the menu.
+        let selection = window.getSelection();
+        if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) {
+            restoreEditorSelection();
+            selection = window.getSelection();
+        }
+        const selected = selection && selection.rangeCount && !selection.isCollapsed
+            && editor.contains(selection.anchorNode)
+            ? selection.toString()
+            : '';
 
         const pre = document.createElement('pre');
         const codeEl = document.createElement('code');
-        if (selected) codeEl.textContent = selected;
+        if (selected) {
+            codeEl.textContent = selected;
+            // Best-effort language guess so the chip labels it immediately.
+            const detected = detectLanguage(selected);
+            if (detected) codeEl.className = `language-${detected}`;
+        }
         pre.appendChild(codeEl);
 
         if (!insertBlockAtSelection(pre)) return;
@@ -2721,7 +2737,7 @@ export function initEditor({ strings, onEvent }) {
             }
             prepared.push({
                 title: item.title.trim().slice(0, 120) || fallbackTitle,
-                html: sanitizeHtml(item.html),
+                html: code.autodetectHtml(sanitizeHtml(item.html)),
                 pinned: !!item.pinned,
                 folderId,
                 tags: [...new Set(tagIds)],

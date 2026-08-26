@@ -1923,11 +1923,13 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     direction: ltr;
 }
 
-.codeblock-copy {
+.codeblock-copy,
+.codeblock-delete {
     padding: 0 6px !important;
 }
 
-.codeblock-copy svg {
+.codeblock-copy svg,
+.codeblock-delete svg {
     width: 15px;
     height: 15px;
 }
@@ -1935,6 +1937,11 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 .codeblock-copy--done {
     color: var(--success) !important;
     border-color: var(--success) !important;
+}
+
+.codeblock-delete:hover {
+    color: var(--danger) !important;
+    border-color: var(--danger) !important;
 }
 
 @media (pointer: coarse) {

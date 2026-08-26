@@ -18,7 +18,7 @@
  * only the code itself, without every walker needing a special case.
  */
 
-import { showDialog, toast } from './ui.js';
+import { confirmDialog, showDialog, toast } from './ui.js';
 
 /* This file is generated from npm prismjs@1.30.0 and never hand-edited, so it
    is cache-immutable at the server; the version in the name is the bust. */
@@ -62,11 +62,138 @@ const LANGUAGES = [
 const CANONICAL = new Map(LANGUAGES.map((lang) => [lang.id, lang]));
 const ALIASES = new Map(LANGUAGES.flatMap((lang) => lang.aliases.map((alias) => [alias, lang.id])));
 
+/* ---------------------------------------------------------------------
+   Language autodetection
+   --------------------------------------------------------------------- */
+
+/** Count non-overlapping matches, capped so long files cannot dominate. */
+function hits(pattern, sample, cap = 6) {
+    const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+    const matches = sample.match(new RegExp(pattern.source, flags));
+    return matches ? Math.min(matches.length, cap) : 0;
+}
+
+const DETECT_MIN_SAMPLE = 12;   // too short to guess — stay plain
+const DETECT_MIN_SCORE = 18;    // below this the guess is not trustworthy
+const DETECT_SAMPLE_SIZE = 10000;
+
+const DETECTORS = [
+    ['json', (s) => {
+        const trimmed = s.trim();
+        if (!/^[{[]/.test(trimmed) || !/[}\]]$/.test(trimmed)) return 0;
+        try { JSON.parse(trimmed); return 100; } catch { return 0; }
+    }],
+    ['diff', (s) => hits(/^diff --git /m, s, 2) * 25
+        + (/^--- [^\n]+\n\+\+\+ /m.test(s) || /^@@ -\d/m.test(s) ? 30 : 0)],
+    ['docker', (s) => hits(/^\s*(?:FROM|RUN|CMD|ENTRYPOINT|COPY|ADD|ENV|WORKDIR|EXPOSE)\s/m, s) * 10],
+    ['php', (s) => (/<\?(?:php|=)/.test(s) ? 60 : 0)],
+    ['bash', (s) => (/^#!.*\b(?:ba|z|k)?sh\b/.test(s) ? 45 : 0)
+        + hits(/^\s*(?:sudo|apt-get|apt|brew|pip3?|npm|npx|yarn|git|curl|wget|mkdir|chmod|grep|cd|ls|export|source)\s/m, s) * 6],
+    ['html', (s) => (/<!DOCTYPE\s+html/i.test(s) ? 50 : 0)
+        + hits(/<\/(?:div|p|span|html|body|head|section|article|nav|ul|ol|li|a|table|tr|td|h[1-6])>/gi, s) * 6],
+    ['xml', (s) => (/^\s*<\?xml/.test(s) ? 40 : 0)],
+    ['python', (s) => hits(/^\s*def\s+\w+\s*\([^)]*\)\s*:/m, s, 5) * 20
+        + hits(/^\s*class\s+\w+(?:\([^)]*\))?\s*:/m, s, 3) * 15
+        + (/(?:^|\s)(?:elif|__name__)|from\s+\w+\s+import\s+\w+/.test(s) ? 15 : 0)
+        + hits(/^\s*(?:import|from)\s+\w+/m, s, 4) * 6
+        + hits(/^\s*print\(/m, s, 4) * 4],
+    ['ruby', (s) => hits(/^\s*def\s+\w+\s*(?:$|[^()])/m, s, 5) * 15
+        + (/\battr_(?:accessor|reader|writer)\b/.test(s) ? 25 : 0)
+        + hits(/\bputs\b/g, s, 4) * 5
+        + hits(/^\s*require(?:_relative)?\s/m, s, 3) * 8
+        + (/^\s*end\s*$/m.test(s) ? 10 : 0)],
+    ['go', (s) => (/\bpackage\s+\w+/.test(s) ? 30 : 0)
+        + hits(/\bfunc\s+(?:\w+\s*\(|\([^)]*\)\s*\w+\s*\()/g, s, 5) * 10
+        + (/\bfmt\./.test(s) ? 12 : 0)
+        + (/:=/.test(s) ? 5 : 0)],
+    ['rust', (s) => hits(/\bfn\s+\w+\s*\(/g, s, 5) * 12
+        + (s.includes('println!') ? 30 : 0)
+        + (/\blet\s+mut\b/.test(s) ? 20 : 0)
+        + (/\bimpl\s+\w+/.test(s) ? 12 : 0)
+        + (/\bmatch\s+\w+\s*\{/.test(s) ? 8 : 0)],
+    ['java', (s) => hits(/\bpublic\s+(?:final\s+|abstract\s+|static\s+)*(?:class|void|interface|enum)\b/g, s, 4) * 20
+        + (s.includes('System.out.print') ? 25 : 0)
+        + (/\bthrows\s+\w+/.test(s) ? 10 : 0)],
+    ['csharp', (s) => (/\busing\s+System\b/.test(s) ? 30 : 0)
+        + (/\bnamespace\s+[\w.]+/.test(s) ? 18 : 0)
+        + (/\bConsole\./.test(s) ? 18 : 0)],
+    ['cpp', (s) => hits(/#include\s*<(?:iostream|vector|string|map|set|memory|algorithm|queue|unordered_map)>/g, s, 3) * 18
+        + hits(/\bstd::/g, s) * 10
+        + (/\b(?:cout|cin)\s*(?:<<|>>)/.test(s) ? 20 : 0)],
+    ['c', (s) => hits(/#include\s*<\w+\.h>/g, s, 3) * 15
+        + (/\bprintf\s*\(/.test(s) ? 15 : 0)
+        + (/\bmalloc\s*\(|\bstruct\s+\w+\s*\{/.test(s) ? 10 : 0)],
+    ['kotlin', (s) => (/\bfun\s+main\s*\(/.test(s) ? 35 : 0)
+        + hits(/\bfun\s+\w+\s*\(/g, s, 4) * 8
+        + (/\bdata class\b/.test(s) ? 20 : 0)
+        + hits(/\b(?:val|var)\s+\w+/g, s, 4) * 4],
+    ['swift', (s) => (/\bimport\s+(?:Foundation|SwiftUI|UIKit)\b/.test(s) ? 30 : 0)
+        + (/\bguard\s+let\b/.test(s) ? 22 : 0)
+        + hits(/\bfunc\s+\w+\s*\(/g, s, 4) * 8
+        + hits(/\b(?:let|var)\s+\w+\s*[:=]/g, s, 4) * 4],
+    ['typescript', (s) => hits(/:\s*(?:string|number|boolean|void|any|unknown)\b/g, s, 5) * 12
+        + hits(/\binterface\s+\w+/g, s, 3) * 18
+        + hits(/\btype\s+\w+\s*=/g, s, 3) * 12
+        + (/\bimplements\b/.test(s) ? 10 : 0)
+        + (/\benum\s+\w+\s*\{/.test(s) ? 12 : 0)],
+    ['javascript', (s) => hits(/\b(?:const|let)\s+\w+\s*=/g, s, 5) * 8
+        + hits(/\bfunction\s+\w+\s*\(/g, s, 4) * 8
+        + hits(/\bconsole\.(?:log|error|warn)\(/g, s, 3) * 10
+        + hits(/\brequire\(['"]/g, s, 3) * 8
+        + hits(/\bimport\s+[^;\n]+\s+from\s+['"]/g, s, 3) * 8
+        + hits(/\bdocument\.\w+/g, s, 3) * 5
+        + (s.includes('=>') ? 6 : 0)],
+    ['css', (s) => hits(/[@#.]?[\w-]+\s*\{[^{}]*\}/g, s, 4) * 10
+        + (/@(?:media|import|keyframes|font-face)\b/.test(s) ? 15 : 0)],
+    ['sql', (s) => hits(/\b(?:SELECT\s+[^;\n]+\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|CREATE\s+(?:TABLE|INDEX|VIEW)|ALTER\s+TABLE|DROP\s+TABLE)\b/gi, s, 4) * 20
+        + hits(/\b(?:JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING)\b/gi, s, 4) * 6],
+    ['toml', (s) => hits(/^\s*\[[\w."'-]+\]\s*$/m, s, 4) * 18
+        + hits(/^\s*\w[\w-]*\s*=\s*\S/m, s, 4) * 4],
+    ['ini', (s) => hits(/^\s*\[[\w.-]+\]\s*$/m, s, 4) * 12
+        + hits(/^\s*[\w.-]+\s*=\s*\S/m, s, 4) * 6],
+    ['yaml', (s) => hits(/^\s*[\w"'][\w\s"'.-]*:\s*(?:\S|$)/m, s) * 8
+        + hits(/^\s*-\s+\S/m, s, 5) * 6],
+    ['markdown', (s) => hits(/^#{1,6}\s+\S/m, s, 4) * 10
+        + (/\*\*[^*\n]+\*\*/.test(s) ? 8 : 0)
+        + hits(/^\s*[-*+]\s+\[[ xX]\]/m, s, 2) * 15
+        + hits(/^\s*[-*+]\s+\S/m, s, 4) * 4
+        + hits(/\[[^\]\n]+\]\([^)\n]+\)/g, s, 3) * 6],
+];
+
+/**
+ * Guess the highlight language of a code sample.
+ * @returns {string} a bundled language id, or '' when nothing is convincing
+ */
+export function detectLanguage(text) {
+    const source = String(text ?? '');
+    if (source.trim().length < DETECT_MIN_SAMPLE) return '';
+    const sample = source.slice(0, DETECT_SAMPLE_SIZE);
+
+    let best = '';
+    let bestScore = 0;
+    for (const [id, score] of DETECTORS) {
+        let value = 0;
+        try { value = score(sample); } catch { value = 0; }
+        if (value > bestScore) {
+            best = id;
+            bestScore = value;
+        }
+    }
+    return bestScore >= DETECT_MIN_SCORE ? best : '';
+}
+
 /* Same 24×24 stroke grid as includes/icons.php. */
 const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
     + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
     + '<rect x="9" y="9" width="12" height="12" rx="2"/>'
     + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'
+    + '</svg>';
+
+const DELETE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+    + '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/>'
+    + '<path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/>'
+    + '<path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>'
     + '</svg>';
 
 /**
@@ -167,6 +294,10 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
             } catch {
                 /* a grammar edge case must never break editing */
             }
+            // Prism marks the pre with tabindex=0 for keyboard scrolling; here
+            // the scroll lives on the code element and a focusable pre swallows
+            // clicks aimed at the padding, so take the attribute back off.
+            if (pre.getAttribute('tabindex') === '0') pre.removeAttribute('tabindex');
         }).catch(() => {
             /* offline first visit: the block stays plain but editable */
         });
@@ -207,7 +338,17 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
                 copyCode(pre);
             });
 
-            chrome.append(langBtn, copyBtn);
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'codeblock-delete';
+            deleteBtn.innerHTML = DELETE_ICON;
+            deleteBtn.addEventListener('mousedown', (event) => event.preventDefault());
+            deleteBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                removeBlockWithConfirm(pre);
+            });
+
+            chrome.append(langBtn, copyBtn, deleteBtn);
             pre.appendChild(chrome);
         }
 
@@ -223,6 +364,12 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
         const copyBtn = chrome.querySelector('.codeblock-copy');
         copyBtn.setAttribute('aria-label', strings.codeCopy || 'Copy code');
         copyBtn.title = strings.codeCopy || 'Copy code';
+
+        const deleteBtn = chrome.querySelector('.codeblock-delete');
+        if (deleteBtn) {
+            deleteBtn.setAttribute('aria-label', strings.codeDelete || 'Delete code block');
+            deleteBtn.title = strings.codeDelete || 'Delete code block';
+        }
         return chrome;
     }
 
@@ -376,7 +523,8 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
     }
 
     /* ------------------------------------------------------------------
-       Editing: Tab indents, Enter breaks a line — inside code only
+       Editing: Tab indents, Enter breaks a line, Enter/Backspace at the
+       boundaries enter and remove the block
        ------------------------------------------------------------------ */
 
     function insertPlainText(text) {
@@ -402,24 +550,257 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
         edited();
     }
 
+    const isBlockish = (el) => /^(P|DIV|H[1-6]|UL|OL|BLOCKQUOTE|PRE|TABLE|HR)$/.test(el?.tagName || '');
+
+    /**
+     * True when a collapsed caret sits exactly at one end of the code.
+     *
+     * Deliberately not compareBoundaryPoints(): some engines (jsdom, older
+     * webviews) score the equivalent points (code, 0) and (text, 0) as
+     * different, which would make the caret think it is never at an edge.
+     */
+    function caretAtEdge(selection, code, atEnd) {
+        if (!selection.isCollapsed) return false;
+        const range = selection.getRangeAt(0);
+        const container = range.startContainer;
+        const offset = range.startOffset;
+
+        const childIndexOf = (parent, node) => {
+            let index = 0;
+            for (let child = parent.firstChild; child; child = child.nextSibling) {
+                if (child === node) break;
+                index += 1;
+            }
+            return index;
+        };
+
+        const walker = document.createTreeWalker(code, 4);
+        let node;
+        while ((node = walker.nextNode())) {
+            if (node === container) {
+                if (atEnd) {
+                    if (offset < (container.nodeValue || '').length) return false;
+                } else if (offset > 0) {
+                    return false;
+                }
+                continue;
+            }
+            const pos = container.compareDocumentPosition(node);
+            if (pos & window.Node.DOCUMENT_POSITION_CONTAINED_BY) {
+                // node lives inside the caret's container: compare indexes
+                const index = childIndexOf(container, node);
+                if (atEnd ? index >= offset : index < offset) return false;
+            } else if (atEnd) {
+                if (pos & window.Node.DOCUMENT_POSITION_FOLLOWING) return false;
+            } else if (pos & window.Node.DOCUMENT_POSITION_PRECEDING) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Leave the block: caret into the next paragraph, one trailing newline goes. */
+    function exitBlock(pre) {
+        const code = pre.querySelector('code');
+        if (code) {
+            const text = code.textContent || '';
+            // Exiting from an empty last line must not leave it behind.
+            if (text.endsWith('\n')) code.textContent = text.replace(/\n$/, '');
+        }
+        let target = pre.nextElementSibling;
+        if (!editor.contains(target) || (target.tagName !== 'P' && target.tagName !== 'DIV')) {
+            const spacer = document.createElement('p');
+            spacer.appendChild(document.createElement('br'));
+            if (editor.contains(target) && isBlockish(target)) target.before(spacer);
+            else pre.after(spacer);
+            target = spacer;
+        }
+        editor.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.setStart(target, 0);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        syncSelection();
+        edited();
+    }
+
+    /** Remove the whole block through the browser's undoable delete. */
+    function removeBlock(pre) {
+        const next = pre.nextElementSibling; // captured before the removal
+        editor.focus();
+        const range = document.createRange();
+        range.selectNode(pre);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        let handled = false;
+        try {
+            handled = document.execCommand('delete') === true && !editor.contains(pre);
+        } catch {
+            handled = false;
+        }
+        if (!handled) pre.remove();
+
+        let target = null;
+        if (next && editor.contains(next) && (next.tagName === 'P' || next.tagName === 'DIV')) {
+            target = next;
+        } else {
+            const last = editor.lastElementChild;
+            if (last && (last.tagName === 'P' || last.tagName === 'DIV')) {
+                target = last;
+            } else {
+                const spacer = document.createElement('p');
+                spacer.appendChild(document.createElement('br'));
+                if (next && editor.contains(next) && isBlockish(next)) next.before(spacer);
+                else editor.appendChild(spacer);
+                target = spacer;
+            }
+        }
+        const caret = document.createRange();
+        caret.setStart(target, 0);
+        caret.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(caret);
+        syncSelection();
+        edited();
+    }
+
+    async function removeBlockWithConfirm(pre) {
+        const action = await confirmDialog({
+            title: strings.codeDeleteTitle || 'Delete this code block?',
+            message: strings.codeDeleteBody || 'The code and its language setting will be removed.',
+            confirmLabel: strings.confirm || 'Delete',
+            cancelLabel: strings.cancel || 'Cancel',
+            danger: true,
+        });
+        if (!action || !editor.contains(pre)) return;
+        removeBlock(pre);
+    }
+
+    /**
+     * Keyboard model inside a code block:
+     *  - Tab indents; Shift+Tab keeps its focus-navigation role
+     *  - Enter inserts a newline — except at the very end of the block (and
+     *    on Ctrl/Cmd+Enter anywhere), where it hands the caret to the next
+     *    paragraph; Shift+Enter always breaks a line
+     *  - Backspace/Delete on an emptied block remove the whole block; at the
+     *    edges of a non-empty one they no-op instead of merging blocks
+     */
     function handleKeydown(event) {
-        if (event.key !== 'Tab' && event.key !== 'Enter') return false;
-        if (event.ctrlKey || event.metaKey || event.altKey) return false;
-        if (event.key === 'Tab' && event.shiftKey) return false; // keep focus navigation
+        const key = event.key;
+        if (key !== 'Tab' && key !== 'Enter' && key !== 'Backspace' && key !== 'Delete') return false;
 
         const selection = window.getSelection();
         if (!selection?.rangeCount) return false;
+        const start = selection.getRangeAt(0).startContainer;
+        const pre = closestPre(start);
+        const code = pre?.querySelector('code');
+        if (!pre || !code || !code.contains(start)) return false;
+        // Keystrokes aimed at the chrome keep their default behaviour. The
+        // editor host itself counts as "inside the code": a focused
+        // contenteditable host is its own activeElement.
+        const active = document.activeElement;
+        if (active && active !== editor && active !== document.body
+            && editor.contains(active) && !code.contains(active)) return false;
+
+        const isEmpty = !(code.textContent || '').trim();
+
+        if (key === 'Tab') {
+            if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return false;
+            event.preventDefault();
+            event.stopPropagation();
+            insertPlainText('\t');
+            return true;
+        }
+
+        if (key === 'Enter') {
+            if (event.altKey) return false;
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.ctrlKey || event.metaKey || (!event.shiftKey && caretAtEdge(selection, code, true))) {
+                exitBlock(pre);
+            } else {
+                insertPlainText('\n');
+            }
+            return true;
+        }
+
+        if (event.ctrlKey || event.metaKey || event.altKey) return false;
+
+        if (key === 'Backspace') {
+            if (isEmpty) {
+                event.preventDefault();
+                event.stopPropagation();
+                removeBlock(pre);
+                return true;
+            }
+            if (caretAtEdge(selection, code, false)) {
+                // Do not let the browser merge the pre into the previous block.
+                event.preventDefault();
+                event.stopPropagation();
+                return true;
+            }
+            return false;
+        }
+
+        // Delete
+        if (isEmpty) {
+            event.preventDefault();
+            event.stopPropagation();
+            removeBlock(pre);
+            return true;
+        }
+        if (caretAtEdge(selection, code, true)) {
+            // Do not let the browser pull the next block into the code.
+            event.preventDefault();
+            event.stopPropagation();
+            return true;
+        }
+        return false;
+    }
+
+    /* ------------------------------------------------------------------
+       Autodetection hooks
+       ------------------------------------------------------------------ */
+
+    /** Detect and apply a language for the plain block at the caret, if any. */
+    function autodetectCaretBlock() {
+        const selection = window.getSelection();
+        if (!selection?.rangeCount) return '';
         const pre = closestPre(selection.getRangeAt(0).startContainer);
         const code = pre?.querySelector('code');
-        if (!pre || !code) return false;
-        // Only keystrokes aimed at the code itself; the chip and copy button
-        // are outside the code element and keep their default behaviour.
-        if (!code.contains(selection.getRangeAt(0).startContainer)) return false;
+        if (!code || langOf(code)) return '';
+        const detected = detectLanguage(code.textContent || '');
+        if (!detected) return '';
+        setClass(code, detected);
+        mountChrome(pre);
+        edited();
+        return detected;
+    }
 
-        event.preventDefault();
-        event.stopPropagation();
-        insertPlainText(event.key === 'Tab' ? '\t' : '\n');
-        return true;
+    /**
+     * Detect languages for imported HTML (a string), leaving everything else
+     * untouched. Only plain blocks are considered, so an explicit language —
+     * or an explicit choice of plain — always wins.
+     */
+    function autodetectHtml(html) {
+        const source = String(html ?? '');
+        if (!source.includes('<pre')) return source;
+        const template = document.createElement('template');
+        template.innerHTML = source;
+        let changed = false;
+        for (const pre of template.content.querySelectorAll('pre')) {
+            const code = pre.querySelector('code');
+            if (!code || langOf(code)) continue;
+            const detected = detectLanguage(code.textContent || '');
+            if (detected) {
+                setClass(code, detected);
+                changed = true;
+            }
+        }
+        return changed ? template.innerHTML : source;
     }
 
     /* ------------------------------------------------------------------
@@ -447,6 +828,7 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
     }
 
     function normalisePre(pre) {
+        if (pre.getAttribute('tabindex') === '0') pre.removeAttribute('tabindex');
         let code = pre.querySelector('code');
         const foreign = [...pre.children].filter((el) => el !== code && !el.hasAttribute('data-codeblock-chrome'));
         const messy = code && [...code.querySelectorAll('*')].some((el) => el.tagName !== 'SPAN');
@@ -534,5 +916,7 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
         stripRuntime,
         setBlockLanguage,
         syncSelection,
+        autodetectCaretBlock,
+        autodetectHtml,
     };
 }

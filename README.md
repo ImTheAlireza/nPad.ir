@@ -166,13 +166,20 @@ targets. The dictionary and custom words remain entirely on the device.
 ## Code blocks
 
 The **Insert** menu adds a code block: a monospace, always-LTR surface with a
-copy button and a language chip. Languages are highlighted by a self-hosted
-Prism bundle (26 common languages, ~76 KB, lazy-loaded the first time a note
-actually contains a highlighted block — no CDN, no request otherwise). The
-language is picked from a dialog and stored on the block, so Markdown export
-writes fenced code with the info string (```` ```js ````) and import reads it
-back. Inside a block, `Tab` indents and `Enter` breaks a line instead of
-splitting paragraphs.
+language chip, a copy button and a delete button. Languages are highlighted by
+a self-hosted Prism bundle (26 common languages, ~76 KB, lazy-loaded the first
+time a note actually contains a highlighted block — no CDN, no request
+otherwise). The language is stored on the block, so Markdown export writes
+fenced code with the info string (```` ```js ````) and import reads it back.
+
+The language is guessed where it helps and never where it hurts: code selected
+before Insert, code pasted into a plain block, and plain fenced blocks in
+imported files all go through a heuristic detector; an explicit class or an
+explicit "Plain text" choice always wins. Inside a block, `Tab` indents,
+`Enter` breaks a line — and at the very end of the block it hands the caret to
+the next paragraph (`Shift+Enter` always breaks a line). Backspace on an
+emptied block removes it, and at the block edges it refuses to merge the code
+with neighbouring paragraphs.
 
 The stored note keeps the plain form (`<pre><code class="language-js">`),
 while token spans and the block chrome are runtime paint — stripped again
@@ -231,7 +238,7 @@ Automated coverage includes:
 | `sanitize` | XSS vectors neutralised (including table tags/attrs); spans bounded; formatting preserved |
 | `table` | Grid model: creation, row/column inserts and deletes around spans, merge/split, headers, shading, width, borders, captions, move row, Tab navigation, paste normalisation |
 | `formats` | Markdown/JSON/RTF round trips; GFM pipe tables and DOCX `w:tbl` + merge spans; valid DOCX ZIPs; PDF stream and Unicode-map extraction |
-| `codeblocks` | Sanitiser bounds on `language-*` classes; Markdown fence round trips; the runtime module against the real Prism bundle: chrome, highlight/unhighlight cycles, normalisation, Tab/Enter, copy, spellcheck skip |
+| `codeblocks` | Sanitiser bounds on `language-*` classes; Markdown fence round trips; language autodetection; the runtime module against the real Prism bundle: chrome, highlight/unhighlight cycles, normalisation, the full keyboard model (Tab, Enter/Shift+Enter, Backspace/Delete edges), copy, spellcheck skip |
 | `storage` | Legacy migration, notes, open-tab state, folder/tag relationships, timestamped backup retention and recovery |
 | `render` | All 6 pages render under real PHP 8.2 (php-wasm); partials refuse direct access; markup and a11y assertions |
 | `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes; spelling corrections; autosave; Insert menu, table dialog, contextual toolbar, cell control |

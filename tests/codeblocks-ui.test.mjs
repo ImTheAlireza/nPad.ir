@@ -290,6 +290,54 @@ export default async function run(check, group) {
         assert.equal(editor.querySelector('pre .spell-err, code .spell-err'), null, 'code marked');
     });
 
+    await step('inserting selected code autodetects the language', async () => {
+        editor.innerHTML = '<p>def greet(name): print(greet(&quot;Ada&quot;)) says hi</p><p><br></p>';
+        const p = editor.querySelector('p');
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new window.Event('selectionchange'));
+
+        clickMenuItem('insert-code');
+        await flush();
+
+        const pre = editor.querySelector('pre');
+        assert.ok(pre, 'code block not inserted');
+        const code = pre.querySelector('code');
+        assert.equal(code.getAttribute('class'), 'language-python', 'language not detected');
+        assert.equal(pre.querySelector('.codeblock-lang').dataset.langLabel, 'Python', 'chip not labelled');
+        assert.ok(code.contains(window.getSelection().anchorNode), 'caret not in the block');
+    });
+
+    await step('Enter at the end hands the caret to a new paragraph', async () => {
+        const pre = editor.querySelector('pre');
+        const code = pre.querySelector('code');
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'Enter', bubbles: true, cancelable: true,
+        }));
+        const caret = window.getSelection();
+        assert.ok(!code.contains(caret.anchorNode), 'caret still inside the code');
+        assert.equal(caret.anchorNode.tagName, 'P', 'caret not parked in a paragraph');
+        assert.ok(code.textContent.includes('def greet'), 'code content changed');
+    });
+
+    await step('the delete button removes the block after confirmation', async () => {
+        const pre = editor.querySelector('pre');
+        assert.ok(pre, 'block from the previous step missing');
+        click(pre.querySelector('.codeblock-delete'));
+        await flush();
+        assert.equal(dialog.open, true, 'confirmation did not open');
+
+        click(dialog.querySelector('[data-action="confirm"]'));
+        await flush();
+        assert.equal(editor.querySelector('pre'), null, 'block not removed');
+        const caret = window.getSelection();
+        assert.equal(caret.anchorNode.tagName, 'P', 'caret not parked in a paragraph');
+        assert.ok(editor.querySelector('p'), 'a paragraph remains to type in');
+    });
+
     await step('no uncaught page errors', () => {
         assert.deepEqual(consoleErrors, [], consoleErrors[0]);
     });

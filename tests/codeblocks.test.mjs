@@ -41,7 +41,7 @@ assert.ok(window.Prism.highlightElement, 'Prism bundle did not initialise');
 
 const { sanitizeHtml } = await import(`file://${path.join(ROOT, 'assets/js/sanitize.js')}`);
 const formats = await import(`file://${path.join(ROOT, 'assets/js/formats.js')}`);
-const { initCodeblocks } = await import(`file://${path.join(ROOT, 'assets/js/codeblock.js')}`);
+const { initCodeblocks, detectLanguage } = await import(`file://${path.join(ROOT, 'assets/js/codeblock.js')}`);
 const { initSpellcheck } = await import(`file://${path.join(ROOT, 'assets/js/spellcheck.js')}`);
 const tick = () => new Promise((resolve) => window.setTimeout(resolve, 5));
 
@@ -323,6 +323,100 @@ export default async function run(check, group) {
         assert.ok(marked.includes('definately'), 'misspelled prose not marked');
         assert.ok(!marked.includes('const'), 'keyword marked');
         assert.equal(editor.querySelector('pre .spell-err, code .spell-err'), null, 'code text was spell-marked');
+        editor.remove();
+    });
+
+    group('codeblocks: autodetect');
+    await step('detectLanguage recognises common languages', () => {
+        const cases = [
+            ['def greet(name):\n    print(greet(1))\n', 'python'],
+            ['{\n  "name": "npad",\n  "n": [1, 2]\n}', 'json'],
+            ['#!/bin/bash\nsudo apt-get update\ncd /var/www', 'bash'],
+            ['SELECT id FROM users WHERE active = 1;', 'sql'],
+            ['<!DOCTYPE html>\n<html><body><div></div></body></html>', 'html'],
+            ['const greet = (name) => {\n  console.log(name);\n};', 'javascript'],
+            ['interface User {\n  name: string;\n  age: number;\n}', 'typescript'],
+            ['FROM node:20\nWORKDIR /app\nRUN npm install', 'docker'],
+            ['package main\nfunc main() {\n  fmt.Println(1)\n}', 'go'],
+            ['just some words in a paragraph, nothing code-like here', ''],
+            ['too short', ''],
+        ];
+        for (const [sample, expected] of cases) {
+            assert.equal(detectLanguage(sample), expected, JSON.stringify(sample.slice(0, 40)));
+        }
+    });
+
+    await step('inserting with a selection is not detected twice', () => {
+        // detectLanguage is exported for the editor's insert path; normalise
+        // must never second-guess an explicit class.
+        const { editor, api } = makeEditor('<pre><code class="language-bash">SELECT 1;</code></pre>');
+        api.normalise(editor);
+        assert.equal(editor.querySelector('code').getAttribute('class'), 'language-bash');
+        editor.remove();
+    });
+
+    group('codeblocks: keyboard model');
+    await step('Backspace on an emptied block removes the whole block', () => {
+        const edits = [];
+        const { editor, api } = makeEditor('<p>keep</p><pre><code class="language-js">   </code></pre>', { edits });
+        const pre = editor.querySelector('pre');
+        api.refreshAll();
+        caretInCode(pre.querySelector('code'), 0);
+
+        const back = new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true });
+        assert.equal(api.insertKeydown(back), true, 'Backspace not handled');
+        assert.equal(back.defaultPrevented, true);
+        assert.equal(editor.querySelector('pre'), null, 'block not removed');
+        assert.ok(editor.contains(pre) === false);
+        const caret = window.getSelection();
+        assert.equal(editor.contains(caret.anchorNode), true, 'caret escaped the editor');
+        assert.equal(caret.anchorNode.tagName, 'P', 'caret not parked in a paragraph');
+        assert.equal(edits.length, 1, 'onEdit not called');
+        editor.remove();
+    });
+
+    await step('Backspace at the start of code cannot merge blocks', () => {
+        const { editor, api } = makeEditor('<pre><code class="language-js">kept</code></pre>');
+        api.refreshAll();
+        caretInCode(editor.querySelector('code'), 0);
+
+        const back = new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true });
+        assert.equal(api.insertKeydown(back), true);
+        assert.equal(back.defaultPrevented, true);
+        assert.equal(editor.querySelector('code').textContent, 'kept', 'content changed');
+        editor.remove();
+    });
+
+    await step('Enter at the end leaves the block; Shift+Enter stays', () => {
+        const { editor, api } = makeEditor('<pre><code class="language-js">const a;</code></pre>');
+        api.refreshAll();
+        const pre = editor.querySelector('pre');
+        const code = pre.querySelector('code');
+
+        caretIn(code.firstChild, code.firstChild.length);
+        const exit = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+        assert.equal(api.insertKeydown(exit), true);
+        const caret = window.getSelection();
+        assert.equal(code.contains(caret.anchorNode), false, 'still inside the code');
+        assert.equal(caret.anchorNode.tagName, 'P');
+        assert.equal(code.textContent, 'const a;', 'content changed on exit');
+
+        // Back inside: Shift+Enter always breaks a line.
+        caretIn(code.firstChild, code.firstChild.length);
+        const stay = new window.KeyboardEvent('keydown', {
+            key: 'Enter', shiftKey: true, bubbles: true, cancelable: true,
+        });
+        assert.equal(api.insertKeydown(stay), true);
+        assert.equal(code.textContent, 'const a;\n', 'Shift+Enter did not break the line');
+        editor.remove();
+    });
+
+    await step('chrome exposes a labelled delete button', async () => {
+        const { editor, api } = makeEditor('<pre><code class="language-js">x</code></pre>');
+        api.refreshAll();
+        const deleteBtn = editor.querySelector('.codeblock-delete');
+        assert.ok(deleteBtn, 'delete button missing');
+        assert.equal(deleteBtn.getAttribute('aria-label'), 'Delete code block');
         editor.remove();
     });
 
