@@ -185,6 +185,53 @@ export default async function run(check, group) {
             assert.equal(ed.getAttribute('aria-multiline'), 'true');
             assert.ok(ed.getAttribute('aria-label'));
             assert.ok(ed.hasAttribute('contenteditable'));
+            const findOptions = [...document.querySelectorAll('[data-find-option]')];
+            assert.equal(findOptions.length, 4, 'advanced find controls missing');
+            findOptions.forEach((option) => {
+                assert.equal(option.tagName, 'BUTTON');
+                assert.equal(option.getAttribute('aria-pressed'), 'false');
+                assert.ok(option.textContent.trim(), 'unnamed find option');
+            });
+        });
+
+        check('multi-note workspace is accessible and ready for enhancement', () => {
+            const sidebar = document.getElementById('notesSidebar');
+            const title = document.getElementById('noteTitle');
+            const search = document.getElementById('notesSearch');
+            const template = document.getElementById('noteItemTemplate');
+            assert.ok(sidebar?.getAttribute('aria-label'), 'sidebar is not named');
+            assert.ok(title?.getAttribute('aria-label'), 'note title is not named');
+            assert.equal(search?.type, 'search');
+            assert.ok(template?.content.querySelector('[data-note-action="open"]'));
+            assert.ok(document.getElementById('foldersList'), 'folder list missing');
+            assert.ok(document.getElementById('tagsList'), 'tag list missing');
+            const tabs = document.getElementById('documentTabs');
+            const tabTemplate = document.getElementById('documentTabTemplate');
+            assert.equal(tabs?.getAttribute('role'), 'tablist');
+            assert.ok(tabs?.getAttribute('aria-label'), 'document tabs are not named');
+            assert.equal(tabTemplate?.content.querySelector('[data-tab-action="open"]')?.getAttribute('role'), 'tab');
+            assert.ok(tabTemplate?.content.querySelector('[data-tab-action="close"]')?.getAttribute('aria-label'));
+            const folderPicker = document.getElementById('noteFolder');
+            assert.ok(folderPicker?.getAttribute('aria-label'));
+            assert.equal(folderPicker?.getAttribute('aria-haspopup'), 'listbox');
+            assert.ok(document.getElementById(folderPicker?.getAttribute('aria-controls')));
+            assert.ok(document.querySelector('[data-action="manage-note-tags"]')?.getAttribute('aria-label'));
+            const backupDialog = document.getElementById('backupDialog');
+            assert.ok(document.querySelector('[data-action="backups"]'), 'recovery menu item missing');
+            ['save', 'save-html', 'save-markdown', 'save-json', 'save-docx', 'save-pdf', 'save-rtf']
+                .forEach((action) => {
+                    assert.ok(document.querySelector(`[data-action="${action}"]`), `${action} export missing`);
+                });
+            assert.ok(backupDialog?.getAttribute('aria-labelledby'), 'recovery screen is not named');
+            assert.ok(backupDialog?.querySelector('[data-backup-action="close"]')?.getAttribute('aria-label'));
+            assert.ok(document.getElementById('backupList'), 'recovery list missing');
+            ['all', 'pinned', 'unfiled'].forEach((filter) => {
+                assert.ok(document.querySelector(`[data-filter-type="${filter}"]`), `${filter} filter missing`);
+            });
+            ['pin', 'rename', 'duplicate', 'delete'].forEach((action) => {
+                const button = template.content.querySelector(`[data-note-action="${action}"]`);
+                assert.ok(button?.getAttribute('aria-label'), `${action} is not named`);
+            });
         });
 
         check('status region is live', () => {

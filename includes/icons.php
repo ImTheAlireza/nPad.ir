@@ -62,7 +62,20 @@ function npad_icon_paths(): array
         'pen'         => '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
         'keyboard'    => '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
         'arrow-up'    => '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+        'chevron-up'  => '<path d="m6 15 6-6 6 6"/>',
+        'chevron-down' => '<path d="m6 9 6 6 6-6"/>',
+        'expand'      => '<path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/>',
+        'contract'    => '<path d="M9 4v5H4"/><path d="M15 4v5h5"/><path d="M9 20v-5H4"/><path d="M15 20v-5h5"/>',
+        'dir'         => '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="m9 16-2 2 2 2"/><path d="m15 16 2 2-2 2"/>',
+        'dir-ltr'     => '<path d="M4 6h12"/><path d="M4 12h12"/><path d="M4 18h9"/><path d="m19 15 3 3-3 3"/>',
+        'dir-rtl'     => '<path d="M20 6h-12"/><path d="M20 12h-12"/><path d="M20 18h-9"/><path d="m5 15-3 3 3 3"/>',
+        'find-replace' => '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m19 19-3-3"/><path d="M18 3v5"/><path d="m15.5 6 2.5-2.5L20.5 6"/>',
+        'spellcheck'  => '<path d="M4 7h12"/><path d="M4 12h12"/><path d="M4 17h8"/><path d="m14 15 3 3 5-5"/>',
         'globe'       => '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
+        'plus'        => '<path d="M12 5v14M5 12h14"/>',
+        'pin'         => '<path d="M12 17v5"/><path d="m5 17 3-4V6L6 4V2h12v2l-2 2v7l3 4z"/>',
+        'sidebar'     => '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+        'tag'         => '<path d="M20 13 13 20l-9-9V4h7z"/><circle cx="8.5" cy="8.5" r="1.5"/>',
     ];
 }
 

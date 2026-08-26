@@ -18,8 +18,15 @@ const ALLOWED = new Set([
     'open_file',
     'download_txt',
     'download_html',
+    'download_markdown',
+    'download_json',
+    'download_docx',
+    'download_pdf',
+    'download_rtf',
     'print_used',
     'view_details',
+    'backups_opened',
+    'backup_restored',
     'copy_used',
     'cut_used',
     'paste_used',
@@ -28,6 +35,12 @@ const ALLOWED = new Set([
     'dark_mode_disabled',
     'link_created',
     'clear_data',
+    'find_used',
+    'focus_mode_enabled',
+    'dir_toggled',
+    'spellcheck_toggled',
+    'spell_replace_used',
+    'spell_add_word',
 ]);
 
 let enabled = true;

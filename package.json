@@ -1,11 +1,12 @@
 {
   "name": "npad",
-  "version": "2.1.0",
+  "version": "2.7.0",
   "private": true,
   "description": "NPad — a free, private online notepad. Tooling and test harness.",
   "type": "module",
   "scripts": {
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs",
+    "dev": "node dev-server.mjs"
   },
   "devDependencies": {
     "@php-wasm/node": "^3.1.46",

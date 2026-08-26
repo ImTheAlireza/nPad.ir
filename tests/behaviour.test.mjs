@@ -117,6 +117,10 @@ export default async function run(check, group) {
         initEditor({ strings, onEvent: (e) => tracked.push(e) });
     });
 
+    // Multi-note storage boots asynchronously. Let the initial note finish
+    // loading before UI tests begin editing it.
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
     group('behaviour: menus (the old build was hover-only)');
 
     const trigger = document.getElementById('fileMenuTrigger');
@@ -148,6 +152,34 @@ export default async function run(check, group) {
         assert.equal(document.activeElement, first, 'focus not moved into menu');
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
+
+    let fileAccept = '';
+    const nativeInputClick = window.HTMLInputElement.prototype.click;
+    window.HTMLInputElement.prototype.click = function () {
+        if (this.type === 'file') fileAccept = this.accept;
+        else nativeInputClick.call(this);
+    };
+    document.querySelector('[data-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    window.HTMLInputElement.prototype.click = nativeInputClick;
+    check('Open accepts every supported local document format', () => {
+        ['.txt', '.html', '.md', '.json', '.docx', '.pdf', '.rtf'].forEach((extension) => {
+            assert.ok(fileAccept.includes(extension), `${extension} missing from ${fileAccept}`);
+        });
+    });
+
+    document.querySelector('[data-action="save-pdf"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    check('PDF export explains the browser Save as PDF flow', () => {
+        const dialog = document.getElementById('appDialog');
+        assert.equal(dialog.open, true);
+        assert.ok(dialog.textContent.includes(strings.pdfExportBody));
+        assert.ok(dialog.querySelector('[data-action="print-pdf"]'));
+    });
+    document.querySelector('#appDialog [data-action="cancel"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     group('behaviour: theme toggle');
 
@@ -249,6 +281,775 @@ export default async function run(check, group) {
         assert.ok(/\b0\b/.test(counts.textContent), counts.textContent);
     });
 
+    group('behaviour: multiple notes');
+
+    const notesList = document.getElementById('notesList');
+    const notesSearch = document.getElementById('notesSearch');
+    const noteTitle = document.getElementById('noteTitle');
+    const noteItems = () => [...notesList.querySelectorAll('.note-item')];
+    const noteByTitle = (title) => noteItems().find((item) =>
+        item.querySelector('.note-item__title').textContent === title);
+    const documentTabs = document.getElementById('documentTabs');
+    const tabItems = () => [...documentTabs.querySelectorAll('.document-tab')];
+    const tabByTitle = (title) => tabItems().find((tab) =>
+        tab.querySelector('.document-tab__title').textContent === title);
+    const settle = () => new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    check('responsive sidebar exposes named create, search and note controls', () => {
+        assert.ok(document.getElementById('notesSidebar'), 'notes sidebar missing');
+        assert.ok(notesSearch.getAttribute('placeholder'), 'notes search has no placeholder');
+        assert.ok(document.querySelector('[data-action="new"]'), 'new-note control missing');
+        assert.equal(noteItems().length, 1, 'initial note was not created');
+    });
+
+    noteTitle.value = 'Original';
+    noteTitle.dispatchEvent(new window.Event('input', { bubbles: true }));
+    editor.textContent = 'Original note body';
+    editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+    document.querySelector('.notes-sidebar [data-action="new"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('New creates and selects a separate note without clearing the first', () => {
+        assert.equal(noteItems().length, 2);
+        assert.equal(noteTitle.value, strings.noteUntitled);
+        assert.equal(noteItems().filter((item) => item.classList.contains('note-item--active')).length, 1);
+    });
+
+    noteTitle.value = 'Project';
+    noteTitle.dispatchEvent(new window.Event('input', { bubbles: true }));
+    editor.textContent = 'Project draft';
+    editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+    noteByTitle('Project').querySelector('[data-note-action="duplicate"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('duplicate copies content and activates the copy', () => {
+        assert.equal(noteItems().length, 3);
+        assert.equal(noteTitle.value, `Project ${strings.noteCopySuffix}`);
+        assert.equal(editor.textContent, 'Project draft');
+    });
+
+    const copyTitle = noteTitle.value;
+    noteByTitle(copyTitle).querySelector('[data-note-action="pin"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('pin toggles state and sorts the pinned note first', () => {
+        const first = noteItems()[0];
+        assert.equal(first.querySelector('.note-item__title').textContent, copyTitle);
+        assert.equal(first.querySelector('[data-note-action="pin"]').getAttribute('aria-pressed'), 'true');
+    });
+
+    notesSearch.value = 'Original';
+    notesSearch.dispatchEvent(new window.Event('input', { bubbles: true }));
+    check('sidebar search filters by title and note content', () => {
+        assert.equal(noteItems().length, 1);
+        assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Original');
+    });
+    notesSearch.value = '';
+    notesSearch.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    noteByTitle('Original').querySelector('[data-note-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('switching notes restores the saved title and content', () => {
+        assert.equal(noteTitle.value, 'Original');
+        assert.equal(editor.textContent, 'Original note body');
+    });
+
+    noteByTitle('Original').querySelector('[data-note-action="rename"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const renameInput = document.getElementById('renameNoteInput');
+    renameInput.value = 'Renamed original';
+    document.querySelector('#appDialog [data-action="rename"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('rename updates both the title field and sidebar', () => {
+        assert.equal(noteTitle.value, 'Renamed original');
+        assert.ok(noteByTitle('Renamed original'));
+    });
+
+    const project = noteByTitle('Project');
+    project.querySelector('[data-note-action="delete"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('delete removes only the chosen note', () => {
+        assert.equal(noteItems().length, 2);
+        assert.ok(!noteByTitle('Project'));
+        assert.ok(noteByTitle('Renamed original'));
+        assert.ok(noteByTitle(copyTitle));
+    });
+
+    group('behaviour: document tabs');
+
+    check('opened notes stay available as document tabs', () => {
+        assert.equal(tabItems().length, 2);
+        assert.ok(tabByTitle('Renamed original'));
+        assert.ok(tabByTitle(copyTitle));
+        assert.equal(tabByTitle('Renamed original').classList.contains('document-tab--active'), true);
+    });
+
+    tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('tabs switch documents without opening the notes sidebar', () => {
+        assert.equal(noteTitle.value, copyTitle);
+        assert.equal(editor.textContent, 'Project draft');
+        assert.equal(document.getElementById('notesWorkspace').dataset.notesOpen, 'false');
+        assert.equal(tabByTitle(copyTitle).querySelector('[role="tab"]').getAttribute('aria-selected'), 'true');
+    });
+
+    tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    await settle();
+    check('arrow keys move between tabs and preserve tab focus', () => {
+        assert.equal(noteTitle.value, 'Renamed original');
+        const activeTab = tabByTitle('Renamed original').querySelector('[role="tab"]');
+        assert.equal(activeTab.getAttribute('aria-selected'), 'true');
+        assert.equal(document.activeElement, activeTab);
+    });
+
+    tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    tabByTitle(copyTitle).querySelector('[data-tab-action="close"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('closing the active tab selects its neighbour without deleting the note', () => {
+        assert.equal(tabItems().length, 1);
+        assert.equal(noteTitle.value, 'Renamed original');
+        assert.ok(noteByTitle(copyTitle), 'closing a tab deleted its note');
+        assert.equal(JSON.parse(localStorage.getItem('npad:open-tabs')).length, 1);
+    });
+
+    noteByTitle(copyTitle).querySelector('[data-note-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('a closed tab reopens from the note list', () => {
+        assert.equal(tabItems().length, 2);
+        assert.equal(noteTitle.value, copyTitle);
+        assert.equal(tabByTitle(copyTitle).classList.contains('document-tab--active'), true);
+    });
+
+    tabByTitle('Renamed original').querySelector('[data-tab-action="open"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    group('behaviour: folders and tags');
+
+    document.querySelector('[data-action="manage-note-tags"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('an empty tag manager offers OK instead of an inapplicable Apply action', () => {
+        const buttons = [...document.querySelectorAll('#appDialog .dialog__footer button')];
+        assert.equal(buttons.length, 1);
+        assert.equal(buttons[0].textContent, strings.ok);
+        assert.equal(buttons[0].dataset.action, 'ok');
+    });
+    document.querySelector('#appDialog [data-action="ok"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    document.querySelector('[data-organization-action="add-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('folderNameInput').value = 'Work';
+    document.querySelector('#appDialog [data-action="save-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('folders can be created and appear in the note folder picker', () => {
+        const folderRow = document.querySelector('#foldersList .organization-row');
+        assert.equal(folderRow.querySelector('.organization-filter__name').textContent, 'Work');
+        assert.ok([...document.querySelectorAll('#noteFolderOptions [role="option"]')]
+            .some((option) => option.textContent.includes('Work')));
+    });
+
+    const folderPicker = document.getElementById('noteFolder');
+    folderPicker.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    check('the custom folder picker opens an accessible styled menu', () => {
+        assert.equal(folderPicker.getAttribute('aria-expanded'), 'true');
+        assert.equal(document.getElementById('noteFolderMenu').hidden, false);
+        assert.equal(document.getElementById('noteFolderOptions').getAttribute('role'), 'listbox');
+    });
+    [...document.querySelectorAll('#noteFolderOptions [role="option"]')]
+        .find((option) => option.textContent.includes('Work'))
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    check('the active note can be assigned to a folder', () => {
+        assert.equal(noteByTitle('Renamed original').querySelector('.note-item__folder').textContent, 'Work');
+        assert.equal(document.querySelector('#foldersList .organization-filter__count').textContent, '1');
+    });
+
+    document.querySelector('#foldersList [data-organization-action="rename-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('folderNameInput').value = 'Projects';
+    document.querySelector('#appDialog [data-action="save-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('folders can be renamed without losing their notes', () => {
+        assert.equal(document.querySelector('#foldersList .organization-filter__name').textContent, 'Projects');
+        assert.equal(document.getElementById('noteFolderValue').textContent, 'Projects');
+    });
+
+    document.querySelector('[data-organization-action="add-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('tagNameInput').value = 'Important';
+    document.querySelector('[data-tag-color="#dc2626"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    document.querySelector('#appDialog [data-action="save-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('color-coded tags can be created', () => {
+        const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
+        assert.equal(tagFilter.querySelector('.organization-filter__name').textContent, 'Important');
+        assert.equal(tagFilter.style.getPropertyValue('--tag-color'), '#dc2626');
+    });
+
+    document.querySelector('#tagsList [data-organization-action="edit-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.getElementById('tagNameInput').value = 'Priority';
+    document.querySelector('[data-tag-color="#7c3aed"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    document.querySelector('#appDialog [data-action="save-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('tags can be renamed and recolored', () => {
+        const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
+        assert.equal(tagFilter.querySelector('.organization-filter__name').textContent, 'Priority');
+        assert.equal(tagFilter.style.getPropertyValue('--tag-color'), '#7c3aed');
+    });
+
+    document.querySelector('[data-action="manage-note-tags"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const tagCheckbox = document.querySelector('#tagChecklist input');
+    tagCheckbox.checked = true;
+    document.querySelector('#appDialog [data-action="apply-tags"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    check('tags can be assigned and are shown on the note card and document', () => {
+        assert.equal(document.querySelector('#currentNoteTags .tag-chip').textContent, 'Priority');
+        assert.equal(noteByTitle('Renamed original').querySelector('.tag-chip').textContent, 'Priority');
+        assert.equal(document.querySelector('#tagsList .organization-filter__count').textContent, '1');
+    });
+
+    document.querySelector('#foldersList [data-filter-type="folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    check('folder filters show only notes in that folder', () => {
+        assert.equal(noteItems().length, 1);
+        assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
+    });
+    document.querySelector('[data-filter-type="all"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    document.querySelector('#tagsList [data-filter-type="tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    check('tag filters show only notes with that tag', () => {
+        assert.equal(noteItems().length, 1);
+        assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
+    });
+    document.querySelector('[data-filter-type="all"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+    document.querySelector('#foldersList [data-organization-action="delete-folder"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('deleting a folder moves its notes to Unfiled', () => {
+        assert.equal(document.querySelectorAll('#foldersList .organization-row').length, 0);
+        assert.equal(folderPicker.dataset.folderId, '');
+        assert.equal(document.getElementById('noteFolderValue').textContent, strings.noFolder);
+        assert.ok(noteByTitle('Renamed original'));
+    });
+
+    document.querySelector('#tagsList [data-organization-action="delete-tag"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('deleting a tag removes it from notes without deleting notes', () => {
+        assert.equal(document.querySelectorAll('#tagsList .organization-row').length, 0);
+        assert.equal(document.querySelectorAll('#currentNoteTags .tag-chip').length, 0);
+        assert.ok(noteByTitle('Renamed original'));
+    });
+
+    group('behaviour: automatic backups and recovery');
+
+    document.querySelector('[data-action="backups"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    let deletedProjectBackup;
+    check('the recovery screen lists timestamped automatic and deletion backups', () => {
+        const dialog = document.getElementById('backupDialog');
+        const items = [...dialog.querySelectorAll('.backup-item')];
+        deletedProjectBackup = items.find((item) =>
+            item.querySelector('.backup-item__title').textContent === 'Project'
+            && item.querySelector('.backup-item__reason').textContent === strings.backupDeleted);
+        assert.equal(dialog.open, true);
+        assert.ok(items.length >= 2, `expected backups, got ${items.length}`);
+        assert.ok(deletedProjectBackup, 'deleted Project snapshot missing');
+        assert.ok(deletedProjectBackup.querySelector('time').dateTime);
+        assert.equal(deletedProjectBackup.querySelector('.backup-item__missing').textContent, strings.backupMissing);
+    });
+
+    deletedProjectBackup.querySelector('[data-backup-action="restore"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const restoredTitle = `Project ${strings.backupRestoredSuffix}`;
+    check('restoring a backup creates a separate active note', () => {
+        assert.equal(document.getElementById('backupDialog').open, false);
+        assert.equal(noteTitle.value, restoredTitle);
+        assert.equal(editor.textContent, 'Project draft');
+        assert.ok(noteByTitle(restoredTitle));
+        assert.ok(noteByTitle('Renamed original'), 'restore overwrote another note');
+        assert.equal(tabByTitle(restoredTitle).classList.contains('document-tab--active'), true);
+    });
+
+    document.querySelector('[data-action="backups"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    const backupsBeforeDelete = document.querySelectorAll('#backupList .backup-item').length;
+    const backupToDelete = [...document.querySelectorAll('#backupList .backup-item')]
+        .find((item) => item.querySelector('.backup-item__reason').textContent === strings.backupDeleted);
+    const deletedBackupId = backupToDelete.dataset.backupId;
+    backupToDelete.querySelector('[data-backup-action="delete"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    document.querySelector('#appDialog [data-action="confirm"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+    check('recovery snapshots can be permanently removed without deleting notes', () => {
+        assert.equal(document.getElementById('backupDialog').open, true);
+        assert.equal(document.querySelectorAll('#backupList .backup-item').length, backupsBeforeDelete - 1);
+        assert.equal(document.querySelector(`[data-backup-id="${deletedBackupId}"]`), null);
+        assert.ok(noteByTitle(restoredTitle));
+    });
+    document.querySelector('#backupDialog [data-backup-action="close"]')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    group('behaviour: find & replace');
+
+    // The custom spell checker re-wraps words on input; switch it off first
+    // so the find/replace assertions see a stable DOM.
+    const spellToggle = document.querySelector('[data-action="toggle-spellcheck"]');
+    spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+    const findBar = document.getElementById('findBar');
+    const findInput = document.getElementById('findInput');
+    const replaceInput = document.getElementById('replaceInput');
+    const findCount = document.getElementById('findCount');
+    const pressKey = (target, opts) =>
+        target.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...opts }));
+
+    // jsdom keeps focus where it is when Selection.addRange() points into a
+    // contenteditable; Chromium focuses that contenteditable. Emulate the
+    // browser behaviour so focus-retention regressions are testable here.
+    const withChromiumRangeFocus = (fn) => {
+        const proto = Object.getPrototypeOf(window.getSelection());
+        const original = proto.addRange;
+        proto.addRange = function (range) {
+            const result = original.call(this, range);
+            if (editor.contains(range.startContainer)) editor.focus();
+            return result;
+        };
+        try {
+            return fn();
+        } finally {
+            proto.addRange = original;
+        }
+    };
+
+    check('Ctrl+F opens the find bar and reports the event', () => {
+        pressKey(document, { key: 'f', ctrlKey: true });
+        assert.equal(findBar.hidden, false, 'find bar did not open');
+        assert.ok(tracked.includes('find_used'), 'find_used not tracked');
+    });
+
+    check('find shows no replace row; find & replace shows it', () => {
+        const findBtn = document.querySelector('[data-action="find"]');
+        const findReplaceBtn = document.querySelector('[data-action="find-replace"]');
+        const row = document.getElementById('findReplaceRow');
+        assert.ok(findBtn && findReplaceBtn, 'toolbar find buttons missing');
+
+        findBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(row.hidden, true, 'replace row visible in plain find');
+
+        findReplaceBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(row.hidden, false, 'replace row hidden in find & replace');
+        assert.equal(findBar.hidden, false, 'find bar did not open');
+    });
+
+    check('matches span text nodes and count is shown', () => {
+        // Three "hello" occurrences, one split across <b> markup.
+        editor.innerHTML = '<p>Hello world, hello again.</p><p>H<b>ello</b> there.</p>';
+        findInput.value = 'hello';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
+        const marks = [...editor.querySelectorAll('.npad-find-match')];
+        const matchIds = new Set(marks.map((mark) => mark.dataset.findMatch));
+        assert.equal(matchIds.size, 3, `only ${matchIds.size} highlighted matches`);
+        assert.ok(marks.some((mark) => mark.classList.contains('npad-find-match--current')),
+            'active match is not visually distinct');
+    });
+
+    check('typing a query keeps focus and the caret in the Find field', () => {
+        findInput.focus();
+        findInput.setSelectionRange(findInput.value.length, findInput.value.length);
+
+        withChromiumRangeFocus(() => {
+            findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        });
+
+        assert.equal(document.activeElement, findInput, 'focus jumped into the editor');
+        assert.equal(findInput.selectionStart, findInput.value.length, 'input caret moved');
+    });
+
+    check('case, whole-word and regular-expression options refine results', () => {
+        const option = (name) => findBar.querySelector(`[data-find-option="${name}"]`);
+        const toggle = (name) => option(name)
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+        editor.innerHTML = '<p>Cat cat concatenate</p>';
+        findInput.value = 'cat';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
+
+        toggle('case');
+        assert.match(findCount.textContent, /1 of 2/, `case: ${findCount.textContent}`);
+        toggle('whole');
+        assert.match(findCount.textContent, /1 of 1/, `whole: ${findCount.textContent}`);
+        toggle('case');
+        assert.match(findCount.textContent, /1 of 2/, `case off: ${findCount.textContent}`);
+
+        toggle('regex');
+        findInput.value = 'c.t';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 2/, `regex: ${findCount.textContent}`);
+        findInput.value = '[';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.equal(findInput.getAttribute('aria-invalid'), 'true');
+        assert.equal(findCount.textContent, strings.findInvalidRegex);
+
+        toggle('regex');
+        toggle('whole');
+        findInput.value = 'hello';
+        editor.innerHTML = '<p>Hello world, hello again.</p><p>H<b>ello</b> there.</p>';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+
+    check('Enter and Shift+Enter step through matches', () => {
+        pressKey(findInput, { key: 'Enter' });
+        assert.match(findCount.textContent, /2 of 3/, findCount.textContent);
+        pressKey(findInput, { key: 'Enter', shiftKey: true });
+        assert.match(findCount.textContent, /1 of 3/, findCount.textContent);
+        assert.equal(window.getSelection().toString().toLowerCase(), 'hello');
+    });
+
+    check('replace swaps the current match and triggers autosave', () => {
+        // Caret sits inside the first match, so a fresh query starts one
+        // match in; step back onto the very first occurrence.
+        findInput.value = 'hello';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        let guard = 0;
+        while (!/1 of 3/.test(findCount.textContent) && guard++ < 5) {
+            pressKey(findInput, { key: 'Enter', shiftKey: true });
+        }
+        replaceInput.value = 'hi';
+        replaceInput.focus();
+        replaceInput.setSelectionRange(2, 2);
+        withChromiumRangeFocus(() => pressKey(replaceInput, { key: 'Enter' }));
+
+        assert.ok(editor.innerHTML.includes('hi world'), editor.innerHTML.slice(0, 80));
+        assert.equal(document.activeElement, replaceInput, 'focus left the replacement field');
+        assert.equal(replaceInput.selectionStart, 2, 'replacement caret moved');
+    });
+
+    check('replace all replaces every occurrence', () => {
+        findInput.value = 'hello';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        const replaceAllBtn = [...findBar.querySelectorAll('[data-find-action]')]
+            .find((b) => b.dataset.findAction === 'replace-all');
+        replaceAllBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(!/hello/i.test(editor.textContent), editor.textContent);
+    });
+
+    check('regular-expression replacements expand capture groups', () => {
+        const regex = findBar.querySelector('[data-find-option="regex"]');
+        regex.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        editor.innerHTML = '<p>item-12 item-34</p>';
+        findInput.value = 'item-(\\d+)';
+        replaceInput.value = '$1:item';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        findBar.querySelector('[data-find-action="replace-all"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.textContent, '12:item 34:item');
+        regex.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+
+    check('replace in selection never changes matching text outside the selection', () => {
+        findBar.querySelector('[data-find-action="close"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        editor.innerHTML = '<p>one one one</p>';
+        const text = editor.querySelector('p').firstChild;
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.setEnd(text, 7);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        document.querySelector('[data-action="find-replace"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        const inSelection = findBar.querySelector('[data-find-option="selection"]');
+        assert.equal(inSelection.disabled, false, 'selection scope was not captured');
+        inSelection.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        findInput.value = 'one';
+        replaceInput.value = 'X';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.match(findCount.textContent, /1 of 2/, findCount.textContent);
+        findBar.querySelector('[data-find-action="replace-all"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.textContent, 'X X one');
+    });
+
+    check('no-results message and Escape close', () => {
+        findInput.value = 'zzz-not-here';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.equal(findCount.textContent, strings.findNoResults);
+        pressKey(findInput, { key: 'Escape' });
+        assert.equal(findBar.hidden, true, 'find bar did not close');
+    });
+
+    group('behaviour: view toggles');
+
+    check('focus mode toggles, persists and shows the exit button', () => {
+        const focusBtn = document.querySelector('[data-action="toggle-focus"]');
+        focusBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(document.body.classList.contains('focus-mode'), 'focus class missing');
+        assert.equal(focusBtn.getAttribute('aria-pressed'), 'true');
+        assert.equal(window.localStorage.getItem('npad.focusMode'), '1');
+        assert.equal(document.querySelector('.focus-exit').hidden, false);
+        assert.ok(tracked.includes('focus_mode_enabled'), 'focus_mode_enabled not tracked');
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.ok(!document.body.classList.contains('focus-mode'), 'Escape did not exit focus');
+    });
+
+    check('RTL and LTR buttons sit in the toolbar and switch direction', () => {
+        const rtlBtn = document.querySelector('[data-action="dir-rtl"]');
+        const ltrBtn = document.querySelector('[data-action="dir-ltr"]');
+        assert.ok(rtlBtn && ltrBtn, 'direction buttons missing');
+        assert.ok(rtlBtn.closest('[role="group"]'), 'not inside a toolbar group');
+
+        rtlBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.getAttribute('dir'), 'rtl', 'rtl not applied');
+        assert.equal(rtlBtn.getAttribute('aria-pressed'), 'true');
+        assert.equal(ltrBtn.getAttribute('aria-pressed'), 'false');
+        assert.equal(window.localStorage.getItem('npad.editorDir'), 'rtl');
+        assert.ok(tracked.includes('dir_toggled'), 'dir_toggled not tracked');
+
+        ltrBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.getAttribute('dir'), 'ltr', 'ltr not applied');
+        assert.equal(ltrBtn.getAttribute('aria-pressed'), 'true');
+    });
+
+    group('behaviour: custom spell checker');
+
+    check('misspelled words are flagged with the custom mark', async () => {
+        // Earlier groups may have switched the checker off; make sure it is on.
+        if (spellToggle.getAttribute('aria-pressed') !== 'true') {
+            spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        }
+        editor.dataset.spellDebounce = '10';
+        // Two paragraphs: the walker must not stop after the first replaced
+        // node (the live-DOM bug that only showed up in real browsers).
+        editor.innerHTML = '<p>hellow wrld and correct</p><p>secon para</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        const marks = editor.querySelectorAll('.spell-err');
+        assert.equal(marks.length, 3, `expected 3 marks, got ${marks.length}`);
+        assert.equal(marks[0].textContent, 'hellow');
+        assert.equal(marks[1].textContent, 'wrld');
+        assert.equal(marks[2].textContent, 'secon');
+        assert.equal(marks[0].tabIndex, 0);
+        assert.equal(marks[0].getAttribute('role'), 'button');
+        assert.equal(marks[0].getAttribute('aria-haspopup'), 'dialog');
+        assert.ok(marks[0].getAttribute('aria-label').includes('hellow'));
+    });
+
+    check('tap and keyboard activation open navigable spelling corrections', () => {
+        editor.innerHTML = '<p>hellow world</p>';
+        const nativeSetTimeout = global.setTimeout;
+        global.setTimeout = (callback) => {
+            callback();
+            return 1;
+        };
+        let mark;
+        try {
+            editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+            mark = editor.querySelector('.spell-err');
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
+        assert.ok(mark, 'no spelling mark available for activation');
+        mark.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        const tip = document.querySelector('.spell-tip');
+        assert.ok(tip && !tip.hidden, 'tap did not open suggestions');
+        assert.equal(tip.getAttribute('role'), 'dialog');
+        assert.equal(mark.getAttribute('aria-expanded'), 'true');
+
+        document.body.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(tip.hidden, true, 'outside tap did not close suggestions');
+        mark.focus();
+        mark.dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'Enter', bubbles: true, cancelable: true,
+        }));
+        const buttons = [...tip.querySelectorAll('button')];
+        assert.equal(document.activeElement, buttons[0], 'keyboard open did not focus a suggestion');
+        buttons[0].dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'ArrowDown', bubbles: true, cancelable: true,
+        }));
+        assert.equal(document.activeElement, buttons[1], 'ArrowDown did not move through corrections');
+        buttons[1].dispatchEvent(new window.KeyboardEvent('keydown', {
+            key: 'Escape', bubbles: true, cancelable: true,
+        }));
+        assert.equal(tip.hidden, true);
+        assert.equal(document.activeElement, mark, 'Escape did not return focus to the word');
+    });
+
+    check('toggle disables the checker, clears marks and persists', () => {
+        spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(editor.querySelectorAll('.spell-err').length, 0, 'marks not cleared');
+        assert.equal(spellToggle.getAttribute('aria-pressed'), 'false');
+        assert.equal(window.localStorage.getItem('npad.spellcheck'), '0');
+        assert.ok(tracked.includes('spellcheck_toggled'), 'spellcheck_toggled not tracked');
+
+        spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(spellToggle.getAttribute('aria-pressed'), 'true');
+        assert.equal(window.localStorage.getItem('npad.spellcheck'), '1');
+    });
+
+    check('a delayed spell pass cannot steal focus from another field', () => {
+        editor.innerHTML = '<p>uniquefocuss misspelingg</p>';
+        const text = editor.querySelector('p').firstChild;
+        const range = document.createRange();
+        range.setStart(text, text.length);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        const field = document.createElement('input');
+        field.value = 'typing';
+        document.body.appendChild(field);
+        field.focus();
+        field.setSelectionRange(6, 6);
+
+        // Run the normally delayed pass synchronously and emulate Chromium's
+        // contenteditable focus side effect when the editor caret is restored.
+        const nativeSetTimeout = global.setTimeout;
+        global.setTimeout = (callback) => {
+            callback();
+            return 1;
+        };
+        try {
+            withChromiumRangeFocus(() => {
+                editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+            });
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
+
+        assert.equal(document.activeElement, field, 'spell marking focused the editor');
+        assert.equal(field.selectionStart, 6, 'field caret was not restored');
+        field.remove();
+    });
+
+    check('hovering a flag opens a correction popup that stays reachable', () => {
+        editor.dataset.spellDelay = '10';
+        editor.innerHTML = '<p>hellow world</p>';
+
+        // Execute the two UI delays immediately so every assertion remains
+        // inside the synchronous test runner.
+        const nativeSetTimeout = global.setTimeout;
+        global.setTimeout = (callback) => {
+            callback();
+            return 1;
+        };
+        let mark;
+        try {
+            editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+            mark = editor.querySelector('.spell-err');
+            assert.ok(mark, 'no flag to hover');
+            mark.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
+
+        const tip = document.querySelector('.spell-tip');
+        assert.ok(tip && !tip.hidden, 'tooltip did not appear');
+        const items = tip.querySelectorAll('.spell-tip__item');
+        assert.ok(items.length >= 1, 'no suggestions offered');
+        assert.equal(items[0].textContent, 'hello');
+
+        // Moving directly from the word into the popup is still inside the
+        // combined hover region and must not even schedule a close.
+        let hideWasScheduled = false;
+        global.setTimeout = (callback, delay, ...args) => {
+            hideWasScheduled = true;
+            return nativeSetTimeout(callback, delay, ...args);
+        };
+        try {
+            mark.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: tip }));
+        } finally {
+            global.setTimeout = nativeSetTimeout;
+        }
+        assert.ok(!tip.hidden, 'tooltip closed on pointer leaving the word');
+        assert.equal(hideWasScheduled, false, 'tooltip scheduled a close while pointer entered it');
+
+        items[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.ok(editor.textContent.includes('hello world'), editor.textContent);
+        assert.ok(tracked.includes('spell_replace_used'), 'spell_replace_used not tracked');
+        assert.ok(tip.hidden, 'tooltip did not close after replace');
+    });
+
+    check('add to dictionary stops the word being flagged and persists', async () => {
+        editor.innerHTML = '<p>npadd note</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        const mark = editor.querySelector('.spell-err');
+        assert.ok(mark, 'npadd was not flagged');
+
+        mark.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        const tip = document.querySelector('.spell-tip');
+        const add = [...tip.querySelectorAll('.spell-tip__action')]
+            .find((b) => b.textContent === strings.spellAdd);
+        add.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+        assert.ok(!editor.querySelector('.spell-err'), 'mark still present after add');
+        assert.ok(window.localStorage.getItem('npad.customWords').includes('npadd'));
+        assert.ok(tracked.includes('spell_add_word'), 'spell_add_word not tracked');
+
+        // A fresh re-mark pass must not flag it again.
+        editor.innerHTML = '<p>npadd again</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+        assert.ok(!editor.querySelector('.spell-err'), 'custom word re-flagged');
+    });
+
     group('behaviour: save state');
 
     check('status bar advertises a save state', () => {
@@ -257,13 +1058,36 @@ export default async function run(check, group) {
             `unexpected: ${bar.dataset.saveState}`);
     });
 
-    check('pagehide flush persists to localStorage fallback', () => {
+    check('pagehide flush persists content without transient search highlights', () => {
         editor.textContent = 'work in progress';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        pressKey(document, { key: 'f', ctrlKey: true });
+        findInput.value = 'work';
+        findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.ok(editor.querySelector('.npad-find-match'), 'search highlight missing before flush');
+        window.dispatchEvent(new window.Event('beforeprint'));
+        assert.equal(editor.querySelector('.npad-find-match'), null, 'search highlight leaked into print');
+        window.dispatchEvent(new window.Event('afterprint'));
+        assert.ok(editor.querySelector('.npad-find-match'), 'search highlight was not restored after print');
         window.dispatchEvent(new window.Event('pagehide'));
-        const raw = window.localStorage.getItem('npad:document');
+        const raw = window.localStorage.getItem('npad:pending-note');
         assert.ok(raw, 'nothing flushed on pagehide — this is the data-loss bug');
-        assert.ok(JSON.parse(raw).html.includes('work in progress'), 'flushed content wrong');
+        const html = JSON.parse(raw).html;
+        assert.ok(html.includes('work in progress'), 'flushed content wrong');
+        assert.ok(!html.includes('npad-find-match'), 'search highlights leaked into storage');
+        pressKey(findInput, { key: 'Escape' });
+    });
+
+    check('autosave timer persists without spell marks', async () => {
+        editor.textContent = 'autosave works';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 950));
+        const raw = window.localStorage.getItem('npad:notes');
+        assert.ok(raw, 'autosave did not persist');
+        const stored = JSON.parse(raw).notes;
+        const html = stored.find((note) => note.id === window.localStorage.getItem('npad:active-note'))?.html || '';
+        assert.ok(html.includes('autosave works'), 'autosave content wrong');
+        assert.ok(!html.includes('spell-err'), 'spell marks leaked into storage');
     });
 
     group('behaviour: dialog');

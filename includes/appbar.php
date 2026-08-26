@@ -25,11 +25,18 @@ $fileItems = [
     ['action' => 'new',       'icon' => 'file',      'label' => t('menu.new')],
     ['action' => 'open',      'icon' => 'folder',    'label' => t('menu.open')],
     ['separator' => true],
-    ['action' => 'save',      'icon' => 'download',  'label' => t('menu.save'),      'shortcut' => 'Ctrl+S'],
-    ['action' => 'save-html', 'icon' => 'save',      'label' => t('menu.save_html')],
-    ['action' => 'print',     'icon' => 'printer',   'label' => t('menu.print'),     'shortcut' => 'Ctrl+P'],
+    ['action' => 'save',          'icon' => 'download', 'label' => t('menu.save'), 'shortcut' => 'Ctrl+S'],
+    ['action' => 'save-html',     'icon' => 'save',     'label' => t('menu.save_html')],
+    ['action' => 'save-markdown', 'icon' => 'save',     'label' => t('menu.save_markdown')],
+    ['action' => 'save-json',     'icon' => 'save',     'label' => t('menu.save_json')],
+    ['action' => 'save-docx',     'icon' => 'save',     'label' => t('menu.save_docx')],
+    ['action' => 'save-pdf',      'icon' => 'save',     'label' => t('menu.save_pdf')],
+    ['action' => 'save-rtf',      'icon' => 'save',     'label' => t('menu.save_rtf')],
+    ['separator' => true],
+    ['action' => 'print',         'icon' => 'printer',  'label' => t('menu.print'), 'shortcut' => 'Ctrl+P'],
     ['separator' => true],
     ['action' => 'details',   'icon' => 'info',      'label' => t('menu.details')],
+    ['action' => 'backups',   'icon' => 'undo',      'label' => t('menu.backups')],
     ['action' => 'clear',     'icon' => 'trash',     'label' => t('menu.clear')],
 ];
 
@@ -38,6 +45,9 @@ $editItems = [
     ['action' => 'cut',         'icon' => 'scissors',   'label' => t('menu.cut'),         'shortcut' => 'Ctrl+X'],
     ['action' => 'paste',       'icon' => 'clipboard',  'label' => t('menu.paste'),       'shortcut' => 'Ctrl+V'],
     ['action' => 'paste-plain', 'icon' => 'text',       'label' => t('menu.paste_plain')],
+    ['separator' => true],
+    ['action' => 'find',        'icon' => 'search',     'label' => t('menu.find'),        'shortcut' => 'Ctrl+F'],
+    ['action' => 'find-replace','icon' => 'find-replace','label' => t('menu.find_replace'), 'shortcut' => 'Ctrl+H'],
     ['separator' => true],
     ['action' => 'select-all',  'icon' => 'select-all', 'label' => t('menu.select_all'),  'shortcut' => 'Ctrl+A'],
 ];
@@ -93,6 +103,15 @@ function npad_render_menu(string $id, string $label, array $items): void
             <a class="segmented__option" href="/fa/" hreflang="fa"
                <?= $lang === 'fa' ? 'aria-current="true"' : '' ?>>فا</a>
         </div>
+
+        <button type="button" class="iconbtn" data-action="toggle-focus"
+                aria-pressed="false"
+                aria-label="<?= e(t('toolbar.focus')) ?>"
+                data-label-focus="<?= e(t('toolbar.focus')) ?>"
+                data-label-focus-exit="<?= e(t('toolbar.focus_exit')) ?>">
+            <?= icon('expand', ['class' => 'icon', 'data-icon' => 'expand']) ?>
+            <?= icon('contract', ['class' => 'icon', 'data-icon' => 'contract', 'hidden' => 'hidden']) ?>
+        </button>
 
         <button type="button" class="iconbtn" data-theme-toggle
                 aria-pressed="false"

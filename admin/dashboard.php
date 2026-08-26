@@ -201,7 +201,7 @@ function rows(mysqli $conn, string $sql): array
 
 $totalEvents = scalar($conn, "SELECT COUNT(*) FROM analytics WHERE $where");
 $pageViews   = scalar($conn, "SELECT COUNT(*) FROM analytics WHERE event_type = ? AND $where", 'page_view');
-$downloads   = scalar($conn, "SELECT COUNT(*) FROM analytics WHERE event_type IN ('download_txt','download_html') AND $where");
+$downloads   = scalar($conn, "SELECT COUNT(*) FROM analytics WHERE event_type IN ('download_txt','download_html','download_markdown','download_json','download_docx','download_pdf','download_rtf') AND $where");
 $prints      = scalar($conn, "SELECT COUNT(*) FROM analytics WHERE event_type = ? AND $where", 'print_used');
 $darkMode    = scalar($conn, "SELECT COUNT(*) FROM analytics WHERE event_type = ? AND $where", 'dark_mode_enabled');
 $uniqueIps   = scalar($conn, "SELECT COUNT(DISTINCT ip_address) FROM analytics WHERE $where");
