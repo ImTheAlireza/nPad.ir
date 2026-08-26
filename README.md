@@ -52,6 +52,7 @@ Live: <https://npad.ir>
 │     ├─ mathblock.js     Math typesetting: KaTeX paint, dialog, magic typing
 │     ├─ outline.js       Collapsible sections + outline navigator
 │     ├─ checklist.js     Checklists + cross-note task overview
+│     ├─ bidi.js          Direction detection + Unicode isolate helper
 │     ├─ caret.js         Caret boundary helpers shared by code/math modules
 │     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
 │     └─ vendor/          Self-hosted Chart.js 4.5.1 + Prism 1.30.0 + KaTeX 0.18.4
@@ -241,6 +242,18 @@ sanitizer admits checkbox inputs only inside checklist lists.
 dialog — open and completed sections, live counts, toggling a row updates
 the source note (the live editor for the active note, storage for the rest),
 and each row carries a jump link that opens the note and scrolls to the task.
+
+Keyboard behaviour matches plain text: Enter opens the next item (Enter on
+an empty item leaves the list), Backspace on an emptied item removes it, and
+inside sections Backspace on a cleared line removes it — the last one removes
+the section — instead of stranding the caret.
+
+**Direction is per note.** The toolbar LTR/RTL buttons write the direction
+onto the active note (persisted with it and restored on switch); notes
+without an override are auto-detected from their first strong character
+(`assets/js/bidi.js`), and mixed-language titles and previews render with
+`dir="auto"` plus Unicode FSI…PDI isolates where text leaves the DOM
+(document title).
 
 ## Tables
 

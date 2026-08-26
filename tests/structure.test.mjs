@@ -29,6 +29,7 @@ const { sanitizeHtml } = await import(`file://${path.join(ROOT, 'assets/js/sanit
 const formats = await import(`file://${path.join(ROOT, 'assets/js/formats.js')}`);
 const { initOutline } = await import(`file://${path.join(ROOT, 'assets/js/outline.js')}`);
 const { initChecklist } = await import(`file://${path.join(ROOT, 'assets/js/checklist.js')}`);
+const { detectDirection, isolate } = await import(`file://${path.join(ROOT, 'assets/js/bidi.js')}`);
 const tick = () => new Promise((resolve) => window.setTimeout(resolve, 5));
 
 export default async function run(check, group) {
@@ -233,16 +234,140 @@ export default async function run(check, group) {
         editor.remove();
     });
 
+    group('structure: bidi + per-note direction');
+    await step('detectDirection reads the first strong character', () => {
+        assert.equal(detectDirection('سلام دنیا'), 'rtl');
+        assert.equal(detectDirection('Hello world'), 'ltr');
+        assert.equal(detectDirection('123 + 456'), null);
+        assert.equal(detectDirection(''), null);
+        assert.equal(detectDirection('... سلام'), 'rtl');
+    });
+
+    await step('isolate wraps text in FSI…PDI', () => {
+        const wrapped = isolate('سلام');
+        assert.equal(wrapped.charCodeAt(0), 8295); // U+2067 FSI
+        assert.equal(wrapped.charCodeAt(wrapped.length - 1), 8297); // U+2069 PDI
+        assert.ok(wrapped.includes('سلام'));
+        assert.equal(isolate(''), '');
+    });
+
+    group('structure: checklist keyboard');
+    await step('Enter opens the next item with the caret after its box', () => {
+        const edits = [];
+        document.body.innerHTML = '<div id="ed"><ul class="checklist"><li><input type="checkbox"><span>milk</span></li></ul></div>';
+        const editor = document.getElementById('ed');
+        const api = initChecklist({
+            editor, strings: {}, onEvent: () => {}, onEdit: () => edits.push(1), placeBlock: () => true,
+        });
+        const item = editor.querySelector('li');
+        caretIn(item.querySelector('span').firstChild, 2);
+        const enter = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+        editor.dispatchEvent(enter);
+        const items = editor.querySelectorAll('li');
+        assert.equal(items.length, 2, 'second item not created');
+        const next = items[1];
+        assert.equal(next.querySelectorAll('input').length, 1, 'fresh box missing');
+        assert.equal(next.querySelector('input').checked, false, 'new box should start unchecked');
+        const selection = window.getSelection();
+        assert.equal(selection.anchorNode, next, 'caret not in the new item');
+        assert.equal(selection.anchorOffset, 1, 'caret not right after the box');
+        assert.equal(edits.length, 1, 'onEdit not called');
+        editor.remove();
+    });
+
+    await step('Enter on an empty item leaves the list', () => {
+        document.body.innerHTML = '<div id="ed"><ul class="checklist"><li><input type="checkbox"><span>tea</span></li>'
+            + '<li><input type="checkbox"></li></ul></div>';
+        const editor = document.getElementById('ed');
+        const api = initChecklist({
+            editor, strings: {}, onEvent: () => {}, onEdit: () => {}, placeBlock: () => true,
+        });
+        const items = editor.querySelectorAll('li');
+        caretIn(items[1], 1);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        assert.equal(editor.querySelectorAll('li').length, 1, 'empty item kept');
+        assert.ok(editor.querySelector('p'), 'no paragraph to keep typing in');
+        editor.remove();
+    });
+
+    await step('Backspace on an empty item removes it', () => {
+        document.body.innerHTML = '<div id="ed"><ul class="checklist"><li><input type="checkbox"><span>tea</span></li>'
+            + '<li><input type="checkbox"></li></ul></div>';
+        const editor = document.getElementById('ed');
+        const api = initChecklist({
+            editor, strings: {}, onEvent: () => {}, onEdit: () => {}, placeBlock: () => true,
+        });
+        const items = editor.querySelectorAll('li');
+        caretIn(items[1], 1);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+        assert.equal(editor.querySelectorAll('li').length, 1, 'empty item kept');
+        const selection = window.getSelection();
+        assert.ok(editor.querySelectorAll('li')[0].contains(selection.anchorNode), 'caret not in the previous item');
+        editor.remove();
+    });
+
+    group('structure: sections keyboard');
+    await step('Backspace on an emptied body block removes it, then the section', () => {
+        document.body.innerHTML = '<div id="ed"><details open><summary>Title</summary><p>gone</p><p>keep</p></details></div>';
+        const editor = document.getElementById('ed');
+        const api = initOutline({
+            editor, strings: {}, onEvent: () => {}, onEdit: () => {}, placeBlock: () => true,
+        });
+        const details = editor.querySelector('details');
+        const first = details.querySelectorAll('p')[0];
+        caretIn(first.firstChild, 1);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+        editor.dispatchEvent(new window.Event('input', { bubbles: true })); // clear the text
+        first.textContent = '';
+        caretIn(first, 0);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+        const paragraphs = details.querySelectorAll('p');
+        assert.equal(paragraphs.length, 1, 'emptied block not removed');
+        const selection = window.getSelection();
+        assert.ok(paragraphs[0].contains(selection.anchorNode), 'caret not in the remaining block');
+
+        paragraphs[0].textContent = '';
+        caretIn(paragraphs[0], 0);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+        assert.equal(editor.querySelector('details'), null, 'empty section not removed');
+        editor.remove();
+    });
+
+    await step('Backspace at the start of the first body block is a no-op', () => {
+        document.body.innerHTML = '<div id="ed"><details open><summary>Title</summary><p>content</p></details></div>';
+        const editor = document.getElementById('ed');
+        const api = initOutline({
+            editor, strings: {}, onEvent: () => {}, onEdit: () => {}, placeBlock: () => true,
+        });
+        const block = editor.querySelector('p');
+        caretIn(block.firstChild, 0);
+        const back = new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true });
+        editor.dispatchEvent(back);
+        assert.equal(back.defaultPrevented, true, 'merge into summary not prevented');
+        assert.ok(editor.querySelector('details'), 'section must stay');
+        assert.match(block.textContent, /content/);
+        editor.remove();
+    });
+
     check(`structure: ${steps.length} steps`, () => {
         assert.deepEqual(stepFailures, [], stepFailures.join(', '));
     });
 }
 
+function caretIn(node, offset = 0) {
+    const range = node.ownerDocument.createRange();
+    range.setStart(node, offset);
+    range.collapse(true);
+    const selection = node.ownerDocument.defaultView.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
 function putCaretAtEnd(node) {
     const range = node.ownerDocument.createRange();
     range.selectNodeContents(node);
     range.collapse(false);
     const selection = node.ownerDocument.defaultView.getSelection();
     selection.removeAllRanges();
+
     selection.addRange(range);
 }

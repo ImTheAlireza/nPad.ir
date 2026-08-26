@@ -259,6 +259,30 @@ export default async function run(check, group) {
         await tick();
     });
 
+    await step('per-note direction: the toolbar writes it on the active note', async () => {
+        const rtlButton = document.querySelector('[data-action="dir-rtl"]');
+        assert.ok(rtlButton, 'dir button missing');
+        click(rtlButton);
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        await tick();
+        assert.equal(editor.getAttribute('dir'), 'rtl', 'editor dir not applied');
+
+        const saved = JSON.parse(window.localStorage.getItem('npad:notes'));
+        assert.ok((saved?.notes || []).some((n) => n.dir === 'rtl'), 'direction not persisted on the note');
+
+        // A new note falls back to auto (the page direction), not the override.
+        clickMenu(fileMenuTrigger, fileMenuPanel, 'new');
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+        assert.notEqual(editor.getAttribute('dir'), 'rtl', 'override leaked to the new note');
+
+        // Back to the first note: its direction is restored.
+        const firstTab = [...document.querySelectorAll('[data-tab-action="open"]')][0];
+        click(firstTab);
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+        assert.equal(editor.getAttribute('dir'), 'rtl', 'per-note direction not restored');
+    });
+
     await step('spellcheck skips nothing here and page stays clean', () => {
         assert.deepEqual(consoleErrors.filter((e) => !/scrollIntoView|Not implemented/.test(e)), [],
             consoleErrors[0]);

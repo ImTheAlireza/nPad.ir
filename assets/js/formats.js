@@ -426,6 +426,7 @@ export function noteToJson(note, organization = { folders: [], tags: [] }) {
         note: {
             title: String(note.title || ''),
             html: String(note.html || ''),
+            dir: ['ltr', 'rtl'].includes(note.dir) ? note.dir : null,
             pinned: !!note.pinned,
             folder: folder ? { name: folder.name } : null,
             tags,
@@ -461,6 +462,7 @@ export function parseNoteJson(json) {
         return {
             title: String(note.title || ''),
             html,
+            dir: ['ltr', 'rtl'].includes(note.dir) ? note.dir : null,
             pinned: !!note.pinned,
             folder,
             tags,

@@ -14,6 +14,7 @@
  */
 
 import { toast } from './ui.js';
+import { caretAtEdge } from './caret.js';
 
 export function initOutline({ editor, strings = {}, onEvent, onEdit, placeBlock }) {
     const track = typeof onEvent === 'function' ? onEvent : () => {};
@@ -80,6 +81,7 @@ export function initOutline({ editor, strings = {}, onEvent, onEdit, placeBlock 
             button.className = 'outline-panel__entry';
             button.style.paddingInlineStart = `calc(var(--space-3) + ${(entry.level - 1) * 14}px)`;
             button.textContent = entry.text;
+            button.dir = 'auto';
             if (entry.isSummary) {
                 const mark = document.createElement('span');
                 mark.className = 'outline-panel__mark';
@@ -177,14 +179,78 @@ export function initOutline({ editor, strings = {}, onEvent, onEdit, placeBlock 
         }, 0);
     }, true);
 
+    function caretToEnd(node) {
+        editor.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+
+    function caretInto(node, offset) {
+        editor.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+
     // Enter leaves the title for the body; Backspace on an empty title
-    // removes the whole section.
+    // removes the whole section. In the body, Backspace on an emptied block
+    // removes the block (the last one removes the section) so clearing a line
+    // behaves like ordinary text instead of stranding the caret; at the start
+    // of the first body block it stops before merging into the summary.
     editor.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== 'Backspace') return;
         const selection = window.getSelection();
-        if (!selection?.rangeCount) return;
-        const summary = summaryFrom(selection.getRangeAt(0).startContainer);
-        if (!summary || !summary.contains(selection.getRangeAt(0).startContainer)) return;
+        if (!selection?.rangeCount || !selection.isCollapsed) return;
+        const start = selection.getRangeAt(0).startContainer;
+        const summary = summaryFrom(start);
+
+        if (!summary) {
+            if (event.key !== 'Backspace') return;
+            // The caret container may BE the block (an emptied paragraph).
+            const startEl = start.nodeType === 1 ? start : start.parentElement;
+            const details = startEl?.closest('details');
+            if (!details || !editor.contains(details)) return;
+            const block = startEl?.closest('p, div, ul, ol, blockquote, pre, h1, h2, h3, h4, h5, h6');
+            if (!block || !details.contains(block)) return;
+            const firstBody = details.querySelector(':scope > *:not(summary)');
+            const previous = block.previousElementSibling === details.querySelector(':scope > summary')
+                ? null
+                : block.previousElementSibling;
+
+            if (!(block.textContent || '').trim()) {
+                event.preventDefault();
+                event.stopPropagation();
+                block.remove();
+                if (previous && details.contains(previous)) caretToEnd(previous);
+                else {
+                    const next = details.querySelector(':scope > *:not(summary)');
+                    if (next) caretInto(next, 0);
+                    else {
+                        details.remove();
+                        const anchor = editor.querySelector('details') || null;
+                        if (anchor) caretToEnd(anchor.previousElementSibling || editor);
+                        else editor.focus();
+                    }
+                }
+                edited();
+                refresh();
+            } else if (caretAtEdge(selection, block, false) && block === firstBody) {
+                // Don't let the browser merge the first body block into the
+                // summary; the title keeps its own line.
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            return;
+        }
+
+        if (!summary.contains(start)) return;
         const details = summary.parentElement;
 
         if (event.key === 'Enter') {

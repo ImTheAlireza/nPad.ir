@@ -111,6 +111,117 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
         normaliseTimer = window.setTimeout(() => normalise(editor), 300);
     });
 
+    function itemFrom(node) {
+        const element = node.nodeType === 1 ? node : node.parentElement;
+        const item = element?.closest('ul.checklist > li, ol.checklist > li');
+        return item && editor.contains(item) ? item : null;
+    }
+
+    function itemText(item) {
+        const clone = item.cloneNode(true);
+        for (const input of clone.querySelectorAll('input')) input.remove();
+        return clone.textContent || '';
+    }
+
+    function caretToEnd(node) {
+        editor.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+
+    function caretInto(node, offset) {
+        editor.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+
+    // Enter opens the next item (fresh unchecked box, caret right after it);
+    // Enter on an empty item leaves the list. Backspace on an empty item
+    // removes it (the last one removes the list); at an item start it merges
+    // into the previous item instead of mangling the list structure.
+    editor.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== 'Backspace') return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        const selection = window.getSelection();
+        if (!selection?.rangeCount || !selection.isCollapsed) return;
+        const start = selection.getRangeAt(0).startContainer;
+        const item = itemFrom(start);
+        if (!item || !item.contains(start)) return;
+        const list = item.parentElement;
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!itemText(item).trim()) {
+                // Empty item: leave the list with a paragraph.
+                const paragraph = document.createElement('p');
+                paragraph.appendChild(document.createElement('br'));
+                if (list.children.length === 1) list.replaceWith(paragraph);
+                else {
+                    item.remove();
+                    list.after(paragraph);
+                }
+                caretInto(paragraph, 0);
+                edited();
+                return;
+            }
+            const next = document.createElement('li');
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            next.appendChild(input);
+            item.after(next);
+            caretInto(next, 1); // right after the fresh box
+            edited();
+            return;
+        }
+
+        // Backspace
+        if (!itemText(item).trim()) {
+            event.preventDefault();
+            event.stopPropagation();
+            const previous = item.previousElementSibling;
+            item.remove();
+            if (previous) caretToEnd(previous);
+            else if (!list.children.length) {
+                const paragraph = document.createElement('p');
+                paragraph.appendChild(document.createElement('br'));
+                list.replaceWith(paragraph);
+                caretInto(paragraph, 0);
+            } else {
+                caretToEnd(list.lastElementChild);
+            }
+            edited();
+            return;
+        }
+
+        if (caretAtEdge(selection, item, false)) {
+            const previous = item.previousElementSibling;
+            if (!previous) {
+                // First item: keep the list intact instead of merging out.
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            for (const child of [...item.childNodes]) {
+                if (child.tagName === 'INPUT') continue;
+                previous.appendChild(child);
+            }
+            item.remove();
+            caretToEnd(previous);
+            edited();
+        }
+    }, true);
+
     /* ------------------------------------------------------------------
        Task overview across notes
        ------------------------------------------------------------------ */
@@ -140,10 +251,11 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
                     <input type="checkbox" data-task-toggle
                            data-note-id="${escapeAttr(task.noteId)}" data-task-index="${task.index}"
                            ${task.checked ? 'checked' : ''}>
-                    <span>${escapeHtml(task.text)}</span>
+                    <span dir="auto">${escapeHtml(task.text)}</span>
                 </label>
                 <button type="button" class="task-overview__note" data-task-jump
                         data-note-id="${escapeAttr(task.noteId)}" data-task-index="${task.index}"
+                        dir="auto"
                         title="${escapeAttr(strings.tasksJump || 'Show in note')}">
                     ${escapeHtml(task.noteTitle || strings.noteUntitled || 'Untitled')}
                 </button>

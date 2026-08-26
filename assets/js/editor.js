@@ -84,6 +84,7 @@ import { initCodeblocks, detectLanguage } from './codeblock.js';
 import { initMath } from './mathblock.js';
 import { initOutline } from './outline.js';
 import { initChecklist } from './checklist.js';
+import { detectDirection, isolate } from './bidi.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -123,6 +124,9 @@ export function initEditor({ strings, onEvent }) {
     const notesSearch = document.getElementById('notesSearch');
     const notesEmpty = document.getElementById('notesEmpty');
     const noteTitleInput = document.getElementById('noteTitle');
+    if (noteTitleInput) {
+        noteTitleInput.addEventListener('input', () => updateDocumentTitle());
+    }
     const documentTabs = document.getElementById('documentTabs');
     const documentTabTemplate = document.getElementById('documentTabTemplate');
     const noteFolderTrigger = document.getElementById('noteFolder');
@@ -376,7 +380,9 @@ export function initEditor({ strings, onEvent }) {
             main.tabIndex = active ? 0 : -1;
             main.title = unsaved ? `${title} — ${strings.noteUnsavedTab}` : title;
             main.setAttribute('aria-label', unsaved ? `${title}, ${strings.noteUnsavedTab}` : title);
-            tab.querySelector('.document-tab__title').textContent = title;
+            const tabTitle = tab.querySelector('.document-tab__title');
+            tabTitle.textContent = title;
+            tabTitle.dir = 'auto';
 
             const close = tab.querySelector('[data-tab-action="close"]');
             close.dataset.noteId = id;
@@ -547,8 +553,12 @@ export function initEditor({ strings, onEvent }) {
             const open = item.querySelector('[data-note-action="open"]');
             open.dataset.noteId = note.id;
             open.setAttribute('aria-current', note.id === activeNoteId ? 'true' : 'false');
-            item.querySelector('.note-item__title').textContent = displayTitle(note);
-            item.querySelector('.note-item__preview').textContent = notePreview(note);
+            const itemTitle = item.querySelector('.note-item__title');
+            itemTitle.textContent = displayTitle(note);
+            itemTitle.dir = 'auto';
+            const itemPreview = item.querySelector('.note-item__preview');
+            itemPreview.textContent = notePreview(note);
+            itemPreview.dir = 'auto';
             item.querySelector('.note-item__time').textContent = noteTime(note);
             const metadata = item.querySelector('.note-item__metadata');
             const folder = folderById(note.folderId);
@@ -767,6 +777,8 @@ export function initEditor({ strings, onEvent }) {
         math.refreshAll();
         checklist.normalise(editor);
         outline.refresh();
+        applyNoteDir();
+        updateDocumentTitle();
         // The new note's caret is empty: reset contextual table controls.
         markActiveCell(null);
         setToolbarContext('base');
@@ -3852,10 +3864,40 @@ ${exportHtml()}
         if (rtlBtn) rtlBtn.setAttribute('aria-pressed', String(dir === 'rtl'));
     }
 
+    // Direction is per-note: the toolbar buttons write it onto the active
+    // note (persisted with it), and notes without an explicit direction are
+    // auto-detected from their first strong character.
     function applyDir(dir) {
         editor.setAttribute('dir', dir);
+        if (noteTitleInput) noteTitleInput.setAttribute('dir', dir);
         syncDirButtons(dir);
         remember('npad.editorDir', dir);
+        const note = activeNote();
+        if (note) {
+            note.dir = dir;
+            scheduleSave();
+        }
+        updateDocumentTitle();
+    }
+
+    function applyNoteDir() {
+        const explicit = activeNote()?.dir;
+        const dir = explicit === 'ltr' || explicit === 'rtl'
+            ? explicit
+            : (detectDirection(editor.textContent || '')
+                || document.documentElement.getAttribute('dir')
+                || 'ltr');
+        editor.setAttribute('dir', dir);
+        if (noteTitleInput) noteTitleInput.setAttribute('dir', dir);
+        syncDirButtons(dir);
+    }
+
+    let initialDocumentTitle = null;
+    function updateDocumentTitle() {
+        if (initialDocumentTitle === null) initialDocumentTitle = document.title;
+        const note = activeNote();
+        const title = (noteTitleInput?.value || (note ? displayTitle(note) : '') || '').trim();
+        document.title = title ? `${isolate(title)} — NPad` : initialDocumentTitle;
     }
 
     const actions = {
