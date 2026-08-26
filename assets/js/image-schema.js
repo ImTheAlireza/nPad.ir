@@ -45,6 +45,7 @@ export function defaultImageBlock(assetId = '') {
         alt: { kind: 'pending', text: '' },
         caption: '',
         display: { layout: 'block', widthPercent: 100 },
+        rotation: 0,
         crop: null,
     };
 }
@@ -109,6 +110,9 @@ export function normaliseImageBlock(raw) {
         MIN_IMAGE_WIDTH_PERCENT,
         MAX_IMAGE_WIDTH_PERCENT,
     ) * 100) / 100;
+    const rotation = [0, 90, 180, 270].includes(Number(value.rotation))
+        ? Number(value.rotation)
+        : 0;
 
     return {
         version: IMAGE_BLOCK_VERSION,
@@ -116,8 +120,33 @@ export function normaliseImageBlock(raw) {
         alt: { kind, text: altText },
         caption: text(value.caption, 1000),
         display: { layout, widthPercent },
+        rotation,
         crop: normaliseCrop(value.crop),
     };
+}
+
+/**
+ * Rotate a crop rectangle with its source so an existing crop continues to
+ * describe the same visual region after a quarter turn.
+ * @param {object|null} crop
+ * @param {'cw'|'ccw'} direction
+ */
+export function rotateImageCrop(crop, direction = 'cw') {
+    const source = normaliseCrop(crop) || { x: 0, y: 0, width: 100, height: 100 };
+    const rotated = direction === 'ccw'
+        ? {
+            x: source.y,
+            y: 100 - (source.x + source.width),
+            width: source.height,
+            height: source.width,
+        }
+        : {
+            x: 100 - (source.y + source.height),
+            y: source.x,
+            width: source.height,
+            height: source.width,
+        };
+    return normaliseCrop(rotated);
 }
 
 export function serialiseImageBlock(block) {

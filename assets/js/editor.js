@@ -38,6 +38,7 @@ import {
     blockFromImportedImage,
     createImageBlockElement,
     collectImageAssetIds,
+    createImageRenderAsset,
     dataUriToImageBlob,
     embedImageBlocksAsDataUris,
     inspectImageFile,
@@ -49,7 +50,7 @@ import {
     revokeImageObjectUrls,
     stripImageBlockRuntimeState,
 } from './image-blocks.js';
-import { normaliseImageBlock } from './image-schema.js';
+import { normaliseImageBlock, rotateImageCrop } from './image-schema.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
 import {
     MAX_ROWS as TABLE_MAX_ROWS,
@@ -1404,18 +1405,13 @@ export function initEditor({ strings, onEvent }) {
     async function resolveEditorImageBlocks() {
         const sequence = (imageResolveSequence += 1);
         revokeActiveImageObjectUrls();
-        const loaded = new Map();
-        const result = await resolveImageBlockAssets(editor, async (assetId) => {
-            const asset = await loadImageAsset(assetId);
-            if (asset) loaded.set(assetId, asset);
-            return asset;
-        }, imageLabels());
+        const result = await resolveImageBlockAssets(editor, loadImageAsset, imageLabels());
         if (sequence !== imageResolveSequence) {
             revokeImageObjectUrls(result.urls);
             return;
         }
         imageObjectUrls = result.urls;
-        loaded.forEach((asset, id) => resolvedImageAssets.set(id, asset));
+        result.assets.forEach((asset, id) => resolvedImageAssets.set(id, asset));
         for (const figure of editor.querySelectorAll('figure[data-npad-image-block="1"]')) {
             if (figure.classList.contains('npad-image-block--missing')) {
                 figure.dataset.npadImageMissingLabel = strings.imageMissing;
@@ -1424,16 +1420,21 @@ export function initEditor({ strings, onEvent }) {
         if (selectedImageBlock?.isConnected) positionImageBlockControls();
     }
 
-    function previewImageAsset(figure, asset) {
+    async function previewImageAsset(figure, sourceAsset) {
         const image = figure?.querySelector('img[data-npad-image-asset]');
         const Url = globalThis.URL || globalThis.window?.URL;
-        if (!image || !asset?.blob || !Url?.createObjectURL) return;
+        const block = readImageBlock(figure);
+        if (!image || !sourceAsset?.blob || !block || !Url?.createObjectURL) return;
         try {
+            const asset = await createImageRenderAsset(sourceAsset, block);
             const url = Url.createObjectURL(asset.blob);
             imageObjectUrls.push(url);
+            resolvedImageAssets.set(block.assetId, asset);
             image.src = url;
-            renderImageBlock(figure, readImageBlock(figure), { asset, labels: imageLabels() });
-        } catch { /* the missing-data renderer remains visible */ }
+            renderImageBlock(figure, block, { asset, labels: imageLabels() });
+        } catch (error) {
+            toast(imageErrorMessage(error), 'error');
+        }
     }
 
     function imageErrorMessage(error) {
@@ -1441,6 +1442,8 @@ export function initEditor({ strings, onEvent }) {
         if (code === 'too-large' || code === 'too-many-bytes') return strings.imageTooLarge;
         if (code === 'too-many-pixels') return strings.imageTooManyPixels;
         if (code === 'type-mismatch') return strings.imageTypeMismatch;
+        if (code === 'rotation-animated-unsupported') return strings.imageRotationAnimatedUnsupported;
+        if (code === 'rotation-unavailable') return strings.imageRotationUnavailable;
         if (code === 'unsupported-file' || code === 'empty-file') return strings.imageUnsupported;
         return strings.imageInvalid;
     }
@@ -1695,11 +1698,17 @@ export function initEditor({ strings, onEvent }) {
         const block = readImageBlock(figure);
         const image = figure.querySelector('img[data-npad-image-asset]');
         const asset = block ? resolvedImageAssets.get(block.assetId) : null;
-        if (!block || !image?.src) {
+        // Opening Crop must be immediate. The already-resolved render asset is
+        // enough for the first frame; rotation lazily loads the preserved
+        // source only when the author asks for a quarter turn.
+        let sourceAsset = asset;
+        if (!block || !image?.src || !sourceAsset?.blob) {
             toast(strings.imageMissing, 'error');
             return;
         }
         let crop = cropDefaults(block.crop);
+        let rotation = block.rotation || 0;
+        const previewUrls = [];
         let update = () => {};
         const field = (label, key, value) => `
             <label class="field">
@@ -1725,6 +1734,8 @@ export function initEditor({ strings, onEvent }) {
                     <button type="button" class="image-cropper__preset" data-crop-ratio="1.333333">${escapeHtml(strings.imageCropFourThree)}</button>
                     <button type="button" class="image-cropper__preset" data-crop-ratio="1.777778">${escapeHtml(strings.imageCropSixteenNine)}</button>
                     <button type="button" class="image-cropper__preset" data-crop-reset>${escapeHtml(strings.imageCropReset)}</button>
+                    <button type="button" class="image-cropper__preset" data-crop-rotate="ccw">${escapeHtml(strings.imageRotateLeft)}</button>
+                    <button type="button" class="image-cropper__preset" data-crop-rotate="cw">${escapeHtml(strings.imageRotateRight)}</button>
                 </div>
                 <div class="image-cropper__fields">
                     ${field(strings.imageCropX, 'x', crop.x)}
@@ -1742,6 +1753,19 @@ export function initEditor({ strings, onEvent }) {
             ],
             onOpen: (body) => {
                 const stage = body.querySelector('[data-crop-stage]');
+                const stageImage = stage.querySelector('img');
+                const setPreview = async () => {
+                    const rendered = await createImageRenderAsset(sourceAsset, { ...block, rotation });
+                    if (rendered?.width && rendered?.height) stage.style.aspectRatio = `${rendered.width} / ${rendered.height}`;
+                    if (rendered?.blob) {
+                        const Url = globalThis.URL || globalThis.window?.URL;
+                        if (Url?.createObjectURL) {
+                            const url = Url.createObjectURL(rendered.blob);
+                            previewUrls.push(url);
+                            stageImage.src = url;
+                        }
+                    }
+                };
                 if (asset?.width && asset?.height) stage.style.aspectRatio = `${asset.width} / ${asset.height}`;
                 const frame = body.querySelector('[data-crop-frame]');
                 const fields = new Map([...body.querySelectorAll('[data-crop-field]')]
@@ -1771,6 +1795,24 @@ export function initEditor({ strings, onEvent }) {
                 body.querySelector('[data-crop-reset]')?.addEventListener('click', () => {
                     crop = cropDefaults(null);
                     update();
+                });
+                body.querySelectorAll('[data-crop-rotate]').forEach((button) => {
+                    button.addEventListener('click', async () => {
+                        const direction = button.dataset.cropRotate;
+                        const previousRotation = rotation;
+                        const previousCrop = crop;
+                        rotation = (rotation + (direction === 'ccw' ? 270 : 90)) % 360;
+                        crop = cropDefaults(rotateImageCrop(crop, direction));
+                        try {
+                            sourceAsset = await loadImageAsset(block.assetId) || sourceAsset;
+                            await setPreview();
+                            update();
+                        } catch (error) {
+                            rotation = previousRotation;
+                            crop = previousCrop;
+                            toast(imageErrorMessage(error), 'error');
+                        }
+                    });
                 });
 
                 let drag = null;
@@ -1816,11 +1858,19 @@ export function initEditor({ strings, onEvent }) {
                 update();
             },
         });
+        revokeImageObjectUrls(previewUrls);
         if (action !== 'apply-crop') return;
-        const next = { ...block, crop: normaliseCropInput(crop) };
+        const next = { ...block, rotation, crop: normaliseCropInput(crop) };
         if (next.crop.x === 0 && next.crop.y === 0 && next.crop.width === 100 && next.crop.height === 100) next.crop = null;
         updateImageBlock(figure, next);
+        // Render a derived preview immediately; note storage still retains the
+        // original bytes and only stores this non-destructive transform value.
+        void (async () => previewImageAsset(
+            figure,
+            await loadImageAsset(block.assetId) || sourceAsset,
+        ))();
         track('image_cropped');
+        if (rotation !== (block.rotation || 0)) track('image_rotated');
     }
 
     async function openImageDetails(figure, { initial = false, focusField = 'alt' } = {}) {
@@ -1967,7 +2017,7 @@ export function initEditor({ strings, onEvent }) {
         // crop rectangle from a different source image.
         const next = { ...current, assetId: asset.id, crop: null };
         updateImageBlock(figure, next);
-        previewImageAsset(figure, asset);
+        void previewImageAsset(figure, asset);
         void gcImageAssets();
         track('image_replaced');
         return true;
@@ -1986,7 +2036,7 @@ export function initEditor({ strings, onEvent }) {
             editor.appendChild(figure);
         }
         ensureImageSpacer(figure);
-        previewImageAsset(figure, asset);
+        void previewImageAsset(figure, asset);
         selectImageBlock(figure);
         scheduleSave();
         updateCounts();

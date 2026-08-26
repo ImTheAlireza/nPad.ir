@@ -172,6 +172,98 @@ async function decodeIntrinsicSize(blob) {
     }
 }
 
+async function decodeImageForCanvas(blob) {
+    if (typeof globalThis.createImageBitmap === 'function') {
+        const bitmap = await globalThis.createImageBitmap(blob);
+        return {
+            source: bitmap,
+            width: bitmap.width,
+            height: bitmap.height,
+            cleanup: () => bitmap.close?.(),
+        };
+    }
+    const ImageCtor = imageCtor();
+    const Url = globalThis.URL || globalThis.window?.URL;
+    if (!ImageCtor || !Url?.createObjectURL) throw new Error('rotation-unavailable');
+    const url = Url.createObjectURL(blob);
+    try {
+        const image = await new Promise((resolve, reject) => {
+            const element = new ImageCtor();
+            element.onload = () => resolve(element);
+            element.onerror = () => reject(new Error('rotation-unavailable'));
+            element.src = url;
+        });
+        return {
+            source: image,
+            width: image.naturalWidth || image.width || 0,
+            height: image.naturalHeight || image.height || 0,
+            cleanup: () => { try { Url.revokeObjectURL(url); } catch { /* no-op */ } },
+        };
+    } catch (error) {
+        try { Url.revokeObjectURL(url); } catch { /* no-op */ }
+        throw error;
+    }
+}
+
+function canvasFor(width, height) {
+    if (typeof globalThis.OffscreenCanvas === 'function') return new globalThis.OffscreenCanvas(width, height);
+    if (typeof document === 'undefined') throw new Error('rotation-unavailable');
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    return canvas;
+}
+
+async function canvasBlob(canvas) {
+    if (typeof canvas.convertToBlob === 'function') return canvas.convertToBlob({ type: 'image/png' });
+    if (typeof canvas.toBlob !== 'function') throw new Error('rotation-unavailable');
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('rotation-unavailable'))), 'image/png');
+    });
+}
+
+/**
+ * Render a rotation as a derived PNG Blob while retaining the original asset
+ * unchanged. GIF rotation is intentionally refused so an animation is never
+ * silently flattened to its first frame.
+ */
+export async function createImageRenderAsset(asset, block) {
+    const canonical = normaliseImageBlock(block);
+    const sourceBlob = asset?.blob || asset;
+    if (!sourceBlob || !canonical || !canonical.rotation) return asset;
+    const sourceType = asset?.type || sourceBlob.type || '';
+    if (sourceType === 'image/gif') throw new Error('rotation-animated-unsupported');
+
+    const decoded = await decodeImageForCanvas(sourceBlob);
+    try {
+        const sourceWidth = Number(decoded.width) || Number(asset?.width);
+        const sourceHeight = Number(decoded.height) || Number(asset?.height);
+        if (!sourceWidth || !sourceHeight || sourceWidth * sourceHeight > MAX_IMAGE_PIXELS) {
+            throw new Error('rotation-unavailable');
+        }
+        const quarterTurn = canonical.rotation === 90 || canonical.rotation === 270;
+        const width = quarterTurn ? sourceHeight : sourceWidth;
+        const height = quarterTurn ? sourceWidth : sourceHeight;
+        const canvas = canvasFor(width, height);
+        const context = canvas.getContext('2d', { alpha: true });
+        if (!context) throw new Error('rotation-unavailable');
+        context.translate(width / 2, height / 2);
+        context.rotate((canonical.rotation * Math.PI) / 180);
+        context.drawImage(decoded.source, -sourceWidth / 2, -sourceHeight / 2, sourceWidth, sourceHeight);
+        const blob = await canvasBlob(canvas);
+        return {
+            ...(asset?.blob ? asset : {}),
+            blob,
+            type: 'image/png',
+            width,
+            height,
+            derived: true,
+        };
+    } finally {
+        decoded.cleanup?.();
+    }
+}
+
 function assertDimensions(dimensions) {
     const width = Number(dimensions?.width);
     const height = Number(dimensions?.height);
@@ -281,6 +373,7 @@ function removeRuntimeClasses(figure) {
     figure.removeAttribute('data-npad-image-layout');
     figure.removeAttribute('data-npad-image-missing-label');
     figure.removeAttribute('data-npad-image-description-needed');
+    figure.removeAttribute('data-npad-image-rotation');
     figure.removeAttribute('aria-label');
     figure.removeAttribute('role');
     figure.removeAttribute('tabindex');
@@ -319,6 +412,8 @@ export function renderImageBlock(figure, block, { asset = null, labels = {} } = 
     if (canonical.alt.kind === 'pending') figure.dataset.npadImageDescriptionNeeded = labels.descriptionNeeded || 'Image description needed';
     else delete figure.dataset.npadImageDescriptionNeeded;
     figure.dataset.npadImageLayout = canonical.display.layout;
+    if (canonical.rotation) figure.dataset.npadImageRotation = String(canonical.rotation);
+    else delete figure.dataset.npadImageRotation;
     figure.style.setProperty('--npad-image-width', `${canonical.display.widthPercent}%`);
 
     let canvas = figure.querySelector(':scope > [data-npad-image-canvas]');
@@ -408,17 +503,20 @@ export function revokeImageObjectUrls(urls) {
 export async function resolveImageBlockAssets(root, loadAsset, labels = {}) {
     const urls = [];
     const missing = [];
+    const assets = new Map();
     const Url = globalThis.URL || globalThis.window?.URL;
     for (const figure of root.querySelectorAll?.('figure[data-npad-image-block="1"]') || []) {
         const block = readImageBlock(figure);
         const image = blockImage(figure);
         if (!block || !image) continue;
         try {
-            const asset = await loadAsset(block.assetId);
+            const sourceAsset = await loadAsset(block.assetId);
+            const asset = await createImageRenderAsset(sourceAsset, block);
             const blob = asset?.blob || asset;
             if (!blob || !Url?.createObjectURL) throw new Error('missing');
             const url = Url.createObjectURL(blob);
             urls.push(url);
+            assets.set(block.assetId, asset);
             image.src = url;
             figure.classList.remove('npad-image-block--missing');
             renderImageBlock(figure, block, { asset, labels });
@@ -429,7 +527,7 @@ export async function resolveImageBlockAssets(root, loadAsset, labels = {}) {
             renderImageBlock(figure, block, { labels });
         }
     }
-    return { urls, missing };
+    return { urls, missing, assets };
 }
 
 function exportStyle(block, direction = 'ltr') {
@@ -457,8 +555,10 @@ export async function embedImageBlocksAsDataUris(html, loadAsset, { direction = 
             figure.remove();
             continue;
         }
+        let sourceAsset = null;
+        try { sourceAsset = await loadAsset(block.assetId); } catch { /* handled below */ }
         let asset = null;
-        try { asset = await loadAsset(block.assetId); } catch { /* handled below */ }
+        try { asset = await createImageRenderAsset(sourceAsset, block); } catch { asset = null; }
         const blob = asset?.blob || asset;
         const source = await blobToDataUri(blob);
         if (!source) {

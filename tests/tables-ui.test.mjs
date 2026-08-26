@@ -62,6 +62,10 @@ function installEnvironment(dom) {
     window.URL.revokeObjectURL = () => {};
     global.URL = window.URL;
     global.createImageBitmap = async () => ({ width: 1, height: 1, close() {} });
+    window.HTMLCanvasElement.prototype.getContext = () => ({
+        translate() {}, rotate() {}, drawImage() {},
+    });
+    window.HTMLCanvasElement.prototype.toBlob = (callback) => callback(new Blob([Uint8Array.of(0)], { type: 'image/png' }));
 }
 
 export default async function run(check, group) {
@@ -469,8 +473,9 @@ export default async function run(check, group) {
         await flush();
         assert.equal(JSON.parse(figure.getAttribute('data-npad-image')).display.widthPercent, 75, 'custom width was not saved');
 
+        assert.ok(figure.hasAttribute('data-npad-image-selected'), 'image selection was lost before crop');
         click(imageToolbar.querySelector('[data-image-action="crop"]'));
-        assert.equal(dialog.open, true, 'crop dialog not opened');
+        assert.equal(dialog.open, true, `crop dialog not opened: ${document.getElementById('toastRegion')?.textContent || ''}`);
         dialog.querySelector('[data-crop-field="x"]').value = '20';
         dialog.querySelector('[data-crop-field="x"]').dispatchEvent(new window.Event('input', { bubbles: true }));
         click(dialog.querySelector('[data-action="cancel"]'));
@@ -488,6 +493,15 @@ export default async function run(check, group) {
         const crop = JSON.parse(figure.getAttribute('data-npad-image')).crop;
         assert.equal(crop.x, 10);
         assert.equal(crop.width, 80);
+
+        click(imageToolbar.querySelector('[data-image-action="crop"]'));
+        click(dialog.querySelector('[data-crop-rotate="cw"]'));
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        click(dialog.querySelector('[data-action="apply-crop"]'));
+        await flush();
+        const rotated = JSON.parse(figure.getAttribute('data-npad-image'));
+        assert.equal(rotated.rotation, 90, 'rotation was not saved');
+        assert.deepEqual(rotated.crop, { x: 0, y: 10, width: 100, height: 80 });
 
         click(imageToolbar.querySelector('[data-image-action="details"]'));
         const decorative = dialog.querySelector('[data-image-decorative]');

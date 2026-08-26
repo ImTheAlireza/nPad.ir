@@ -108,6 +108,8 @@ function npad_icon_paths(): array
         'image-size'    => '<rect x="3" y="5" width="14" height="14" rx="2"/><path d="M21 9v-3l-3 3"/><path d="M18 6h3v3"/><path d="M9 22h5"/>',
         'image-alt'     => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 13h6M7 16h10"/>',
         'crop'          => '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/>',
+        'rotate-left'   => '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>',
+        'rotate-right'  => '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',
         'hr'          => '<path d="M3 12h18"/><path d="M6 9v6M18 9v6" stroke-width="1.6"/>',
         'calendar'    => '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
         'arrow-down'  => '<path d="M12 5v14"/><path d="m5 12 7 7 7-7"/>',

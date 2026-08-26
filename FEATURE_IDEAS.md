@@ -9,7 +9,7 @@ medium (1–2 weeks), **L** = large (a month+).
 > shipped. The first image implementation was deliberately reset before this
 > release; the replacement uses a small typed asset/block/renderer model,
 > accessible contextual controls, safe local storage, keyboard size controls,
-> and non-destructive crop. Research, scope, and deferred enhancements live in
+> and non-destructive crop/rotation. Research, scope, and deferred enhancements live in
 > [IMAGE_EDITOR_REDESIGN_PLAN.md](IMAGE_EDITOR_REDESIGN_PLAN.md).
 
 ---

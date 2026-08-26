@@ -1,8 +1,9 @@
 # Image editor restart plan
 
-**Status:** implemented through the safe block, layout/resize, and crop scope
-in NPad 2.14.0. Rotation, wrapping, linking, filters, galleries, and an asset
-library remain deliberately deferred.
+**Status:** implemented through the safe block, layout/resize, crop, and
+non-destructive rotation scope in NPad 2.15.0. Wrapping, linking, filters,
+galleries, an asset library, and transaction-level image undo remain deliberately
+deferred.
 
 **Research completed:** 26 August 2026
 
@@ -275,10 +276,12 @@ exports, and content never overflows its editor container.
 
 - [x] Dedicated crop session with Apply/Cancel, ratio presets, pointer frame,
   exact keyboard controls, and non-destructive model data.
-- [x] Export adapters preserve a safe HTML crop presentation and provide a
-  documented raster/text fallback for document formats.
-- [ ] Rotation is deferred: a correct non-destructive rotation pipeline needs
-  pixel-transform/export parity rather than a misleading CSS-only shortcut.
+- [x] Quarter-turn rotation derives a local PNG render/export asset from the
+  preserved original instead of relying on a misleading CSS-only shortcut.
+  Animated GIF rotation is explicitly refused so animation is never flattened
+  silently.
+- [x] Export adapters preserve a safe HTML crop/rotation presentation and
+  provide a documented raster/text fallback for document formats.
 
 **Exit:** no partial crop state is saved after Cancel; screen-reader and
 keyboard paths are covered by the image-block and awaited editor-flow tests.
@@ -324,9 +327,10 @@ The first release fixes the initially open product decisions deliberately:
    is not implied by alignment and remains a separate product decision.
 4. **Ownership:** assets are note-owned for normal editing, but garbage
    collection retains references used by copies and recovery snapshots.
-5. **Crop:** the release ships a pointer frame plus exact keyboard fields and
-   explicit Apply/Cancel; rotation is deferred until it can preserve crop and
-   export semantics correctly.
+5. **Crop and rotation:** the release ships a pointer frame, exact keyboard
+   fields, explicit Apply/Cancel, and quarter turns that preserve the source
+   asset and crop geometry. Animated GIF rotation remains deliberately blocked
+   rather than flattening animation.
 
 Future image work must retain these boundaries rather than reintroducing a
 free-floating object model.

@@ -48,6 +48,7 @@ const ALLOWED = new Set([
     'image_removed',
     'image_resized',
     'image_cropped',
+    'image_rotated',
     'image_details_saved',
 ]);
 

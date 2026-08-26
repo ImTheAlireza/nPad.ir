@@ -45,6 +45,7 @@ export default async function run(check, group) {
             alt: { kind: 'informative', text: 'Diagram' },
             caption: 'Caption',
             display: { layout: 'center', widthPercent: 55.56 },
+            rotation: 0,
             crop: { x: 10, y: 10, width: 40, height: 30 },
         });
         assert.equal(Object.hasOwn(block, 'evil'), false);
@@ -60,6 +61,20 @@ export default async function run(check, group) {
             assetId: 'asset-12345678', alt: { kind: 'decorative', text: 'ignored' },
         });
         assert.deepEqual(decorative.alt, { kind: 'decorative', text: '' });
+    });
+
+    check('normalises quarter turns and rotates crop coordinates with the source', () => {
+        const block = schema.normaliseImageBlock({ assetId: 'asset-12345678', rotation: 90 });
+        assert.equal(block.rotation, 90);
+        assert.equal(schema.normaliseImageBlock({ assetId: 'asset-12345678', rotation: 45 }).rotation, 0);
+        assert.deepEqual(
+            schema.rotateImageCrop({ x: 10, y: 20, width: 30, height: 40 }, 'cw'),
+            { x: 40, y: 10, width: 40, height: 30 },
+        );
+        assert.deepEqual(
+            schema.rotateImageCrop({ x: 10, y: 20, width: 30, height: 40 }, 'ccw'),
+            { x: 20, y: 60, width: 40, height: 30 },
+        );
     });
 
     group('image blocks: file admission');
@@ -90,6 +105,47 @@ export default async function run(check, group) {
         catch (error) { pixels = error.message; }
         check('rejects decoded dimensions above the pixel safety limit', () => {
             assert.equal(pixels, 'too-many-pixels');
+        });
+    })();
+
+    await (async () => {
+        const previousBitmap = global.createImageBitmap;
+        const previousCanvas = global.OffscreenCanvas;
+        let rotated = 0;
+        global.createImageBitmap = async () => ({ width: 2, height: 3, close() {} });
+        global.OffscreenCanvas = class {
+            constructor(width, height) { this.width = width; this.height = height; }
+            getContext() { return { translate() {}, rotate(value) { rotated = value; }, drawImage() {} }; }
+            async convertToBlob() { return new Blob([Uint8Array.of(1)], { type: 'image/png' }); }
+        };
+        let rendered;
+        try {
+            rendered = await blocks.createImageRenderAsset(
+                { blob: pngFile(), type: 'image/png', width: 2, height: 3 },
+                { assetId: 'asset-12345678', rotation: 90 },
+            );
+        } finally {
+            global.createImageBitmap = previousBitmap;
+            global.OffscreenCanvas = previousCanvas;
+        }
+        check('derives a quarter-turn render without replacing the source asset', () => {
+            assert.equal(rendered.width, 3);
+            assert.equal(rendered.height, 2);
+            assert.equal(rendered.type, 'image/png');
+            assert.equal(rotated, Math.PI / 2);
+        });
+    })();
+
+    await (async () => {
+        let reason = '';
+        try {
+            await blocks.createImageRenderAsset(
+                { blob: pngFile(), type: 'image/gif', width: 1, height: 1 },
+                { assetId: 'asset-12345678', rotation: 90 },
+            );
+        } catch (error) { reason = error.message; }
+        check('refuses animated GIF rotation instead of flattening animation', () => {
+            assert.equal(reason, 'rotation-animated-unsupported');
         });
     })();
 

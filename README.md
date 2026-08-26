@@ -215,9 +215,11 @@ uses the same local-first pipeline:
   provides the same keyboard and touch path.
 - **Safe layouts:** block/start/center/end alignment only. There is no free
   dragging, fixed-page placement, behind-text layering, or arbitrary filters.
-- **Crop:** the dedicated Crop dialog has a visible crop frame, Original/1:1/
-  4:3/16:9 presets, exact keyboard-editable values, and explicit Cancel/Apply.
-  Cropping is non-destructive.
+- **Crop and rotation:** the dedicated Crop dialog has a visible crop frame,
+  Original/1:1/4:3/16:9 presets, exact keyboard-editable values, Rotate left /
+  Rotate right controls, and explicit Cancel/Apply. Both transforms are
+  non-destructive: NPad retains the original source asset and derives a local
+  render/export preview.
 - **Portable export:** HTML, Markdown, NPad JSON, DOCX, and RTF export image
   fallbacks locally. HTML/Markdown/JSON embed safe raster data for portability;
   DOCX writes compatible media parts (or an accessible text fallback); RTF retains descriptive text and captions.
