@@ -8,7 +8,8 @@
 
 const ALLOWED_TAGS = new Set([
     'A', 'B', 'BLOCKQUOTE', 'BR', 'CAPTION', 'CODE', 'DIV', 'EM', 'FONT',
-    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'LI', 'MARK', 'OL', 'P',
+    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'LI', 'MARK',
+    'MATH-BLOCK', 'MATH-INLINE', 'OL', 'P',
     'PRE', 'S', 'SPAN', 'STRIKE', 'STRONG', 'SUB', 'SUP', 'TABLE', 'TBODY',
     'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'U', 'UL',
 ]);
@@ -21,6 +22,13 @@ const ALLOWED_ATTRS = {
     TH: new Set(['colspan', 'rowspan', 'scope']),
     '*': new Set(['style', 'align', 'dir']),
 };
+
+/**
+ * Math formulas (`<math-inline>`, `<math-block>`) keep their LaTeX source as
+ * plain text content — the runtime renderer paints KaTeX output over it and
+ * strips it back off before saving. The tags carry no permitted attributes,
+ * so pasted copies cannot smuggle anything in.
+ */
 
 /**
  * Code blocks carry their language as `class="language-js"` for the syntax

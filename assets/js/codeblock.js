@@ -19,6 +19,7 @@
  */
 
 import { confirmDialog, showDialog, toast } from './ui.js';
+import { caretAtEdge } from './caret.js';
 
 /* This file is generated from npm prismjs@1.30.0 and never hand-edited, so it
    is cache-immutable at the server; the version in the name is the bust. */
@@ -551,53 +552,6 @@ export function initCodeblocks({ editor, strings = {}, onEvent, onEdit }) {
     }
 
     const isBlockish = (el) => /^(P|DIV|H[1-6]|UL|OL|BLOCKQUOTE|PRE|TABLE|HR)$/.test(el?.tagName || '');
-
-    /**
-     * True when a collapsed caret sits exactly at one end of the code.
-     *
-     * Deliberately not compareBoundaryPoints(): some engines (jsdom, older
-     * webviews) score the equivalent points (code, 0) and (text, 0) as
-     * different, which would make the caret think it is never at an edge.
-     */
-    function caretAtEdge(selection, code, atEnd) {
-        if (!selection.isCollapsed) return false;
-        const range = selection.getRangeAt(0);
-        const container = range.startContainer;
-        const offset = range.startOffset;
-
-        const childIndexOf = (parent, node) => {
-            let index = 0;
-            for (let child = parent.firstChild; child; child = child.nextSibling) {
-                if (child === node) break;
-                index += 1;
-            }
-            return index;
-        };
-
-        const walker = document.createTreeWalker(code, 4);
-        let node;
-        while ((node = walker.nextNode())) {
-            if (node === container) {
-                if (atEnd) {
-                    if (offset < (container.nodeValue || '').length) return false;
-                } else if (offset > 0) {
-                    return false;
-                }
-                continue;
-            }
-            const pos = container.compareDocumentPosition(node);
-            if (pos & window.Node.DOCUMENT_POSITION_CONTAINED_BY) {
-                // node lives inside the caret's container: compare indexes
-                const index = childIndexOf(container, node);
-                if (atEnd ? index >= offset : index < offset) return false;
-            } else if (atEnd) {
-                if (pos & window.Node.DOCUMENT_POSITION_FOLLOWING) return false;
-            } else if (pos & window.Node.DOCUMENT_POSITION_PRECEDING) {
-                return false;
-            }
-        }
-        return true;
-    }
 
     /** Leave the block: caret into the next paragraph, one trailing newline goes. */
     function exitBlock(pre) {

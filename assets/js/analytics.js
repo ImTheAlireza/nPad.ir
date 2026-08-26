@@ -45,6 +45,8 @@ const ALLOWED = new Set([
     'table_tool_used',
     'code_block_inserted',
     'code_copied',
+    'math_inserted',
+    'math_edited',
 ]);
 
 let enabled = true;

@@ -99,6 +99,8 @@ const ALLOWED_EVENTS = [
     'table_tool_used',
     'code_block_inserted',
     'code_copied',
+    'math_inserted',
+    'math_edited',
 ];
 
 $event = trim((string) ($_POST['event'] ?? ''));

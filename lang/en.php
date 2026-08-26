@@ -26,6 +26,7 @@ return [
         'insert'      => 'Insert',
         'table'       => 'Table…',
         'code_block'  => 'Code block',
+        'math'        => 'Math…',
         'horizontal_rule' => 'Horizontal rule',
         'date_time'   => 'Date and time',
         'link'        => 'Link…',
@@ -272,6 +273,20 @@ return [
         'group_web'         => 'Web',
         'group_data'        => 'Data and configuration',
         'group_apps'        => 'Programming languages',
+    ],
+
+    'mathform' => [
+        'dialog_title' => 'Math formula',
+        'edit_title'   => 'Edit formula',
+        'source'       => 'LaTeX source',
+        'mode'         => 'Placement',
+        'mode_inline'  => 'Inline',
+        'mode_block'   => 'Block',
+        'insert'       => 'Insert formula',
+        'inserted'     => 'Formula added',
+        'hint'         => 'Written in KaTeX/LaTeX. The source stays in the note and is re-rendered everywhere; PDF export prints the rendered formula.',
+        'error'        => 'KaTeX could not parse this:',
+        'offline'      => 'KaTeX could not be loaded right now.',
     ],
 
     'editor' => [

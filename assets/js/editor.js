@@ -81,6 +81,7 @@ import {
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
 import { initCodeblocks, detectLanguage } from './codeblock.js';
+import { initMath } from './mathblock.js';
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -179,6 +180,18 @@ export function initEditor({ strings, onEvent }) {
         },
     });
 
+    /* Math typesetting (self-contained module). */
+    const math = initMath({
+        editor,
+        strings,
+        onEvent: track,
+        onEdit: () => {
+            scheduleSave();
+            updateCounts();
+        },
+        placeBlock: insertBlockAtSelection,
+    });
+
     /* The toolbar swaps to table tools when the caret is inside a table cell. */
     const toolbarPaneBase = document.getElementById('toolbarPaneBase');
     const toolbarPaneTable = document.getElementById('toolbarPaneTable');
@@ -203,6 +216,8 @@ export function initEditor({ strings, onEvent }) {
         // Code blocks keep only their plain stored form: token spans and the
         // language/copy chrome are runtime paint, exactly like search marks.
         code.stripRuntime(clone);
+        // Math keeps its LaTeX source; KaTeX output is runtime paint.
+        math.stripRuntime(clone);
         return clone.innerHTML;
     }
 
@@ -238,6 +253,12 @@ export function initEditor({ strings, onEvent }) {
                 } else if (child.nodeType === Node.ELEMENT_NODE) {
                     if (child.tagName === 'BR') {
                         out += '\n';
+                        continue;
+                    }
+                    if (child.tagName === 'MATH-INLINE' || child.tagName === 'MATH-BLOCK') {
+                        // The LaTeX source between its delimiters.
+                        const tex = (child.dataset?.tex ?? child.textContent ?? '').trim();
+                        out += child.tagName === 'MATH-BLOCK' ? `$$${tex}$$` : `$${tex}$`;
                         continue;
                     }
                     const isBlock = BLOCKS.has(child.tagName);
@@ -706,6 +727,7 @@ export function initEditor({ strings, onEvent }) {
         editor.innerHTML = sanitizeHtml(note.html || '');
         normaliseTables(editor);
         code.refreshAll();
+        math.refreshAll();
         // The new note's caret is empty: reset contextual table controls.
         markActiveCell(null);
         setToolbarContext('base');
@@ -1374,6 +1396,7 @@ export function initEditor({ strings, onEvent }) {
         insertHtml(clean);
         normaliseTables(editor);
         code.refreshAll();
+        math.normalise(editor);
         // Code pasted into a plain code block gets a language guess.
         code.autodetectCaretBlock();
         scheduleSave();
@@ -3771,6 +3794,7 @@ ${exportHtml()}
         'insert-table': openTableDialog,
         'insert-hr': insertHorizontalRule,
         'insert-code': insertCodeBlock,
+        'insert-math': () => math.insertMath(),
         'insert-datetime': insertDateTime,
         'insert-link': () => promptForLink(),
         'manage-note-tags': manageCurrentTags,
@@ -3800,9 +3824,10 @@ ${exportHtml()}
     });
 
     // Inside a code block Tab indents and Enter breaks a line instead of
-    // splitting blocks. Capture phase: this wins over the table cell walk.
+    // splitting blocks; inside a formula the same capture keeps raw LaTeX
+    // editable and lets Enter leave. This wins over the table cell walk.
     editor.addEventListener('keydown', (event) => {
-        code.insertKeydown(event);
+        if (code.insertKeydown(event) || math.insertKeydown(event)) return;
     }, true);
 
     document.addEventListener('keydown', (event) => {

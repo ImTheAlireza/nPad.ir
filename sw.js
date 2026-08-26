@@ -7,7 +7,7 @@
  *   - /api/: never cached
  */
 
-const VERSION = 'npad-v2.14.0';
+const VERSION = 'npad-v2.15.0';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 
@@ -25,7 +25,10 @@ const PRECACHE = [
     '/assets/js/sanitize.js',
     '/assets/js/formats.js',
     '/assets/js/codeblock.js',
+    '/assets/js/mathblock.js',
     '/assets/js/vendor/prism-1.30.0.min.js',
+    '/assets/js/vendor/katex-0.18.4.min.js',
+    '/assets/css/katex-0.18.4.min.css',
     '/assets/js/ui.js',
     '/assets/js/theme.js',
     '/assets/js/analytics.js',

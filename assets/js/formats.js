@@ -38,6 +38,30 @@ function htmlBody(html) {
 }
 
 /* -------------------------------------------------------------------------
+   Math delimiters ($…$ inline, $$…$$ block)
+   ------------------------------------------------------------------------- */
+
+const CURRENCY_LIKE = /^[\d\s.,'’-]+$/;
+const MATHISH = /[\\^_{}=+\-*/<>|]/;
+
+/**
+ * Heuristic gate before a `$…$` span becomes math. Mirrors the editor's
+ * typing rules: the content must hug both delimiters, must not look like
+ * money ("I paid $5 and $10") and must actually be present.
+ * @returns {boolean}
+ */
+export function isPlausibleMath(content) {
+    const tex = String(content ?? '');
+    if (!tex.trim()) return false;
+    if (/^\s|\s$/.test(tex)) return false;
+    if (CURRENCY_LIKE.test(tex)) return false;
+    // One math-ish character keeps prose ("10 for lunch.") out of formulas;
+    // anything a user really means as math has at least one of these.
+    if (!MATHISH.test(tex)) return false;
+    return true;
+}
+
+/* -------------------------------------------------------------------------
    Markdown
    ------------------------------------------------------------------------- */
 
@@ -60,7 +84,21 @@ function nodeToMarkdown(node, depth = 0) {
     if (tag === 'em' || tag === 'i') return `*${content}*`;
     if (tag === 'u') return `<u>${content}</u>`;
     if (tag === 's' || tag === 'del' || tag === 'strike') return `~~${content}~~`;
-    if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${node.textContent.replace(/`/g, '\\`')}\``;
+    if (tag === 'math-inline') {
+        const tex = (node.dataset.tex || node.textContent || '').trim();
+        if (!tex) return '';
+        // A formula sitting directly in the document (not inside a
+        // paragraph) still needs its own line in Markdown.
+        const standalone = !node.parentElement?.closest('p, div, li, td, th, blockquote, h1, h2, h3, h4, h5, h6');
+        return standalone ? `$${tex}$\n\n` : `$${tex}$`;
+    }
+    if (tag === 'math-block') {
+        const tex = (node.dataset.tex || node.textContent || '').trim();
+        // Leading newline so an inline formula's closing $$ can never
+        // fuse with the block's opening $$; the assembly collapses runs.
+        return tex ? `\n$$\n${tex}\n$$\n\n` : '';
+    }
+if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return `\`${node.textContent.replace(/`/g, '\\`')}\``;
     if (tag === 'pre') {
         // Carry the highlight language into the fence so a Markdown round
         // trip keeps code blocks highlighted.
@@ -155,6 +193,13 @@ function inlineMarkdown(value) {
     // Markdown has no native underline syntax, so accept only this narrow,
     // safely escaped inline-HTML extension (also emitted by htmlToMarkdown).
     out = out.replace(/<u>([^<>]*)<\/u>/gi, (_match, text) => token(`<u>${escapeHtml(text)}</u>`));
+    // Inline math $…$ — same plausibility gate as the editor's typing rules,
+    // so prose about money survives the round trip unchanged.
+    out = out.replace(/(?<![\\$])\$([^$\n]+?)(?<!\s)\$(?!\d)/g, (_match, tex) => (
+        isPlausibleMath(tex)
+            ? token(`<math-inline>${escapeHtml(tex)}</math-inline>`)
+            : _match
+    ));
     out = out.replace(/`([^`]+)`/g, (_match, code) => token(`<code>${escapeHtml(code)}</code>`));
     out = escapeHtml(out);
     out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, rawHref) => {
@@ -216,6 +261,28 @@ export function markdownToHtml(markdown) {
             while (index < lines.length && !lines[index].trim().startsWith(marker)) code.push(lines[index++]);
             if (index < lines.length) index += 1;
             blocks.push(`<pre><code${lang}>${escapeHtml(code.join('\n'))}</code></pre>`);
+            continue;
+        }
+
+        // Block math: a $$…$$ fence on one line, or opening/closing lines.
+        const blockMath = line.match(/^\s*\$\$\s*(.*)$/);
+        if (blockMath) {
+            let tex = blockMath[1];
+            if (/\$\$\s*$/.test(tex) && tex.trim() !== '$$') {
+                // Single-line $$…$$
+                tex = tex.replace(/\$\$\s*$/, '');
+                if (isPlausibleMath(tex)) blocks.push(`<math-block>${escapeHtml(tex)}</math-block>`);
+                else blocks.push(`<p>${escapeHtml(`$$${tex}$$`)}</p>`);
+                index += 1;
+                continue;
+            }
+            const inner = [];
+            index += 1;
+            while (index < lines.length && !/^\s*\$\$\s*$/.test(lines[index])) inner.push(lines[index++]);
+            if (index < lines.length) index += 1;
+            const source = inner.join('\n');
+            if (source.trim()) blocks.push(`<math-block>${escapeHtml(source)}</math-block>`);
+            else blocks.push(`<p>${escapeHtml('$$')}</p>`);
             continue;
         }
 
@@ -406,6 +473,7 @@ function nodeToRtf(node) {
     if (tag === 'u' || tag === 'a') return `{\\ul ${content}}`;
     if (tag === 's' || tag === 'del' || tag === 'strike') return `{\\strike ${content}}`;
     if (tag === 'br') return '\\line ';
+    if (tag === 'math-inline' || tag === 'math-block') return `{\\f1 $${rtfEscape(node.textContent)}$}`;
     if (tag === 'code') return `{\\f1 ${content}}`;
     if (tag === 'pre') return `{\\f1 ${rtfEscape(node.textContent)}}\\par\n`;
     if (/^h[1-6]$/.test(tag)) return `{\\b\\fs${Math.max(24, 42 - Number(tag[1]) * 4)} ${content}}\\par\n`;
@@ -752,7 +820,8 @@ function htmlNodeToWord(node, inherited = {}) {
         italic: inherited.italic || tag === 'i' || tag === 'em',
         underline: inherited.underline || tag === 'u' || tag === 'a',
         strike: inherited.strike || ['s', 'strike', 'del'].includes(tag),
-        code: inherited.code || tag === 'code' || tag === 'pre',
+        code: inherited.code || tag === 'code' || tag === 'pre'
+            || tag === 'math-inline' || tag === 'math-block',
     };
     if (tag === 'br') return '<w:r><w:br/></w:r>';
     return [...node.childNodes].map((child) => htmlNodeToWord(child, style)).join('');

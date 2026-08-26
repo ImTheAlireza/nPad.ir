@@ -41,6 +41,8 @@ const suites = [
     // codeblocks-ui boots its own jsdom page; like tables-ui it must run
     // before the behaviour suite, which closes its window with timers pending.
     ['codeblocks-ui', './codeblocks-ui.test.mjs'],
+    ['math', './math.test.mjs'],
+    ['math-ui', './math-ui.test.mjs'],
     // tables-ui boots its own jsdom page and must run before the behaviour
     // suite: the behaviour page closes its window with timers still pending
     // (a jsdom quirk), and a timer firing after that close crashes the

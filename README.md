@@ -49,8 +49,10 @@ Live: <https://npad.ir>
 │     ├─ dashboard.js     Admin charts
 │     ├─ spellcheck.js    Local spell checker with tap/keyboard corrections
 │     ├─ codeblock.js     Code blocks: highlighting, language chip, copy button
+│     ├─ mathblock.js     Math typesetting: KaTeX paint, dialog, magic typing
+│     ├─ caret.js         Caret boundary helpers shared by code/math modules
 │     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
-│     └─ vendor/          Self-hosted Chart.js 4.5.1 + Prism 1.30.0
+│     └─ vendor/          Self-hosted Chart.js 4.5.1 + Prism 1.30.0 + KaTeX 0.18.4
 │
 ├─ fonts/                 Self-hosted Inter + Vazirmatn (WOFF2, ~96 KB)
 ├─ api/track.php          Event collector
@@ -189,6 +191,27 @@ so word counts, find, spellcheck and TXT export see only the code itself.
 Every syntax colour is a design token verified at WCAG AA against the code
 background in both themes (and in print, where the light palette is forced).
 
+## Math typesetting
+
+The **Insert** menu adds a math formula: a dialog with a LaTeX field, an
+inline/block toggle and a live KaTeX preview with parse errors shown inline.
+Formulas are self-hosted KaTeX 0.18.4 (no CDN), lazy-loaded with a
+woff2-only stylesheet the first time a note actually contains one; KaTeX
+renders visible HTML plus hidden MathML, so screen readers get real math.
+
+The stored note keeps the LaTeX source as plain text inside
+`<math-inline>`/`<math-block>` tags, while KaTeX output is runtime paint —
+stripped before every save and export, exactly like the code-block tokens.
+Markdown pairs through delimiters: `$…$` and `$$…$$` convert on import and
+export, gated by the same plausibility heuristics that keep prose about
+money ("I paid $5 and $10") as prose. Typing the closing delimiter in the
+editor converts on the fly. While the caret is inside a formula it shows
+raw LaTeX in monospace (always LTR); on leaving it re-renders. Enter at the
+end of a block formula hands the caret to the next paragraph, Backspace on
+an emptied formula removes it, and double-click reopens the dialog.
+DOCX/RTF keep the LaTeX source in monospace; PDF export prints the
+rendered formula for free.
+
 ## Tables
 
 The **Insert** menu (next to Edit) adds a table through a settings dialog:
@@ -244,6 +267,7 @@ Automated coverage includes:
 | `behaviour` | Tabs, organization and recovery flows; advanced find/replace modes; spelling corrections; autosave; Insert menu, table dialog, contextual toolbar, cell control |
 | `tables-ui` | Full awaited end-to-end flow: Insert menu → settings dialog → live table → row/column/merge/split/header tools → properties → delete → context menu |
 | `codeblocks-ui` | Full awaited end-to-end flow: Insert menu → block with chrome → language dialog → Prism highlight → copy → Tab → autosave stores the plain form → markdown paste |
+| `math` / `math-ui` | Sanitiser bounds on the math tags; `$…$`/`$$…$$` round trips incl. money heuristics; the runtime module against the real KaTeX: paint/strip cycles, edit mode, keyboard model, magic typing; awaited end-to-end dialog flow, autosave, double-click edit |
 
 ## Notable decisions
 
@@ -301,3 +325,5 @@ every page view.
 - Vazirmatn — SIL Open Font License 1.1 (`fonts/LICENSE-Vazirmatn.txt`)
 - Chart.js 4.5.1 — MIT (`assets/js/vendor/LICENSE-chartjs.md`)
 - Prism 1.30.0 — MIT (`assets/js/vendor/LICENSE-prism.md`)
+- KaTeX 0.18.4 — MIT; bundled KaTeX typefaces under SIL OFL 1.1
+  (`assets/js/vendor/LICENSE-katex.md`)

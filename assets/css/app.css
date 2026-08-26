@@ -1949,6 +1949,119 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     .editor pre { padding-top: 48px; }
 }
 
+/* Math formulas. The stored source form shows as monospace while editing;
+   KaTeX's output (loaded with its own lazy stylesheet) inherits the text
+   colour, so formulas follow both themes with no extra tokens. Formulas are
+   always LTR, even in Persian notes. */
+.editor math-inline {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    vertical-align: middle;
+    padding: 0 2px;
+    border-radius: var(--radius-sm);
+}
+
+.editor math-block {
+    display: block;
+    margin: 0 0 0.75em;
+    padding: var(--space-3);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    direction: ltr;
+    text-align: center;
+}
+
+/* Raw LaTeX while the caret is inside. */
+.editor math-inline.math--editing,
+.editor math-block.math--editing {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    direction: ltr;
+    text-align: left;
+    color: var(--code-text);
+    background: var(--code-bg);
+    border-color: var(--code-border);
+}
+
+.editor math-inline.math--editing {
+    padding: 1px 5px;
+}
+
+.editor math-block.math--editing {
+    text-align: left;
+}
+
+.math-builder {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.math-builder__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.math-builder__field span { color: var(--text-body); }
+
+.math-builder__field textarea {
+    min-height: 72px;
+    padding: 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    color: var(--text-strong);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    direction: ltr;
+    text-align: left;
+    resize: vertical;
+}
+
+.math-builder__modes {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.math-builder__preview {
+    min-height: 56px;
+    padding: var(--space-3);
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunken);
+    overflow-x: auto;
+    direction: ltr;
+    text-align: center;
+}
+
+.math-builder__preview:empty::before {
+    content: attr(data-empty);
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.math-builder__error {
+    margin: 0;
+    font-size: 12px;
+    color: var(--danger);
+    direction: ltr;
+    text-align: left;
+    overflow-wrap: break-word;
+}
+
+.math-builder__hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
 /* Syntax highlighting theme (Prism token classes), first-party so it follows
    the design tokens in both themes instead of shipping a fixed vendor theme. */
 .editor pre .token.comment,
@@ -3559,6 +3672,18 @@ body.focus-mode .focus-exit { display: inline-flex; }
     /* Code prints with the light palette regardless of the viewing theme;
        the runtime chrome and its extra strip are not part of the note. */
     .codeblock-chrome { display: none !important; }
+
+    .editor math-block.math--editing,
+    .editor math-inline.math--editing {
+        --code-bg: #f6f8fa;
+        --code-border: #d0d7e2;
+        --code-text: #24292f;
+        color: #24292f;
+        background: #f6f8fa;
+        border-color: #d0d7e2;
+    }
+
+    .editor math-block { break-inside: avoid; }
     .editor pre {
         --code-bg: #f6f8fa;
         --code-border: #d0d7e2;
