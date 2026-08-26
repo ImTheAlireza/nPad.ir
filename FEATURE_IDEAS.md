@@ -5,11 +5,12 @@ Tailored to nPad.ir's existing architecture: PHP front-end, local-only storage
 third-party requests, and a strict CSP. Effort: **S** = small (days), **M** =
 medium (1–2 weeks), **L** = large (a month+).
 
-> **Implemented 2026-08:** item 2 (Tables) and item 3 (Image blocks) are
-> shipped. The first image implementation was deliberately reset before this
-> release; the replacement uses a small typed asset/block/renderer model,
-> accessible contextual controls, safe local storage, keyboard size controls,
-> and non-destructive crop/rotation plus constrained responsive text wrapping. Research, scope, and deferred enhancements live in
+> **Implemented 2026-08:** item 2 (Tables) is shipped.
+>
+> **Reset 2026-08:** the previous image/attachment implementation was removed
+> deliberately. It had accumulated a large object model and competing editing
+> interactions before a clear, accessible content-block design was agreed.
+> Research findings and the replacement proposal live in
 > [IMAGE_EDITOR_REDESIGN_PLAN.md](IMAGE_EDITOR_REDESIGN_PLAN.md).
 
 ---
@@ -23,9 +24,9 @@ medium (1–2 weeks), **L** = large (a month+).
 2. **Tables** — insert/edit/resize tables with toolbar controls (native
    `contenteditable` support is thin; a small table editor panel is enough;
    must survive DOCX/HTML export). *(M)*
-3. **Image blocks** — shipped as a local, accessible semantic-block editor;
-   future evidence-based additions are tracked in
-   [IMAGE_EDITOR_REDESIGN_PLAN.md](IMAGE_EDITOR_REDESIGN_PLAN.md). *(L)*
+3. **Image blocks (planned)** — intentionally not shipped while the
+   researched, accessibility-first redesign in
+   [IMAGE_EDITOR_REDESIGN_PLAN.md](IMAGE_EDITOR_REDESIGN_PLAN.md) is reviewed. *(L)*
 4. **Code blocks with syntax highlighting** — self-hosted Prism (no CDN),
    monospace font, copy button; essential for the developer audience and it
    pairs with Markdown mode. *(M)*

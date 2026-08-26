@@ -87,29 +87,6 @@ export default async function run(check, group) {
         assert.deepEqual(categorized.tags, [tag.id]);
     });
 
-    group('storage: image assets (localStorage fallback)');
-
-    const assetBlob = new Blob([Uint8Array.from([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
-    const assetA = {
-        id: 'asset-12345678', noteId: second.id, blob: assetBlob, type: 'image/png',
-        size: 4, name: 'a.png', width: 1, height: 1, createdAt: 1,
-    };
-    const assetB = {
-        id: 'asset-abcdefgh', noteId: migrated[0].id, blob: assetBlob, type: 'image/png',
-        size: 4, name: 'b.png', width: 1, height: 1, createdAt: 2,
-    };
-    await storage.saveImageAsset(assetA);
-    await storage.saveImageAsset(assetB);
-    const loadedAsset = await storage.loadImageAsset(assetA.id);
-    const ownedSecondAssets = await storage.listImageAssetsByNote(second.id);
-
-    check('assets persist with metadata and a recoverable Blob', () => {
-        assert.equal(loadedAsset?.id, assetA.id);
-        assert.equal(loadedAsset?.width, 1);
-        assert.ok(loadedAsset?.blob, 'asset blob missing');
-        assert.deepEqual(ownedSecondAssets.map((asset) => asset.id), [assetA.id]);
-    });
-
     const automaticBackup = await storage.saveBackup(second, { force: true });
     await storage.saveBackup(second, { force: true });
     const deletionBackup = await storage.saveBackup(second, { reason: 'deleted', force: true });
@@ -140,11 +117,6 @@ export default async function run(check, group) {
         assert.equal(backups.length, 2);
     });
 
-    const retainedAssetAfterDelete = await storage.loadImageAsset(assetA.id);
-    check('deleting a note does not destroy assets still needed by recovery', () => {
-        assert.ok(retainedAssetAfterDelete?.blob, 'backup-referenced asset was destroyed');
-    });
-
     await storage.clearNotes();
     notes = await storage.listNotes();
     backups = await storage.listBackups();
@@ -166,12 +138,6 @@ export default async function run(check, group) {
     backups = await storage.listBackups();
     check('all recovery snapshots can be cleared independently', () => {
         assert.equal(backups.length, 0);
-    });
-
-    await storage.clearImageAssets();
-    const assetsAfterClear = await storage.listAllImageAssets();
-    check('assets can be removed explicitly after their references are gone', () => {
-        assert.equal(assetsAfterClear.length, 0);
     });
 
     dom.window.close();

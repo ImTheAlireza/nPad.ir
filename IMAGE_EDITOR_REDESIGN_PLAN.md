@@ -1,9 +1,7 @@
 # Image editor restart plan
 
-**Status:** implemented through the safe block, layout/resize, constrained
-responsive text wrapping, crop, and non-destructive rotation scope in NPad
-2.15.0. Linking, filters, galleries, an asset library, and transaction-level
-image undo remain deliberately deferred.
+**Status:** proposed only — no image insertion, storage, rendering, editing, or
+export support is currently shipped.
 
 **Research completed:** 26 August 2026
 
@@ -250,13 +248,11 @@ API, and ordinary text/table behavior remains intact.
 
 ### Phase 1 — insert a safe semantic block
 
-- [x] One asset repository with deterministic validation and cleanup.
-- [x] One document-node schema and renderer.
-- [x] Insert from a local picker; then reuse the same command for paste/drop.
-- [x] Describe-image dialog with alternative text/decorative/caption choices.
-- [x] Block selection, replacement, deletion, and local persistence.
-- [ ] Transaction-level image undo/redo is deferred until it can compose safely
-  with the browser’s existing rich-text undo history.
+- One asset repository with deterministic validation and cleanup.
+- One document-node schema and renderer.
+- Insert from a local picker; then reuse the same command for paste/drop.
+- Describe-image dialog with alternative text/decorative/caption choices.
+- Block selection, replacement, deletion, undo/redo, and local persistence.
 
 **Exit:** an author can insert, describe, replace, delete, reload, and export a
 single block without losing focus, creating a remote request, or storing binary
@@ -264,35 +260,29 @@ data in note HTML.
 
 ### Phase 2 — layout and resizing
 
-- [x] Block/start/center/end layouts plus wrap-start/wrap-end; no absolute
-  placement. Wrap is capped at 60% width and becomes a normal block on narrow
-  screens.
-- [x] Custom width, corner handles on fine pointers, and complete keyboard/touch
-  alternatives through the Size dialog.
-- [x] RTL, narrow viewport, dark theme, print, and automated editor-flow tests.
+- Block/start/center/end layouts; no absolute placement.
+- Width presets, custom width, corner handles on fine pointers, and complete
+  keyboard/touch alternatives.
+- RTL, zoom (200%), narrow viewport, dark theme, and print tests.
 
 **Exit:** each pointer action has a keyboard path, values survive reload and
 exports, and content never overflows its editor container.
 
 ### Phase 3 — crop/rotate
 
-- [x] Dedicated crop session with Apply/Cancel, ratio presets, pointer frame,
-  exact keyboard controls, and non-destructive model data.
-- [x] Quarter-turn rotation derives a local PNG render/export asset from the
-  preserved original instead of relying on a misleading CSS-only shortcut.
-  Animated GIF rotation is explicitly refused so animation is never flattened
-  silently.
-- [x] Export adapters preserve a safe HTML crop/rotation presentation and
-  provide a documented raster/text fallback for document formats.
+- Dedicated crop session with Apply/Cancel, ratio presets, keyboard controls,
+  undo, and non-destructive model data.
+- Export adapters consume the crop state deliberately or state a documented
+  fallback for each format.
 
 **Exit:** no partial crop state is saved after Cancel; screen-reader and
-keyboard paths are covered by the image-block and awaited editor-flow tests.
+keyboard paths are manually tested.
 
 ### Phase 4 — only evidence-based additions
 
-Consider linking a block, image optimization, filters, galleries, or an advanced
-asset manager only after real user evidence. “Behind text”, “in front of text”,
-page-fixed placement, free dragging, arbitrary CSS filters,
+Consider wrapping text, linking a block, image optimization, filters, galleries,
+or an advanced asset manager only after real user evidence. “Behind text”,
+“in front of text”, page-fixed placement, free dragging, arbitrary CSS filters,
 and a drawing canvas are explicitly out of scope until a separate design review.
 
 ## 8. Test plan
@@ -304,8 +294,7 @@ Automated tests must cover:
 - atomic asset/block creation and orphan cleanup;
 - object-URL lifecycle;
 - schema validation and migration;
-- insert/replace/delete, selection restoration, and the boundary for future
-  transaction-level undo/redo;
+- insert/replace/delete/undo/redo and selection restoration;
 - alternative text, decorative state, caption, and complex-description guidance;
 - keyboard navigation of the block toolbar and inspector;
 - mouse, touch, RTL, 320 px viewport, 200% zoom, forced-colors, dark mode, and
@@ -317,23 +306,18 @@ Manual acceptance checks should include NVDA/Firefox or Chrome, VoiceOver/Safari
 and TalkBack where available. Automated accessibility checks can detect missing
 labels; they cannot judge whether an alt description conveys the image’s purpose.
 
-## 9. Implemented choices and future review points
+## 9. Decisions needed before implementation resumes
 
-The first release fixes the initially open product decisions deliberately:
+1. Which local raster formats, byte limit, and decoded-pixel limit are the
+   product requirements?
+2. Must imported/exported documents retain assets across every format, or may
+   some formats deliberately emit an accessible text fallback?
+3. Is text wrapping required for the first useful release, or can semantic block
+   alignment ship first?
+4. Does the product need a reusable asset library, or are assets owned by one
+   note until duplication/backup copies them?
+5. Does any crop implementation meet the keyboard and assistive-technology bar,
+   or should it be deferred behind the Phase 2 release?
 
-1. **Formats and limits:** PNG, JPEG, GIF, WebP, AVIF, and BMP; 25 MB and 40 MP.
-2. **Portability:** HTML, Markdown, JSON, DOCX, and RTF have an explicit local
-   export path; document readers that cannot render a format retain the
-   alternative text/caption fallback.
-3. **Layout:** semantic block/start/center/end alignment and explicit
-   wrap-start/wrap-end ship. Wrapping is capped at 60% and becomes a normal
-   block on narrow screens; it is never implied by ordinary alignment.
-4. **Ownership:** assets are note-owned for normal editing, but garbage
-   collection retains references used by copies and recovery snapshots.
-5. **Crop and rotation:** the release ships a pointer frame, exact keyboard
-   fields, explicit Apply/Cancel, and quarter turns that preserve the source
-   asset and crop geometry. Animated GIF rotation remains deliberately blocked
-   rather than flattening animation.
-
-Future image work must retain these boundaries rather than reintroducing a
-free-floating object model.
+No new image code should be written until these choices are approved. That keeps
+the second implementation small, coherent, and explainable from first principles.

@@ -28,29 +28,7 @@ import {
     saveOrganization,
     createFolderRecord,
     createTagRecord,
-    saveImageAsset,
-    loadImageAsset,
-    listAllImageAssets,
-    deleteImageAssets,
 } from './storage.js';
-import {
-    MAX_IMAGE_BYTES,
-    blockFromImportedImage,
-    createImageBlockElement,
-    collectImageAssetIds,
-    createImageRenderAsset,
-    dataUriToImageBlob,
-    embedImageBlocksAsDataUris,
-    inspectImageFile,
-    newImageAssetId,
-    readImageBlock,
-    remapImageAssetIds,
-    renderImageBlock,
-    resolveImageBlockAssets,
-    revokeImageObjectUrls,
-    stripImageBlockRuntimeState,
-} from './image-blocks.js';
-import { normaliseImageBlock, rotateImageCrop } from './image-schema.js';
 import { sanitizeHtml, textToHtml } from './sanitize.js';
 import {
     MAX_ROWS as TABLE_MAX_ROWS,
@@ -193,16 +171,8 @@ export function initEditor({ strings, onEvent }) {
     const toolbarPaneBase = document.getElementById('toolbarPaneBase');
     const toolbarPaneTable = document.getElementById('toolbarPaneTable');
     const tableContextMenu = document.getElementById('tableContextMenu');
-    const imageBlockToolbar = document.getElementById('imageBlockToolbar');
     const TOOLBAR_LABEL_BASE = toolbar?.getAttribute('aria-label') || '';
     let toolbarContext = 'base';
-
-    /* Image-block state remains separate from text/table toolbar context. */
-    let selectedImageBlock = null;
-    let imageObjectUrls = [];
-    let imageResolveSequence = 0;
-    let imageResizeState = null;
-    const resolvedImageAssets = new Map();
 
     /**
      * Editor HTML without transient spell-check marks, for storage and
@@ -218,8 +188,7 @@ export function initEditor({ strings, onEvent }) {
         });
         // The caret highlight is a runtime-only affordance: it never persists.
         clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
-        stripImageBlockRuntimeState(clone);
-        return sanitizeHtml(clone.innerHTML);
+        return clone.innerHTML;
     }
 
     /* ---------------------------------------------------------------------
@@ -243,7 +212,6 @@ export function initEditor({ strings, onEvent }) {
         const BLOCKS = new Set([
             'P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
             'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL', 'TABLE', 'TD', 'TH', 'CAPTION',
-            'FIGURE', 'FIGCAPTION',
         ]);
 
         let out = '';
@@ -387,7 +355,6 @@ export function initEditor({ strings, onEvent }) {
             await saveBackup(previousHasContent ? previous : snapshot);
         }
         const ok = await saveNote(snapshot);
-        if (ok) void gcImageAssets();
         if (activeNoteId === savingId) {
             const changedWhileSaving = (noteTitleInput?.value.trim() || '') !== snapshot.title
                 || cleanHtml() !== snapshot.html;
@@ -723,11 +690,9 @@ export function initEditor({ strings, onEvent }) {
         setActiveNoteId(note.id);
         editor.innerHTML = sanitizeHtml(note.html || '');
         normaliseTables(editor);
-        // The new note's caret is empty: reset contextual controls.
+        // The new note's caret is empty: reset contextual table controls.
         markActiveCell(null);
-        clearImageBlockSelection();
         setToolbarContext('base');
-        void resolveEditorImageBlocks();
         if (noteTitleInput) noteTitleInput.value = displayTitle(note);
         lastSavedAt = note.updatedAt || 0;
         dirty = false;
@@ -866,7 +831,6 @@ export function initEditor({ strings, onEvent }) {
             folderId: source.folderId,
             tags: source.tags,
         });
-        copy.html = await copyImageAssetsForNote(copy.html, source.id, copy.id);
         notes.push(copy);
         await saveNote(copy);
         showNote(copy, { focusEditor: true });
@@ -1382,916 +1346,22 @@ export function initEditor({ strings, onEvent }) {
     }
 
     /* ---------------------------------------------------------------------
-       Semantic image blocks
+       Clipboard and drop normalisation
        --------------------------------------------------------------------- */
 
-    const imageLabels = () => ({
-        descriptionNeeded: strings.imageDescriptionNeeded,
-        decorative: strings.imageDecorativeLabel,
-        invalid: strings.imageMissing,
-    });
-
-    function activeImageAsset(block) {
-        const data = readImageBlock(block);
-        return data ? resolvedImageAssets.get(data.assetId) || null : null;
-    }
-
-    function revokeActiveImageObjectUrls() {
-        revokeImageObjectUrls(imageObjectUrls);
-        imageObjectUrls = [];
-        resolvedImageAssets.clear();
-    }
-
-    async function resolveEditorImageBlocks() {
-        const sequence = (imageResolveSequence += 1);
-        revokeActiveImageObjectUrls();
-        const result = await resolveImageBlockAssets(editor, loadImageAsset, imageLabels());
-        if (sequence !== imageResolveSequence) {
-            revokeImageObjectUrls(result.urls);
-            return;
-        }
-        imageObjectUrls = result.urls;
-        result.assets.forEach((asset, id) => resolvedImageAssets.set(id, asset));
-        for (const figure of editor.querySelectorAll('figure[data-npad-image-block="1"]')) {
-            if (figure.classList.contains('npad-image-block--missing')) {
-                figure.dataset.npadImageMissingLabel = strings.imageMissing;
-            }
-        }
-        if (selectedImageBlock?.isConnected) positionImageBlockControls();
-    }
-
-    async function previewImageAsset(figure, sourceAsset) {
-        const image = figure?.querySelector('img[data-npad-image-asset]');
-        const Url = globalThis.URL || globalThis.window?.URL;
-        const block = readImageBlock(figure);
-        if (!image || !sourceAsset?.blob || !block || !Url?.createObjectURL) return;
-        try {
-            const asset = await createImageRenderAsset(sourceAsset, block);
-            const url = Url.createObjectURL(asset.blob);
-            imageObjectUrls.push(url);
-            resolvedImageAssets.set(block.assetId, asset);
-            image.src = url;
-            renderImageBlock(figure, block, { asset, labels: imageLabels() });
-        } catch (error) {
-            toast(imageErrorMessage(error), 'error');
-        }
-    }
-
-    function imageErrorMessage(error) {
-        const code = String(error?.message || error || '');
-        if (code === 'too-large' || code === 'too-many-bytes') return strings.imageTooLarge;
-        if (code === 'too-many-pixels') return strings.imageTooManyPixels;
-        if (code === 'type-mismatch') return strings.imageTypeMismatch;
-        if (code === 'rotation-animated-unsupported') return strings.imageRotationAnimatedUnsupported;
-        if (code === 'rotation-unavailable') return strings.imageRotationUnavailable;
-        if (code === 'unsupported-file' || code === 'empty-file') return strings.imageUnsupported;
-        return strings.imageInvalid;
-    }
-
-    async function storeImageFile(file, noteId) {
-        let inspected;
-        try {
-            inspected = await inspectImageFile(file);
-        } catch (error) {
-            toast(imageErrorMessage(error), 'error');
-            return null;
-        }
-        if (file.size > MAX_IMAGE_BYTES) {
-            toast(strings.imageTooLarge, 'error');
-            return null;
-        }
-        const asset = {
-            id: newImageAssetId(),
-            noteId,
-            blob: file,
-            type: inspected.type,
-            size: inspected.size,
-            name: String(file.name || '').slice(0, 240),
-            width: inspected.width,
-            height: inspected.height,
-            createdAt: Date.now(),
-        };
-        if (!await saveImageAsset(asset)) {
-            toast(strings.imageStorageFailed, 'error');
-            return null;
-        }
-        resolvedImageAssets.set(asset.id, asset);
-        return asset;
-    }
-
-    function ensureImageSpacer(figure) {
-        const next = figure.nextElementSibling;
-        if (!next || !['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TABLE', 'UL', 'OL', 'BLOCKQUOTE', 'PRE', 'HR'].includes(next.tagName)) {
-            const spacer = document.createElement('p');
-            spacer.appendChild(document.createElement('br'));
-            figure.after(spacer);
-        }
-    }
-
-    function ensureImageResizeOverlay() {
-        let overlay = document.getElementById('imageResizeOverlay');
-        if (overlay) return overlay;
-        overlay = document.createElement('div');
-        overlay.id = 'imageResizeOverlay';
-        overlay.className = 'npad-image-resize-overlay';
-        overlay.hidden = true;
-        for (const corner of ['nw', 'ne', 'sw', 'se']) {
-            const handle = document.createElement('button');
-            handle.type = 'button';
-            handle.className = 'npad-image-resize-overlay__handle';
-            handle.dataset.imageResizeHandle = corner;
-            handle.tabIndex = -1;
-            handle.setAttribute('aria-hidden', 'true');
-            handle.addEventListener('pointerdown', startImageResize);
-            overlay.appendChild(handle);
-        }
-        document.body.appendChild(overlay);
-        return overlay;
-    }
-
-    function positionImageResizeOverlay() {
-        const overlay = document.getElementById('imageResizeOverlay');
-        const canvas = selectedImageBlock?.querySelector('[data-npad-image-canvas]');
-        if (!overlay || !canvas || !selectedImageBlock?.isConnected) {
-            if (overlay) overlay.hidden = true;
-            return;
-        }
-        const rect = canvas.getBoundingClientRect();
-        if (!rect.width || !rect.height) {
-            overlay.hidden = true;
-            return;
-        }
-        overlay.style.left = `${rect.left}px`;
-        overlay.style.top = `${rect.top}px`;
-        overlay.style.width = `${rect.width}px`;
-        overlay.style.height = `${rect.height}px`;
-        overlay.hidden = false;
-    }
-
-    function syncImageBlockToolbar() {
-        if (!imageBlockToolbar || !selectedImageBlock?.isConnected) return;
-        const block = readImageBlock(selectedImageBlock);
-        if (!block) return;
-        imageBlockToolbar.querySelectorAll('[data-image-action^="layout-"]').forEach((button) => {
-            const action = button.dataset.imageAction;
-            const layout = action.replace('layout-', '');
-            button.setAttribute('aria-pressed', String(block.display.layout === layout));
-        });
-        const controls = [...imageBlockToolbar.querySelectorAll('button:not([disabled])')];
-        const focused = controls.indexOf(document.activeElement);
-        controls.forEach((button, index) => { button.tabIndex = index === (focused >= 0 ? focused : 0) ? 0 : -1; });
-    }
-
-    function positionImageBlockToolbar() {
-        if (!imageBlockToolbar || !selectedImageBlock?.isConnected) return;
-        imageBlockToolbar.hidden = false;
-        const rect = selectedImageBlock.getBoundingClientRect();
-        const toolbarRect = imageBlockToolbar.getBoundingClientRect();
-        const margin = 8;
-        const preferredTop = rect.top - toolbarRect.height - margin;
-        const top = preferredTop >= margin ? preferredTop : Math.min(window.innerHeight - toolbarRect.height - margin, rect.bottom + margin);
-        const left = Math.min(
-            Math.max(margin, rect.left),
-            Math.max(margin, window.innerWidth - toolbarRect.width - margin),
-        );
-        imageBlockToolbar.style.left = `${left}px`;
-        imageBlockToolbar.style.top = `${Math.max(margin, top)}px`;
-    }
-
-    function positionImageBlockControls() {
-        positionImageBlockToolbar();
-        positionImageResizeOverlay();
-    }
-
-    function clearImageBlockSelection({ returnFocus = false } = {}) {
-        if (selectedImageBlock?.isConnected) {
-            selectedImageBlock.removeAttribute('data-npad-image-selected');
-            selectedImageBlock.classList.remove('npad-image-block--selected');
-            if (returnFocus) selectedImageBlock.focus();
-        }
-        selectedImageBlock = null;
-        imageResizeState = null;
-        if (imageBlockToolbar) imageBlockToolbar.hidden = true;
-        const overlay = document.getElementById('imageResizeOverlay');
-        if (overlay) overlay.hidden = true;
-    }
-
-    function selectImageBlock(figure, { focus = false } = {}) {
-        if (!figure?.isConnected || !figure.matches('figure[data-npad-image-block="1"]')) return;
-        if (selectedImageBlock !== figure) clearImageBlockSelection();
-        selectedImageBlock = figure;
-        figure.classList.add('npad-image-block--selected');
-        figure.setAttribute('data-npad-image-selected', '');
-        // An image block has its own contextual toolbar. Do not leave a table
-        // pane visible underneath it or replace the main text toolbar.
-        markActiveCell(null);
-        setToolbarContext('base');
-        ensureImageResizeOverlay();
-        syncImageBlockToolbar();
-        positionImageBlockControls();
-        if (focus) figure.focus({ preventScroll: true });
-    }
-
-    function updateImageBlock(figure, nextBlock, { save = true } = {}) {
-        const canonical = normaliseImageBlock(nextBlock);
-        if (!canonical || !figure?.isConnected) return false;
-        renderImageBlock(figure, canonical, {
-            asset: resolvedImageAssets.get(canonical.assetId) || null,
-            labels: imageLabels(),
-        });
-        if (figure.classList.contains('npad-image-block--missing')) {
-            figure.dataset.npadImageMissingLabel = strings.imageMissing;
-        }
-        syncImageBlockToolbar();
-        positionImageBlockControls();
-        if (save) {
-            scheduleSave();
-            updateCounts();
-            spell.refresh();
-        }
-        return true;
-    }
-
-    function startImageResize(event) {
-        const handle = event.target.closest('[data-image-resize-handle]');
-        const figure = selectedImageBlock;
-        if (!handle || !figure?.isConnected) return;
-        const block = readImageBlock(figure);
-        const canvas = figure.querySelector('[data-npad-image-canvas]');
-        const rect = canvas?.getBoundingClientRect();
-        const editorRect = editor.getBoundingClientRect();
-        if (!block || !rect?.width || !editorRect.width) return;
-        event.preventDefault();
-        event.stopPropagation();
-        imageResizeState = {
-            figure,
-            pointerId: event.pointerId,
-            edge: handle.dataset.imageResizeHandle,
-            startX: event.clientX,
-            startWidth: block.display.widthPercent,
-            containerWidth: editorRect.width,
-            original: JSON.stringify(block),
-        };
-        handle.setPointerCapture?.(event.pointerId);
-    }
-
-    function moveImageResize(event) {
-        const state = imageResizeState;
-        if (!state || event.pointerId !== state.pointerId || !state.figure.isConnected) return;
-        const current = readImageBlock(state.figure);
-        if (!current) return;
-        const sign = state.edge.includes('w') ? -1 : 1;
-        const delta = ((event.clientX - state.startX) / state.containerWidth) * 100 * sign;
-        current.display.widthPercent = Math.min(100, Math.max(10, Math.round((state.startWidth + delta) * 100) / 100));
-        updateImageBlock(state.figure, current, { save: false });
-    }
-
-    function finishImageResize(event, { cancel = false } = {}) {
-        const state = imageResizeState;
-        if (!state || (event && event.pointerId !== state.pointerId)) return;
-        imageResizeState = null;
-        if (!state.figure.isConnected) return;
-        if (cancel) {
-            try { updateImageBlock(state.figure, JSON.parse(state.original), { save: false }); } catch { /* no-op */ }
-            return;
-        }
-        scheduleSave();
-        updateCounts();
-        track('image_resized');
-    }
-
-    function cropDefaults(crop) {
-        return crop || { x: 0, y: 0, width: 100, height: 100 };
-    }
-
-    function normaliseCropInput(raw) {
-        const x = Math.max(0, Math.min(95, Number(raw.x) || 0));
-        const y = Math.max(0, Math.min(95, Number(raw.y) || 0));
-        const width = Math.max(5, Math.min(100 - x, Number(raw.width) || 100));
-        const height = Math.max(5, Math.min(100 - y, Number(raw.height) || 100));
-        return {
-            x: Math.round(Math.min(x, 100 - width) * 100) / 100,
-            y: Math.round(Math.min(y, 100 - height) * 100) / 100,
-            width: Math.round(width * 100) / 100,
-            height: Math.round(height * 100) / 100,
-        };
-    }
-
-    function cropToRatio(crop, ratio) {
-        if (!ratio) return { x: 0, y: 0, width: 100, height: 100 };
-        const centerX = crop.x + crop.width / 2;
-        const centerY = crop.y + crop.height / 2;
-        let width = crop.width;
-        let height = width / ratio;
-        if (height > 100) {
-            height = 100;
-            width = height * ratio;
-        }
-        width = Math.min(width, 100);
-        height = Math.min(height, 100);
-        const x = Math.max(0, Math.min(100 - width, centerX - width / 2));
-        const y = Math.max(0, Math.min(100 - height, centerY - height / 2));
-        return normaliseCropInput({ x, y, width, height });
-    }
-
-    async function openImageCropper(figure) {
-        const block = readImageBlock(figure);
-        const image = figure.querySelector('img[data-npad-image-asset]');
-        const asset = block ? resolvedImageAssets.get(block.assetId) : null;
-        // Opening Crop must be immediate. The already-resolved render asset is
-        // enough for the first frame; rotation lazily loads the preserved
-        // source only when the author asks for a quarter turn.
-        let sourceAsset = asset;
-        if (!block || !image?.src || !sourceAsset?.blob) {
-            toast(strings.imageMissing, 'error');
-            return;
-        }
-        let crop = cropDefaults(block.crop);
-        let rotation = block.rotation || 0;
-        const previewUrls = [];
-        let update = () => {};
-        const field = (label, key, value) => `
-            <label class="field">
-                <span class="field__label">${escapeHtml(label)}</span>
-                <input class="field__input" type="number" min="0" max="100" step="0.01"
-                       inputmode="decimal" data-crop-field="${key}" value="${value}">
-            </label>`;
-        const bodyHtml = `
-            <div class="image-cropper">
-                <p class="image-cropper__hint">${escapeHtml(strings.imageCropHint)}</p>
-                <div class="image-cropper__stage" data-crop-stage>
-                    <img src="${escapeHtml(image.src)}" alt="">
-                    <div class="image-cropper__frame" data-crop-frame>
-                        <button type="button" class="image-cropper__handle" data-crop-handle="nw" tabindex="-1" aria-hidden="true"></button>
-                        <button type="button" class="image-cropper__handle" data-crop-handle="ne" tabindex="-1" aria-hidden="true"></button>
-                        <button type="button" class="image-cropper__handle" data-crop-handle="sw" tabindex="-1" aria-hidden="true"></button>
-                        <button type="button" class="image-cropper__handle" data-crop-handle="se" tabindex="-1" aria-hidden="true"></button>
-                    </div>
-                </div>
-                <div class="image-cropper__presets" aria-label="${escapeHtml(strings.imageCropTitle)}">
-                    <button type="button" class="image-cropper__preset" data-crop-ratio="original">${escapeHtml(strings.imageCropOriginal)}</button>
-                    <button type="button" class="image-cropper__preset" data-crop-ratio="1">${escapeHtml(strings.imageCropSquare)}</button>
-                    <button type="button" class="image-cropper__preset" data-crop-ratio="1.333333">${escapeHtml(strings.imageCropFourThree)}</button>
-                    <button type="button" class="image-cropper__preset" data-crop-ratio="1.777778">${escapeHtml(strings.imageCropSixteenNine)}</button>
-                    <button type="button" class="image-cropper__preset" data-crop-reset>${escapeHtml(strings.imageCropReset)}</button>
-                    <button type="button" class="image-cropper__preset" data-crop-rotate="ccw">${escapeHtml(strings.imageRotateLeft)}</button>
-                    <button type="button" class="image-cropper__preset" data-crop-rotate="cw">${escapeHtml(strings.imageRotateRight)}</button>
-                </div>
-                <div class="image-cropper__fields">
-                    ${field(strings.imageCropX, 'x', crop.x)}
-                    ${field(strings.imageCropY, 'y', crop.y)}
-                    ${field(strings.imageCropWidth, 'width', crop.width)}
-                    ${field(strings.imageCropHeight, 'height', crop.height)}
-                </div>
-            </div>`;
-        const action = await showDialog({
-            title: strings.imageCropTitle,
-            bodyHtml,
-            buttons: [
-                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
-                { label: strings.imageCropApply, action: 'apply-crop', variant: 'btn--primary' },
-            ],
-            onOpen: (body) => {
-                const stage = body.querySelector('[data-crop-stage]');
-                const stageImage = stage.querySelector('img');
-                const setPreview = async () => {
-                    const rendered = await createImageRenderAsset(sourceAsset, { ...block, rotation });
-                    if (rendered?.width && rendered?.height) stage.style.aspectRatio = `${rendered.width} / ${rendered.height}`;
-                    if (rendered?.blob) {
-                        const Url = globalThis.URL || globalThis.window?.URL;
-                        if (Url?.createObjectURL) {
-                            const url = Url.createObjectURL(rendered.blob);
-                            previewUrls.push(url);
-                            stageImage.src = url;
-                        }
-                    }
-                };
-                if (asset?.width && asset?.height) stage.style.aspectRatio = `${asset.width} / ${asset.height}`;
-                const frame = body.querySelector('[data-crop-frame]');
-                const fields = new Map([...body.querySelectorAll('[data-crop-field]')]
-                    .map((input) => [input.dataset.cropField, input]));
-                update = () => {
-                    crop = normaliseCropInput(crop);
-                    frame.style.left = `${crop.x}%`;
-                    frame.style.top = `${crop.y}%`;
-                    frame.style.width = `${crop.width}%`;
-                    frame.style.height = `${crop.height}%`;
-                    fields.forEach((input, key) => { input.value = String(crop[key]); });
-                };
-                body.querySelectorAll('[data-crop-field]').forEach((input) => {
-                    input.addEventListener('input', () => {
-                        crop = normaliseCropInput({ ...crop, [input.dataset.cropField]: input.value });
-                        update();
-                    });
-                });
-                body.querySelectorAll('[data-crop-ratio]').forEach((button) => {
-                    button.addEventListener('click', () => {
-                        crop = button.dataset.cropRatio === 'original'
-                            ? cropDefaults(null)
-                            : cropToRatio(crop, Number(button.dataset.cropRatio));
-                        update();
-                    });
-                });
-                body.querySelector('[data-crop-reset]')?.addEventListener('click', () => {
-                    crop = cropDefaults(null);
-                    update();
-                });
-                body.querySelectorAll('[data-crop-rotate]').forEach((button) => {
-                    button.addEventListener('click', async () => {
-                        const direction = button.dataset.cropRotate;
-                        const previousRotation = rotation;
-                        const previousCrop = crop;
-                        rotation = (rotation + (direction === 'ccw' ? 270 : 90)) % 360;
-                        crop = cropDefaults(rotateImageCrop(crop, direction));
-                        try {
-                            sourceAsset = await loadImageAsset(block.assetId) || sourceAsset;
-                            await setPreview();
-                            update();
-                        } catch (error) {
-                            rotation = previousRotation;
-                            crop = previousCrop;
-                            toast(imageErrorMessage(error), 'error');
-                        }
-                    });
-                });
-
-                let drag = null;
-                const begin = (event) => {
-                    const rect = stage.getBoundingClientRect();
-                    if (!rect.width || !rect.height) return;
-                    const handle = event.target.closest('[data-crop-handle]');
-                    drag = {
-                        pointerId: event.pointerId,
-                        kind: handle ? handle.dataset.cropHandle : 'move',
-                        startX: event.clientX,
-                        startY: event.clientY,
-                        rect,
-                        crop: { ...crop },
-                    };
-                    stage.setPointerCapture?.(event.pointerId);
-                    event.preventDefault();
-                };
-                const move = (event) => {
-                    if (!drag || event.pointerId !== drag.pointerId) return;
-                    const dx = ((event.clientX - drag.startX) / drag.rect.width) * 100;
-                    const dy = ((event.clientY - drag.startY) / drag.rect.height) * 100;
-                    let next = { ...drag.crop };
-                    if (drag.kind === 'move') {
-                        next.x = Math.max(0, Math.min(100 - next.width, next.x + dx));
-                        next.y = Math.max(0, Math.min(100 - next.height, next.y + dy));
-                    } else {
-                        if (drag.kind.includes('w')) { next.x += dx; next.width -= dx; }
-                        if (drag.kind.includes('e')) next.width += dx;
-                        if (drag.kind.includes('n')) { next.y += dy; next.height -= dy; }
-                        if (drag.kind.includes('s')) next.height += dy;
-                    }
-                    crop = normaliseCropInput(next);
-                    update();
-                };
-                const end = (event) => {
-                    if (drag && event.pointerId === drag.pointerId) drag = null;
-                };
-                stage.addEventListener('pointerdown', begin);
-                stage.addEventListener('pointermove', move);
-                stage.addEventListener('pointerup', end);
-                stage.addEventListener('pointercancel', end);
-                update();
-            },
-        });
-        revokeImageObjectUrls(previewUrls);
-        if (action !== 'apply-crop') return;
-        const next = { ...block, rotation, crop: normaliseCropInput(crop) };
-        if (next.crop.x === 0 && next.crop.y === 0 && next.crop.width === 100 && next.crop.height === 100) next.crop = null;
-        updateImageBlock(figure, next);
-        // Render a derived preview immediately; note storage still retains the
-        // original bytes and only stores this non-destructive transform value.
-        void (async () => previewImageAsset(
-            figure,
-            await loadImageAsset(block.assetId) || sourceAsset,
-        ))();
-        track('image_cropped');
-        if (rotation !== (block.rotation || 0)) track('image_rotated');
-    }
-
-    async function openImageDetails(figure, { initial = false, focusField = 'alt' } = {}) {
-        const block = readImageBlock(figure);
-        if (!block) return;
-        const selected = (layout) => block.display.layout === layout ? 'checked' : '';
-        const choice = (layout, label) => `<label class="image-details__choice"><input type="radio" name="image-layout" value="${layout}" ${selected(layout)}><span>${escapeHtml(label)}</span></label>`;
-        const bodyHtml = `
-            <div class="image-details">
-                <p class="image-details__hint">${escapeHtml(strings.imageAltHint)}</p>
-                <label class="field">
-                    <span class="field__label">${escapeHtml(strings.imageAlt)}</span>
-                    <textarea class="field__input" rows="3" maxlength="1000" data-image-alt>${escapeHtml(block.alt.text)}</textarea>
-                </label>
-                <label class="image-details__decorative">
-                    <input type="checkbox" data-image-decorative ${block.alt.kind === 'decorative' ? 'checked' : ''}>
-                    <span>${escapeHtml(strings.imageDecorative)}</span>
-                </label>
-                <p class="image-details__status" data-image-description-status ${block.alt.kind === 'pending' ? '' : 'hidden'}>${escapeHtml(strings.imageDescriptionNeeded)}</p>
-                <label class="field">
-                    <span class="field__label">${escapeHtml(strings.imageCaption)}</span>
-                    <input class="field__input" type="text" maxlength="1000" data-image-caption value="${escapeHtml(block.caption)}">
-                </label>
-                <fieldset class="field">
-                    <legend class="field__label">${escapeHtml(strings.imageLayout)}</legend>
-                    <div class="image-details__layout">
-                        ${choice('block', strings.imageLayoutBlock)}
-                        ${choice('start', strings.imageLayoutStart)}
-                        ${choice('center', strings.imageLayoutCenter)}
-                        ${choice('end', strings.imageLayoutEnd)}
-                        ${choice('wrap-start', strings.imageLayoutWrapStart)}
-                        ${choice('wrap-end', strings.imageLayoutWrapEnd)}
-                    </div>
-                    <p class="image-details__hint">${escapeHtml(strings.imageWrapHint)}</p>
-                </fieldset>
-                <label class="field">
-                    <span class="field__label">${escapeHtml(strings.imageWidth)} <span class="field__hint">${escapeHtml(strings.imageWidthUnit)}</span></span>
-                    <input class="field__input" type="number" min="10" max="100" step="1" inputmode="numeric" data-image-width value="${block.display.widthPercent}">
-                </label>
-                <div class="image-details__presets" aria-label="${escapeHtml(strings.imageSize)}">
-                    <button type="button" data-image-width-preset="25">${escapeHtml(strings.imageSizeSmall)}</button>
-                    <button type="button" data-image-width-preset="50">${escapeHtml(strings.imageSizeMedium)}</button>
-                    <button type="button" data-image-width-preset="75">${escapeHtml(strings.imageSizeLarge)}</button>
-                    <button type="button" data-image-width-preset="100">${escapeHtml(strings.imageSizeFull)}</button>
-                </div>
-            </div>`;
-        const action = await showDialog({
-            title: initial ? strings.imageDescribeTitle : strings.imageDetailsTitle,
-            bodyHtml,
-            buttons: [
-                { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
-                { label: strings.imageSaveDetails, action: 'save-image-details', variant: 'btn--primary' },
-            ],
-            initialFocus: (body) => {
-                if (focusField === 'width') return body.querySelector('[data-image-width]');
-                if (focusField === 'layout') return body.querySelector('input[name="image-layout"]:checked');
-                return body.querySelector('[data-image-alt]');
-            },
-            onOpen: (body) => {
-                const alt = body.querySelector('[data-image-alt]');
-                const decorative = body.querySelector('[data-image-decorative]');
-                const status = body.querySelector('[data-image-description-status]');
-                const sync = () => {
-                    alt.disabled = decorative.checked;
-                    if (decorative.checked) alt.value = '';
-                    status.hidden = decorative.checked || !!alt.value.trim();
-                };
-                decorative.addEventListener('change', sync);
-                alt.addEventListener('input', sync);
-                body.querySelectorAll('[data-image-width-preset]').forEach((button) => {
-                    button.addEventListener('click', () => {
-                        const width = body.querySelector('[data-image-width]');
-                        width.value = button.dataset.imageWidthPreset;
-                        width.focus();
-                    });
-                });
-                sync();
-                if (focusField === 'width') body.querySelector('[data-image-width]')?.focus();
-                else if (!decorative.checked) alt.focus();
-            },
-        });
-        if (action !== 'save-image-details') {
-            if (initial && block.alt.kind === 'pending') toast(strings.imageDescriptionNeeded, 'info');
-            return;
-        }
-        const dialog = document.getElementById('appDialog');
-        const decorative = !!dialog.querySelector('[data-image-decorative]')?.checked;
-        const alt = String(dialog.querySelector('[data-image-alt]')?.value || '').trim();
-        const caption = String(dialog.querySelector('[data-image-caption]')?.value || '').trim();
-        const layout = dialog.querySelector('input[name="image-layout"]:checked')?.value || 'block';
-        const width = Number(dialog.querySelector('[data-image-width]')?.value);
-        const next = {
-            ...block,
-            alt: decorative ? { kind: 'decorative', text: '' } : (alt ? { kind: 'informative', text: alt } : { kind: 'pending', text: '' }),
-            caption,
-            display: { layout, widthPercent: Number.isFinite(width) ? width : block.display.widthPercent },
-        };
-        updateImageBlock(figure, next);
-        track('image_details_saved');
-    }
-
-    function removeImageBlock(figure) {
-        if (!figure?.isConnected) return;
-        const parent = figure.parentNode;
-        const next = figure.nextSibling;
-        clearImageBlockSelection();
-        figure.remove();
-        editor.focus();
-        try {
-            const range = document.createRange();
-            if (next?.isConnected) {
-                range.setStartBefore(next);
-                range.collapse(true);
-            } else {
-                range.selectNodeContents(parent || editor);
-                range.collapse(false);
-            }
-            const selection = window.getSelection();
-            selection.removeAllRanges();
-            selection.addRange(range);
-            rememberEditorSelection();
-        } catch { /* browser keeps the existing editor caret */ }
-        scheduleSave();
-        updateCounts();
-        spell.refresh();
-        track('image_removed');
-    }
-
-    function openImageFilePicker({ replace = false } = {}) {
-        const target = replace ? selectedImageBlock : null;
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp';
-        input.addEventListener('change', async () => {
-            const file = input.files?.[0];
-            if (!file) return;
-            if (target?.isConnected) await replaceImageBlockFile(target, file);
-            else await insertImageFile(file, { describe: true });
-        }, { once: true });
-        input.click();
-    }
-
-    async function replaceImageBlockFile(figure, file) {
-        const current = readImageBlock(figure);
-        if (!current || !activeNoteId) return false;
-        const asset = await storeImageFile(file, activeNoteId);
-        if (!asset) return false;
-        // Preserve author-facing metadata and placement, but do not carry a
-        // crop rectangle from a different source image.
-        const next = { ...current, assetId: asset.id, crop: null };
-        updateImageBlock(figure, next);
-        void previewImageAsset(figure, asset);
-        void gcImageAssets();
-        track('image_replaced');
-        return true;
-    }
-
-    async function insertImageFile(file, { describe = false } = {}) {
-        if (!activeNoteId) return false;
-        const asset = await storeImageFile(file, activeNoteId);
-        if (!asset) return false;
-        const block = blockFromImportedImage({ assetId: asset.id });
-        const figure = createImageBlockElement(block, { asset, labels: imageLabels() });
-        if (!figure) return false;
-        editor.focus();
-        restoreEditorSelection();
-        if (!insertBlockAtSelection(figure)) {
-            editor.appendChild(figure);
-        }
-        ensureImageSpacer(figure);
-        void previewImageAsset(figure, asset);
-        selectImageBlock(figure);
-        scheduleSave();
-        updateCounts();
-        spell.refresh();
-        track('image_inserted');
-        if (describe) void openImageDetails(figure, { initial: true });
-        else toast(strings.imageInserted, 'info');
-        return true;
-    }
-
-    function imageFilesFrom(data) {
-        const files = [];
-        const seen = new Set();
-        const add = (file) => {
-            if (file && !seen.has(file) && String(file.type || '').toLowerCase().startsWith('image/')) {
-                seen.add(file);
-                files.push(file);
-            }
-        };
-        for (const file of data?.files || []) add(file);
-        for (const item of data?.items || []) {
-            if (String(item.type || '').toLowerCase().startsWith('image/')) add(item.getAsFile?.());
-        }
-        return files;
-    }
-
-    function placeDropCaret(event) {
-        let range = null;
-        if (typeof document.caretRangeFromPoint === 'function') {
-            range = document.caretRangeFromPoint(event.clientX, event.clientY);
-        } else if (typeof document.caretPositionFromPoint === 'function') {
-            const position = document.caretPositionFromPoint(event.clientX, event.clientY);
-            if (position) {
-                range = document.createRange();
-                range.setStart(position.offsetNode, position.offset);
-                range.collapse(true);
-            }
-        }
-        if (!range || !editor.contains(range.startContainer)) return;
-        const target = range.startContainer.nodeType === Node.ELEMENT_NODE
-            ? range.startContainer
-            : range.startContainer.parentElement;
-        const imageBlock = target?.closest?.('figure[data-npad-image-block="1"]');
-        if (imageBlock) {
-            range.setStartAfter(imageBlock);
-            range.collapse(true);
-        }
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        rememberEditorSelection();
-    }
-
-    /** Paste/drop keeps safe text and archives local raster files separately. */
-    async function handleContentData(data) {
+    /** Insert trusted text or sanitised HTML. File-only drops are ignored. */
+    function handleContentData(data) {
         const html = typeof data?.getData === 'function' ? data.getData('text/html') : '';
         const text = typeof data?.getData === 'function' ? data.getData('text/plain') : '';
-        const files = imageFilesFrom(data);
-        let changed = false;
-        if (html) {
-            const clean = activeNoteId
-                ? await importEmbeddedImageData(html, activeNoteId)
-                : sanitizeHtml(html);
-            if (clean) {
-                insertHtml(clean);
-                normaliseTables(editor);
-                changed = true;
-            }
-        } else if (text) {
-            insertHtml(textToHtml(text));
-            changed = true;
-        }
-        for (const [index, file] of files.entries()) {
-            editor.focus();
-            restoreEditorSelection();
-            // The first file follows the same describe-image flow as Insert;
-            // additional files remain visibly pending instead of stacking
-            // several dialogs on top of a single paste action.
-            if (await insertImageFile(file, { describe: index === 0 })) changed = true;
-        }
-        if (changed) {
-            scheduleSave();
-            updateCounts();
-            spell.refresh();
-        }
-        return changed;
+        const clean = html ? sanitizeHtml(html) : (text ? textToHtml(text) : '');
+        if (!clean) return false;
+        insertHtml(clean);
+        normaliseTables(editor);
+        scheduleSave();
+        updateCounts();
+        spell.refresh();
+        return true;
     }
-
-    async function gcImageAssets() {
-        // An asset can belong to a deleted/edited note while a recovery backup
-        // still references it. Collect across both sets before deleting it.
-        const keep = new Set();
-        for (const note of notes) {
-            collectImageAssetIds(note.html).forEach((id) => keep.add(id));
-        }
-        const backups = await listBackups();
-        for (const backup of backups) {
-            collectImageAssetIds(backup.html).forEach((id) => keep.add(id));
-        }
-        const stored = await listAllImageAssets();
-        const orphanIds = stored.filter((asset) => !keep.has(asset.id)).map((asset) => asset.id);
-        if (orphanIds.length) await deleteImageAssets(orphanIds);
-    }
-
-    async function copyImageAssetsForNote(html, sourceNoteId, targetNoteId) {
-        const mapping = new Map();
-        for (const id of collectImageAssetIds(html)) {
-            try {
-                const asset = await loadImageAsset(id);
-                if (!asset?.blob || asset.noteId !== sourceNoteId) continue;
-                const copied = { ...asset, id: newImageAssetId(), noteId: targetNoteId, createdAt: Date.now() };
-                if (await saveImageAsset(copied)) {
-                    resolvedImageAssets.set(copied.id, copied);
-                    mapping.set(id, copied.id);
-                }
-            } catch { /* keep the old reference out of a malformed backup */ }
-        }
-        return mapping.size ? remapImageAssetIds(html, mapping) : html;
-    }
-
-    async function importEmbeddedImageData(html, noteId) {
-        const root = document.createElement('div');
-        root.innerHTML = sanitizeHtml(html, { dataImages: true });
-        const sources = [...root.querySelectorAll('img[src^="data:image/"]')];
-        for (const image of sources) {
-            const decoded = dataUriToImageBlob(image.getAttribute('src'));
-            if (!decoded) {
-                image.remove();
-                continue;
-            }
-            let inspected;
-            try {
-                inspected = await inspectImageFile(decoded.blob);
-            } catch {
-                image.remove();
-                continue;
-            }
-            const asset = {
-                id: newImageAssetId(),
-                noteId,
-                blob: decoded.blob,
-                type: inspected.type,
-                size: decoded.size,
-                name: '',
-                width: inspected.width,
-                height: inspected.height,
-                createdAt: Date.now(),
-            };
-            if (!await saveImageAsset(asset)) {
-                image.remove();
-                continue;
-            }
-            const parent = image.closest('figure');
-            const caption = parent?.querySelector('figcaption')?.textContent || '';
-            const block = blockFromImportedImage({ assetId: asset.id, alt: image.alt, caption });
-            const replacement = createImageBlockElement(block, { asset, labels: imageLabels() });
-            if (parent) parent.replaceWith(replacement);
-            else image.replaceWith(replacement);
-        }
-        stripImageBlockRuntimeState(root);
-        return sanitizeHtml(root.innerHTML);
-    }
-
-    imageBlockToolbar?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-image-action]');
-        if (!button || !selectedImageBlock?.isConnected) return;
-        const figure = selectedImageBlock;
-        const action = button.dataset.imageAction;
-        if (action === 'replace') openImageFilePicker({ replace: true });
-        else if (action === 'details') void openImageDetails(figure);
-        else if (action === 'size') void openImageDetails(figure, { focusField: 'width' });
-        else if (action === 'wrap') void openImageDetails(figure, { focusField: 'layout' });
-        else if (action === 'crop') void openImageCropper(figure);
-        else if (action === 'remove') removeImageBlock(figure);
-        else if (action.startsWith('layout-')) {
-            const block = readImageBlock(figure);
-            if (block) updateImageBlock(figure, {
-                ...block,
-                display: { ...block.display, layout: action.replace('layout-', '') },
-            });
-        }
-    });
-
-    imageBlockToolbar?.addEventListener('keydown', (event) => {
-        const controls = [...imageBlockToolbar.querySelectorAll('button:not([disabled])')];
-        const index = controls.indexOf(document.activeElement);
-        if (index < 0) return;
-        let next = null;
-        if (event.key === 'ArrowRight') next = index + 1;
-        else if (event.key === 'ArrowLeft') next = index - 1;
-        else if (event.key === 'Home') next = 0;
-        else if (event.key === 'End') next = controls.length - 1;
-        if (next !== null) {
-            event.preventDefault();
-            const target = controls[(next + controls.length) % controls.length];
-            controls.forEach((control) => { control.tabIndex = control === target ? 0 : -1; });
-            target.focus();
-        }
-    });
-
-    editor.addEventListener('click', (event) => {
-        const figure = event.target.closest?.('figure[data-npad-image-block="1"]');
-        if (!figure) {
-            if (selectedImageBlock && !event.target.closest?.('#imageBlockToolbar')) clearImageBlockSelection();
-            return;
-        }
-        event.preventDefault();
-        selectImageBlock(figure);
-    });
-
-    editor.addEventListener('dragstart', (event) => {
-        if (event.target.closest?.('figure[data-npad-image-block="1"]')) event.preventDefault();
-    });
-
-    editor.addEventListener('keydown', (event) => {
-        const figure = event.target.closest?.('figure[data-npad-image-block="1"]');
-        if (!figure) return;
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            selectImageBlock(figure, { focus: true });
-            void openImageDetails(figure);
-        } else if (event.key === 'Delete' || event.key === 'Backspace') {
-            event.preventDefault();
-            removeImageBlock(figure);
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            clearImageBlockSelection({ returnFocus: true });
-        }
-    });
-
-    document.addEventListener('keydown', (event) => {
-        if (!selectedImageBlock?.isConnected || document.getElementById('appDialog')?.open) return;
-        if (event.target.closest?.('input, textarea, select, button, [contenteditable="true"]:not(.editor)')) return;
-        if (event.key === 'Delete' || event.key === 'Backspace') {
-            event.preventDefault();
-            removeImageBlock(selectedImageBlock);
-        }
-    });
-
-    document.addEventListener('pointerdown', (event) => {
-        if (!selectedImageBlock) return;
-        if (!event.target.closest?.('figure[data-npad-image-block="1"], #imageBlockToolbar, #imageResizeOverlay, #appDialog')) {
-            clearImageBlockSelection();
-        }
-    }, true);
-    document.addEventListener('pointermove', moveImageResize);
-    document.addEventListener('pointerup', finishImageResize);
-    document.addEventListener('pointercancel', (event) => finishImageResize(event, { cancel: true }));
-    window.addEventListener('scroll', positionImageBlockControls, true);
-    window.addEventListener('resize', positionImageBlockControls);
 
     /* ---------------------------------------------------------------------
        Tables: contextual toolbar, insert dialog, full cell control
@@ -3530,20 +2600,19 @@ export function initEditor({ strings, onEvent }) {
        Paste — always sanitise, never trust clipboard HTML
        --------------------------------------------------------------------- */
 
-    // Paste and drop share one local-first pipeline. Safe text is inserted and
-    // supported local raster files are admitted through the same validator as
-    // the Insert command.
+    // Paste and drop share one sanitised text/HTML pipeline. Unsupported
+    // embedded elements are discarded by the allow-list before insertion.
     editor.addEventListener('paste', (event) => {
         event.preventDefault();
         if (!event.clipboardData) return;
-        void handleContentData(event.clipboardData);
+        handleContentData(event.clipboardData);
     });
 
+    // Drag-and-drop is the same untrusted path as paste.
     editor.addEventListener('drop', (event) => {
         if (!event.dataTransfer) return;
         event.preventDefault();
-        placeDropCaret(event);
-        void handleContentData(event.dataTransfer);
+        handleContentData(event.dataTransfer);
     });
 
     function insertHtml(html) {
@@ -3606,7 +2675,7 @@ export function initEditor({ strings, onEvent }) {
             }
             prepared.push({
                 title: item.title.trim().slice(0, 120) || fallbackTitle,
-                html: sanitizeHtml(item.html, { dataImages: true }),
+                html: sanitizeHtml(item.html),
                 pinned: !!item.pinned,
                 folderId,
                 tags: [...new Set(tagIds)],
@@ -3620,13 +2689,7 @@ export function initEditor({ strings, onEvent }) {
             renderOrganization();
         }
         for (const note of prepared) {
-            // Create the note first so every imported asset has a real owner
-            // id. The import path accepts data URIs only transiently and turns
-            // them into local assets before the note is saved again.
-            const created = await createNewNote({ ...note, html: '', focusTitle: false, report: false });
-            created.html = await importEmbeddedImageData(note.html, created.id);
-            await saveNote(created);
-            showNote(created);
+            await createNewNote({ ...note, focusTitle: false, report: false });
         }
     }
 
@@ -3679,7 +2742,7 @@ export function initEditor({ strings, onEvent }) {
                 if (extension === 'txt') {
                     imported = [{ title, html: textToHtml(await file.text()) }];
                 } else if (extension === 'html' || extension === 'htm') {
-                    imported = [{ title, html: sanitizeHtml(await file.text(), { dataImages: true }) }];
+                    imported = [{ title, html: sanitizeHtml(await file.text()) }];
                 } else if (extension === 'md' || extension === 'markdown') {
                     imported = [{ title, html: markdownToHtml(await file.text()) }];
                 } else if (extension === 'json') {
@@ -3736,37 +2799,37 @@ export function initEditor({ strings, onEvent }) {
         track('download_txt');
     }
 
-    async function exportHtml() {
-        return embedImageBlocksAsDataUris(cleanHtml(), loadImageAsset, { direction: currentDir() });
+    function exportHtml() {
+        return cleanHtml();
     }
 
-    async function saveAsHtml() {
+    function saveAsHtml() {
         const doc = `<!DOCTYPE html>
 <html lang="${document.documentElement.lang || 'en'}" dir="${currentDir()}">
 <meta charset="utf-8">
 <title>NPad note — ${stamp()}</title>
-<style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}figure{margin:0 0 1em}figure img{max-width:100%;height:auto}figcaption{font-size:.85em;color:#555}</style>
-${await exportHtml()}
+<style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:42em;margin:3em auto;padding:0 1em;color:#111}</style>
+${exportHtml()}
 `;
         download(`${exportBaseName()}.html`, doc, 'text/html;charset=utf-8');
         track('download_html');
     }
 
     async function saveAsMarkdown() {
-        const html = await exportHtml();
+        const html = exportHtml();
         download(`${exportBaseName()}.md`, htmlToMarkdown(html), 'text/markdown;charset=utf-8');
         track('download_markdown');
     }
 
     async function saveAsJson() {
         const note = currentExportNote();
-        note.html = await exportHtml();
+        note.html = exportHtml();
         download(`${exportBaseName()}.json`, noteToJson(note, organization), 'application/json;charset=utf-8');
         track('download_json');
     }
 
     async function saveAsDocx() {
-        const html = await exportHtml();
+        const html = exportHtml();
         download(
             `${exportBaseName()}.docx`,
             htmlToDocx(html, { direction: currentDir() }),
@@ -3776,7 +2839,7 @@ ${await exportHtml()}
     }
 
     async function saveAsRtf() {
-        const html = await exportHtml();
+        const html = exportHtml();
         download(
             `${exportBaseName()}.rtf`,
             htmlToRtf(html, { direction: currentDir() }),
@@ -3936,7 +2999,7 @@ ${await exportHtml()}
         const folderId = folderById(backup.folderId) ? backup.folderId : null;
         const tags = backup.tags.filter((tagId) => !!tagById(tagId));
         closeBackupRecovery();
-        const restored = await createNewNote({
+        await createNewNote({
             title: `${displayTitle(backup)} ${strings.backupRestoredSuffix}`.trim(),
             html: backup.html,
             focusTitle: false,
@@ -3945,9 +3008,6 @@ ${await exportHtml()}
             tags,
             pinned: backup.pinned,
         });
-        restored.html = await copyImageAssetsForNote(restored.html, backup.noteId, restored.id);
-        await saveNote(restored);
-        showNote(restored);
         toast(strings.backupRestored, 'success');
         track('backup_restored');
     }
@@ -3963,10 +3023,7 @@ ${await exportHtml()}
             cancelLabel: strings.cancel,
             danger: true,
         });
-        if (confirmed) {
-            await deleteBackup(id);
-            await gcImageAssets();
-        }
+        if (confirmed) await deleteBackup(id);
         await showBackupRecovery({ persistCurrent: false });
     }
 
@@ -3979,10 +3036,7 @@ ${await exportHtml()}
             cancelLabel: strings.cancel,
             danger: true,
         });
-        if (confirmed) {
-            await clearBackups();
-            await gcImageAssets();
-        }
+        if (confirmed) await clearBackups();
         await showBackupRecovery({ persistCurrent: false });
     }
 
@@ -4054,25 +3108,13 @@ ${await exportHtml()}
             if (!plainOnly && navigator.clipboard && navigator.clipboard.read) {
                 const items = await navigator.clipboard.read();
                 for (const item of items) {
-                    if (item.types.includes('text/html')) {
-                        const source = await (await item.getType('text/html')).text();
-                        const clean = activeNoteId
-                            ? await importEmbeddedImageData(source, activeNoteId)
-                            : sanitizeHtml(source);
-                        if (clean) {
-                            insertHtml(clean);
-                            finishPaste(false);
-                            return;
-                        }
-                    }
-                    const imageType = item.types.find((type) => String(type).startsWith('image/'));
-                    if (imageType) {
-                        const blob = await item.getType(imageType);
-                        if (blob && await insertImageFile(blob)) {
-                            finishPaste(false);
-                            return;
-                        }
-                    }
+                    if (!item.types.includes('text/html')) continue;
+                    const source = await (await item.getType('text/html')).text();
+                    const clean = sanitizeHtml(source);
+                    if (!clean) continue;
+                    insertHtml(clean);
+                    finishPaste(false);
+                    return;
                 }
             }
             const text = await navigator.clipboard.readText();
@@ -4665,7 +3707,6 @@ ${await exportHtml()}
         find: () => openFind(false),
         'find-replace': () => openFind(true),
         'insert-table': openTableDialog,
-        'insert-image': () => openImageFilePicker(),
         'insert-hr': insertHorizontalRule,
         'insert-datetime': insertDateTime,
         'insert-link': () => promptForLink(),
@@ -4725,14 +3766,10 @@ ${await exportHtml()}
         }
     });
 
-    // Escape clears a selected image block, then closes contextual UI.
+    // Escape: close the table context menu first, then the find bar, then
+    // leave focus mode.
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return;
-        if (selectedImageBlock?.isConnected && !document.getElementById('appDialog')?.open) {
-            event.preventDefault();
-            clearImageBlockSelection({ returnFocus: true });
-            return;
-        }
         if (tableContextMenu && !tableContextMenu.hidden) {
             event.preventDefault();
             hideTableContextMenu();

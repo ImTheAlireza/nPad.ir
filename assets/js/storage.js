@@ -9,14 +9,12 @@
  */
 
 const DB_NAME = 'npad';
-const DB_VERSION = 7;
+const DB_VERSION = 6;
 const STORE = 'documents';
 const META_STORE = 'metadata';
 const BACKUP_STORE = 'backups';
 const RETIRED_ATTACHMENT_STORE = 'images';
 const RETIRED_ATTACHMENT_KEY_PREFIX = 'npad:img:';
-const IMAGE_ASSET_STORE = 'imageAssets';
-const IMAGE_ASSET_KEY_PREFIX = 'npad:image-asset:';
 const LEGACY_ID = 'current';
 const LEGACY_KEY = 'npad:document';
 const FALLBACK_KEY = 'npad:notes';
@@ -79,14 +77,9 @@ function openDatabase() {
                 backups.createIndex('noteId', 'noteId', { unique: false });
                 backups.createIndex('createdAt', 'createdAt', { unique: false });
             }
-            // Version 6 intentionally retired the old image-payload store.
+            // Version 6 intentionally retires the old image-payload store.
             if (db.objectStoreNames.contains(RETIRED_ATTACHMENT_STORE)) {
                 db.deleteObjectStore(RETIRED_ATTACHMENT_STORE);
-            }
-            if (!db.objectStoreNames.contains(IMAGE_ASSET_STORE)) {
-                const assets = db.createObjectStore(IMAGE_ASSET_STORE, { keyPath: 'id' });
-                assets.createIndex('noteId', 'noteId', { unique: false });
-                assets.createIndex('createdAt', 'createdAt', { unique: false });
             }
             if (event.oldVersion < 2 && db.objectStoreNames.contains('editorContent')) {
                 try { db.deleteObjectStore('editorContent'); } catch { /* already absent */ }
@@ -149,26 +142,6 @@ function normaliseBackup(record = {}) {
 
 function normaliseColour(value) {
     return /^#[\da-f]{6}$/i.test(String(value || '')) ? String(value).toLowerCase() : '#0e7490';
-}
-
-
-function normaliseImageAsset(record = {}) {
-    const now = Date.now();
-    const candidate = record.blob;
-    const tag = candidate ? Object.prototype.toString.call(candidate) : '';
-    const isBlob = tag === '[object Blob]' || tag === '[object File]';
-    return {
-        id: String(record.id || ''),
-        noteId: String(record.noteId || ''),
-        type: String(record.type || '').toLowerCase(),
-        size: Number(record.size) || 0,
-        name: String(record.name || '').slice(0, 240),
-        width: Number.isInteger(Number(record.width)) ? Number(record.width) : 0,
-        height: Number.isInteger(Number(record.height)) ? Number(record.height) : 0,
-        createdAt: Number(record.createdAt) || now,
-        blob: isBlob ? candidate : null,
-        dataUrl: typeof record.dataUrl === 'string' ? record.dataUrl : '',
-    };
 }
 
 function normaliseOrganization(record = {}) {
@@ -562,240 +535,9 @@ export async function clearBackups() {
     return db ? removeBackupsFromDatabase(db, null) : true;
 }
 
-/* -------------------------------------------------------------------------
-   Image assets.
-
-   Image bytes live outside note HTML. IndexedDB stores a Blob directly;
-   localStorage fallback stores a data URI only when IndexedDB is unavailable.
-   ------------------------------------------------------------------------- */
-
-function assetDataUrlToBlob(dataUrl) {
-    const match = String(dataUrl || '').match(/^data:([^;,]+);base64,([a-z0-9+/=\s]+)$/i);
-    if (!match) return null;
-    try {
-        const decode = globalThis.atob || globalThis.window?.atob;
-        if (!decode) return null;
-        const binary = decode(match[2].replace(/\s+/g, ''));
-        const bytes = new Uint8Array(binary.length);
-        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-        return new Blob([bytes], { type: match[1].toLowerCase() });
-    } catch {
-        return null;
-    }
-}
-
-async function assetBlobToDataUrl(blob) {
-    if (!blob) return '';
-    if (typeof blob.arrayBuffer !== 'function') {
-        const Reader = globalThis.FileReader || globalThis.window?.FileReader;
-        if (!Reader) return '';
-        return new Promise((resolve) => {
-            const reader = new Reader();
-            reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => resolve('');
-            reader.readAsDataURL(blob);
-        });
-    }
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    let binary = '';
-    for (let index = 0; index < bytes.length; index += 0x8000) {
-        binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-    }
-    const encode = globalThis.btoa || globalThis.window?.btoa;
-    return encode ? `data:${blob.type || 'application/octet-stream'};base64,${encode(binary)}` : '';
-}
-
-function readFallbackImageAsset(id) {
-    try {
-        const raw = localStorage.getItem(IMAGE_ASSET_KEY_PREFIX + id);
-        return raw ? normaliseImageAsset(JSON.parse(raw)) : null;
-    } catch {
-        return null;
-    }
-}
-
-function writeFallbackImageAsset(asset) {
-    try {
-        localStorage.setItem(IMAGE_ASSET_KEY_PREFIX + asset.id, JSON.stringify({
-            ...asset,
-            blob: null,
-        }));
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function listFallbackImageAssets(noteId = null) {
-    const assets = [];
-    try {
-        for (let index = 0; index < localStorage.length; index += 1) {
-            const key = localStorage.key(index);
-            if (!key?.startsWith(IMAGE_ASSET_KEY_PREFIX)) continue;
-            const asset = readFallbackImageAsset(key.slice(IMAGE_ASSET_KEY_PREFIX.length));
-            if (asset && (!noteId || asset.noteId === String(noteId))) assets.push(asset);
-        }
-    } catch { /* storage disabled */ }
-    return assets;
-}
-
-function removeFallbackImageAssets(ids) {
-    try {
-        for (const id of ids || []) localStorage.removeItem(IMAGE_ASSET_KEY_PREFIX + String(id));
-    } catch { /* storage disabled */ }
-}
-
-function getImageAssetFromDatabase(db, id) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGE_ASSET_STORE, 'readonly');
-        } catch {
-            resolve(null);
-            return;
-        }
-        const request = tx.objectStore(IMAGE_ASSET_STORE).get(String(id));
-        request.onsuccess = () => resolve(request.result ? normaliseImageAsset(request.result) : null);
-        request.onerror = () => resolve(null);
-    });
-}
-
-function listImageAssetsFromDatabase(db, noteId = null) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGE_ASSET_STORE, 'readonly');
-        } catch {
-            resolve([]);
-            return;
-        }
-        const store = tx.objectStore(IMAGE_ASSET_STORE);
-        const request = noteId ? store.index('noteId').getAll(String(noteId)) : store.getAll();
-        request.onsuccess = () => resolve((request.result || []).map(normaliseImageAsset));
-        request.onerror = () => resolve([]);
-    });
-}
-
-function putImageAssetsIntoDatabase(db, assets) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGE_ASSET_STORE, 'readwrite');
-            const store = tx.objectStore(IMAGE_ASSET_STORE);
-            for (const asset of assets) store.put(normaliseImageAsset(asset));
-        } catch {
-            resolve(false);
-            return;
-        }
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => resolve(false);
-        tx.onabort = () => resolve(false);
-    });
-}
-
-function removeImageAssetsFromDatabase(db, ids = null) {
-    return new Promise((resolve) => {
-        let tx;
-        try {
-            tx = db.transaction(IMAGE_ASSET_STORE, 'readwrite');
-            const store = tx.objectStore(IMAGE_ASSET_STORE);
-            if (ids === null) store.clear();
-            else for (const id of ids) store.delete(String(id));
-        } catch {
-            resolve(false);
-            return;
-        }
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => resolve(false);
-        tx.onabort = () => resolve(false);
-    });
-}
-
-/** Store one validated local image asset. */
-export async function saveImageAsset(record) {
-    const asset = normaliseImageAsset(record);
-    if (!asset.id || !asset.noteId || !asset.blob || !asset.type || !asset.size || !asset.width || !asset.height) {
-        return false;
-    }
-    const db = await openDatabase();
-    if (!db) {
-        asset.dataUrl = asset.dataUrl || await assetBlobToDataUrl(asset.blob);
-        return !!asset.dataUrl && writeFallbackImageAsset(asset);
-    }
-    const saved = await putImageAssetsIntoDatabase(db, [asset]);
-    if (saved) return true;
-    asset.dataUrl = asset.dataUrl || await assetBlobToDataUrl(asset.blob);
-    return !!asset.dataUrl && writeFallbackImageAsset(asset);
-}
-
-/** Load one asset, including its intrinsic dimensions and Blob. */
-export async function loadImageAsset(id) {
-    const assetId = String(id || '');
-    if (!assetId) return null;
-    const db = await openDatabase();
-    if (db) {
-        const asset = await getImageAssetFromDatabase(db, assetId);
-        if (asset) {
-            asset.blob = asset.blob || assetDataUrlToBlob(asset.dataUrl);
-            return asset.blob ? asset : null;
-        }
-    }
-    const fallback = readFallbackImageAsset(assetId);
-    if (!fallback) return null;
-    fallback.blob = fallback.blob || assetDataUrlToBlob(fallback.dataUrl);
-    return fallback.blob ? fallback : null;
-}
-
-/** List records owned by a note; used for garbage collection and copies. */
-export async function listImageAssetsByNote(noteId) {
-    const owner = String(noteId || '');
-    const fallback = listFallbackImageAssets(owner);
-    const db = await openDatabase();
-    if (!db) return fallback;
-    const stored = await listImageAssetsFromDatabase(db, owner);
-    const merged = new Map();
-    for (const asset of [...stored, ...fallback]) merged.set(asset.id, asset);
-    return [...merged.values()];
-}
-
-export async function listAllImageAssets() {
-    const fallback = listFallbackImageAssets();
-    const db = await openDatabase();
-    if (!db) return fallback;
-    const stored = await listImageAssetsFromDatabase(db);
-    const merged = new Map();
-    for (const asset of [...stored, ...fallback]) merged.set(asset.id, asset);
-    return [...merged.values()];
-}
-
-export async function deleteImageAssets(ids) {
-    const list = (Array.isArray(ids) ? ids : [ids]).map(String).filter(Boolean);
-    removeFallbackImageAssets(list);
-    const db = await openDatabase();
-    return db ? removeImageAssetsFromDatabase(db, list) : true;
-}
-
-export async function deleteImageAssetsByNote(noteId) {
-    const owner = String(noteId || '');
-    const fallback = listFallbackImageAssets(owner);
-    removeFallbackImageAssets(fallback.map((asset) => asset.id));
-    const db = await openDatabase();
-    if (!db) return true;
-    const stored = await listImageAssetsFromDatabase(db, owner);
-    return removeImageAssetsFromDatabase(db, stored.map((asset) => asset.id));
-}
-
-export async function clearImageAssets() {
-    removeFallbackImageAssets(listFallbackImageAssets().map((asset) => asset.id));
-    const db = await openDatabase();
-    return db ? removeImageAssetsFromDatabase(db, null) : true;
-}
-
 /** Delete one note from every possible persistence path. */
 export async function deleteNote(id) {
     const noteId = String(id);
-    // Assets may still be referenced by a recovery snapshot. Editor-level
-    // garbage collection removes them only after notes and backups agree.
     setOpenNoteIds(getOpenNoteIds().filter((openId) => openId !== noteId));
     const fallback = readFallbackNotes().filter((note) => note.id !== noteId);
     writeFallbackCollection(fallback);
@@ -823,7 +565,6 @@ export async function deleteNote(id) {
 
 /** Permanently delete all notes. */
 export async function clearNotes() {
-    // Recovery snapshots survive Clear all, so their assets must survive too.
     try {
         localStorage.removeItem(FALLBACK_KEY);
         localStorage.removeItem(LEGACY_KEY);

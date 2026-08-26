@@ -250,66 +250,6 @@ $jsStrings = [
     'tablePropertiesTitle' => t('table.properties_title'),
     'tableCaption'      => t('table.caption'),
     'tableBorders'      => t('table.borders'),
-    'imageToolbarLabel' => t('image.toolbar_label'),
-    'imageInsert'       => t('image.insert'),
-    'imageReplace'      => t('image.replace'),
-    'imageRemove'       => t('image.remove'),
-    'imageEdit'         => t('image.edit'),
-    'imageCrop'         => t('image.crop'),
-    'imageSize'         => t('image.size'),
-    'imageSizeSmall'    => t('image.size_small'),
-    'imageSizeMedium'   => t('image.size_medium'),
-    'imageSizeLarge'    => t('image.size_large'),
-    'imageSizeFull'     => t('image.size_full'),
-    'imageSizeCustom'   => t('image.size_custom'),
-    'imageLayoutStart'  => t('image.layout_start'),
-    'imageLayoutCenter' => t('image.layout_center'),
-    'imageLayoutEnd'    => t('image.layout_end'),
-    'imageWrap'         => t('image.wrap'),
-    'imageLayoutWrapStart' => t('image.layout_wrap_start'),
-    'imageLayoutWrapEnd' => t('image.layout_wrap_end'),
-    'imageWrapHint'     => t('image.wrap_hint'),
-    'imageDescribeTitle' => t('image.describe_title'),
-    'imageDetailsTitle' => t('image.details_title'),
-    'imageAlt'          => t('image.alt'),
-    'imageAltHint'      => t('image.alt_hint'),
-    'imageDecorative'   => t('image.decorative'),
-    'imageCaption'      => t('image.caption'),
-    'imageLayout'       => t('image.layout'),
-    'imageLayoutBlock'  => t('image.layout_block'),
-    'imageWidth'        => t('image.width'),
-    'imageWidthUnit'    => t('image.width_unit'),
-    'imageSaveDetails'  => t('image.save_details'),
-    'imageDescriptionNeeded' => t('image.description_needed'),
-    'imageDecorativeLabel' => t('image.decorative_label'),
-    'imageMissing'      => t('image.missing'),
-    'imageCropTitle'    => t('image.crop_title'),
-    'imageCropHint'     => t('image.crop_hint'),
-    'imageCropOriginal' => t('image.crop_original'),
-    'imageCropSquare'   => t('image.crop_square'),
-    'imageCropFourThree' => t('image.crop_four_three'),
-    'imageCropSixteenNine' => t('image.crop_sixteen_nine'),
-    'imageCropX'        => t('image.crop_x'),
-    'imageCropY'        => t('image.crop_y'),
-    'imageCropWidth'    => t('image.crop_width'),
-    'imageCropHeight'   => t('image.crop_height'),
-    'imageCropReset'    => t('image.crop_reset'),
-    'imageCropApply'    => t('image.crop_apply'),
-    'imageRotateLeft'   => t('image.rotate_left'),
-    'imageRotateRight'  => t('image.rotate_right'),
-    'imageRotationUnavailable' => t('image.rotation_unavailable'),
-    'imageRotationAnimatedUnsupported' => t('image.rotation_animated_unsupported'),
-    'imageTooLarge'     => t('image.too_large'),
-    'imageTooManyPixels' => t('image.too_many_pixels'),
-    'imageUnsupported'  => t('image.unsupported'),
-    'imageTypeMismatch' => t('image.type_mismatch'),
-    'imageInvalid'      => t('image.invalid'),
-    'imageStorageFailed' => t('image.storage_failed'),
-    'imageInserted'     => t('image.inserted'),
-    'imageHandleNw'     => t('image.handle_nw'),
-    'imageHandleNe'     => t('image.handle_ne'),
-    'imageHandleSw'     => t('image.handle_sw'),
-    'imageHandleSe'     => t('image.handle_se'),
     'noteUntitled'      => t('notes.untitled'),
     'noteEmptyPreview'  => t('notes.empty_preview'),
     'noteTabsLabel'     => t('notes.tabs_label'),
@@ -846,46 +786,6 @@ $jsStrings = [
          data-placeholder="<?= e(t('editor.placeholder')) ?>"
          spellcheck="false"
          autocorrect="off"></div>
-
-    <div class="image-block-toolbar" id="imageBlockToolbar" role="toolbar"
-         aria-label="<?= e(t('image.toolbar_label')) ?>" aria-controls="editor" hidden>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="replace"
-                title="<?= e(t('image.replace')) ?>" aria-label="<?= e(t('image.replace')) ?>">
-            <?= icon('image-replace') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="layout-start"
-                title="<?= e(t('image.layout_start')) ?>" aria-label="<?= e(t('image.layout_start')) ?>" aria-pressed="false">
-            <?= icon('align-left') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="layout-center"
-                title="<?= e(t('image.layout_center')) ?>" aria-label="<?= e(t('image.layout_center')) ?>" aria-pressed="false">
-            <?= icon('align-center') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="layout-end"
-                title="<?= e(t('image.layout_end')) ?>" aria-label="<?= e(t('image.layout_end')) ?>" aria-pressed="false">
-            <?= icon('align-right') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="size"
-                title="<?= e(t('image.size')) ?>" aria-label="<?= e(t('image.size')) ?>">
-            <?= icon('image-size') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="wrap"
-                title="<?= e(t('image.wrap')) ?>" aria-label="<?= e(t('image.wrap')) ?>">
-            <?= icon('wrap-text') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="details"
-                title="<?= e(t('image.edit')) ?>" aria-label="<?= e(t('image.edit')) ?>">
-            <?= icon('image-alt') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn" data-image-action="crop"
-                title="<?= e(t('image.crop')) ?>" aria-label="<?= e(t('image.crop')) ?>">
-            <?= icon('crop') ?>
-        </button>
-        <button type="button" class="image-block-toolbar__btn image-block-toolbar__btn--danger" data-image-action="remove"
-                title="<?= e(t('image.remove')) ?>" aria-label="<?= e(t('image.remove')) ?>">
-            <?= icon('trash') ?>
-        </button>
-    </div>
 
     <div class="statusbar" id="statusbar" data-save-state="saved">
         <div class="statusbar__counts" id="statusCounts" role="status" aria-live="polite">
