@@ -20,7 +20,7 @@
  * codec so prose about money ("I paid $5 and $10") stays prose.
  */
 
-import { showDialog, toast } from './ui.js';
+import { confirmDialog, showDialog, toast, escapeHtml } from './ui.js';
 import { caretAtEdge } from './caret.js';
 import { isPlausibleMath } from './formats.js';
 
@@ -31,6 +31,53 @@ const KATEX_CSS = '/assets/css/katex-0.18.4.min.css';
 
 const INLINE_TAG = 'MATH-INLINE';
 const BLOCK_TAG = 'MATH-BLOCK';
+
+/* Same 24×24 stroke grid as includes/icons.php. */
+const DELETE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+    + '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/>'
+    + '<path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/>'
+    + '<path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>'
+    + '</svg>';
+
+/* Formula keyboard: [label, snippet] — "|" marks the caret stop. */
+const KEYS = [
+    ['x/y', '\\frac{|}{}'],
+    ['\\sqrt', '\\sqrt{|}'],
+    ['x²', '^{|}'],
+    ['x₂', '_{|}'],
+    ['()', '\\left(|\\right)'],
+    ['[]', '\\left[|\\right]'],
+    ['\\sum', '\\sum_{i=1}^{|}'],
+    ['\\int', '\\int_{|}^{}'],
+    ['lim', '\\lim_{|}'],
+    ['\\pm', '\\pm'],
+    ['\\times', '\\times'],
+    ['\\cdot', '\\cdot'],
+    ['\\div', '\\div'],
+    ['\\leq', '\\leq'],
+    ['\\geq', '\\geq'],
+    ['\\neq', '\\neq'],
+    ['\\approx', '\\approx'],
+    ['\\infty', '\\infty'],
+    ['\\to', '\\to'],
+    ['\\in', '\\in'],
+    ['\\emptyset', '\\emptyset'],
+    ['\\alpha', '\\alpha'],
+    ['\\beta', '\\beta'],
+    ['\\gamma', '\\gamma'],
+    ['\\delta', '\\delta'],
+    ['\\theta', '\\theta'],
+    ['\\lambda', '\\lambda'],
+    ['\\mu', '\\mu'],
+    ['\\pi', '\\pi'],
+    ['\\sigma', '\\sigma'],
+    ['\\phi', '\\phi'],
+    ['\\omega', '\\omega'],
+    ['\\Delta', '\\Delta'],
+    ['\\Omega', '\\Omega'],
+    ['aligned', '\\begin{aligned}\n| &= \\\\\n&= \n\\end{aligned}'],
+];
 
 /** Fetch a formula's LaTeX source wherever the element currently keeps it. */
 function sourceOf(el) {
@@ -106,8 +153,10 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
             if (!el.isConnected || el === activeEl) return;
             if (sourceOf(el) !== tex) return;
             el.classList.remove('math--editing');
+            const chrome = el.querySelector('[data-math-chrome]');
             el.textContent = '';
             el.dataset.tex = tex;
+            if (chrome) el.appendChild(chrome);
             const target = document.createElement('span');
             el.appendChild(target);
             try {
@@ -123,9 +172,51 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
     /** Drop back to the editable LaTeX source. */
     function revealSource(el) {
         const tex = sourceOf(el);
+        const chrome = el.querySelector('[data-math-chrome]');
         el.removeAttribute('data-tex');
         el.textContent = tex;
+        if (chrome) el.appendChild(chrome);
         el.classList.add('math--editing');
+    }
+
+    /* ------------------------------------------------------------------
+       Chrome: delete button (runtime-only, stripped before saving)
+       ------------------------------------------------------------------ */
+
+    function mountChrome(el) {
+        let chrome = [...el.children].find((n) => n.hasAttribute?.('data-math-chrome'));
+        if (!chrome) {
+            chrome = document.createElement('span');
+            chrome.className = 'math-chrome';
+            chrome.setAttribute('data-math-chrome', '');
+            chrome.setAttribute('contenteditable', 'false');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'math-delete';
+            btn.innerHTML = DELETE_ICON;
+            btn.addEventListener('mousedown', (event) => event.preventDefault());
+            btn.addEventListener('click', (event) => {
+                event.preventDefault();
+                removeFormulaWithConfirm(el);
+            });
+            chrome.appendChild(btn);
+            el.appendChild(chrome);
+        }
+        const btn = chrome.querySelector('.math-delete');
+        btn.setAttribute('aria-label', strings.mathDelete || 'Delete formula');
+        btn.title = strings.mathDelete || 'Delete formula';
+    }
+
+    async function removeFormulaWithConfirm(el) {
+        const action = await confirmDialog({
+            title: strings.mathDeleteTitle || 'Delete this formula?',
+            message: strings.mathDeleteBody || 'The formula will be removed from the note.',
+            confirmLabel: strings.confirm || 'Delete',
+            cancelLabel: strings.cancel || 'Cancel',
+            danger: true,
+        });
+        if (!action || !editor.contains(el)) return;
+        removeFormula(el);
     }
 
     /* ------------------------------------------------------------------
@@ -289,7 +380,8 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         if (!el || !el.contains(start)) return false;
         const active = document.activeElement;
         if (active && active !== editor && active !== document.body
-            && editor.contains(active) && !el.contains(active)) return false;
+            && editor.contains(active)
+            && (!el.contains(active) || active.closest('[data-math-chrome]'))) return false;
 
         // Typing before the debounce fires must not edit the KaTeX output.
         if (el !== activeEl) {
@@ -444,6 +536,7 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
             const tex = (el.dataset.tex !== undefined ? el.dataset.tex : flattenedText(el)).trim();
             el.removeAttribute('data-tex');
             el.removeAttribute('class');
+            el.querySelector('[data-math-chrome]')?.remove();
             if (el.textContent !== tex) el.textContent = tex;
             if (el === activeEl) activeEl = null;
         }
@@ -456,6 +549,7 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
 
     /** Restore the stored source form on a cloned editor root. */
     function stripRuntime(root) {
+        for (const chrome of root.querySelectorAll('[data-math-chrome]')) chrome.remove();
         for (const el of root.querySelectorAll('math-inline, math-block')) {
             const tex = sourceOf(el).replace(/^\n+|\n+$/g, '');
             el.removeAttribute('data-tex');
@@ -495,11 +589,18 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         });
     }
 
+    const escapeAttr = (value) => escapeHtml(value).replace(/"/g, '&quot;');
+
     async function openMathDialog(existing) {
         const selection = window.getSelection();
         const selected = selection && !selection.isCollapsed && editor.contains(selection.anchorNode)
             ? selection.toString()
             : '';
+        // Firefox and Safari drop a text selection when focus enters a modal
+        // dialog, so the live range cannot be trusted at apply time.
+        const openingRange = selection && selection.rangeCount && editor.contains(selection.anchorNode)
+            ? selection.getRangeAt(0).cloneRange()
+            : null;
 
         const state = {
             tex: existing ? sourceOf(existing) : selected.slice(0, 500),
@@ -522,6 +623,12 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
                     <div class="math-builder__modes" role="group" aria-label="${strings.mathMode || 'Placement'}">
                         <button type="button" class="table-builder__preset" data-math-mode="inline" aria-pressed="false">${strings.mathModeInline || 'Inline'}</button>
                         <button type="button" class="table-builder__preset" data-math-mode="block" aria-pressed="false">${strings.mathModeBlock || 'Block'}</button>
+                    </div>
+                    <div class="math-builder__pad" role="group" aria-label="${escapeAttr(strings.mathKeyboard || 'Symbol keyboard')}">
+                        ${KEYS.map(([label, snippet]) => (
+                            `<button type="button" class="math-builder__key" data-math-key="${escapeAttr(snippet)}"`
+                            + ` title="${escapeAttr(snippet)}" aria-label="${escapeAttr(snippet)}">${escape(label)}</button>`
+                        )).join('')}
                     </div>
                     <div class="math-builder__preview" data-math-preview aria-hidden="true"></div>
                     <p class="math-builder__error" data-math-error role="alert" hidden></p>
@@ -551,6 +658,22 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
                         sync();
                     });
                 });
+                body.querySelectorAll('[data-math-key]').forEach((btn) => {
+                    // Keep the textarea's focus and caret while "pressing keys".
+                    btn.addEventListener('mousedown', (event) => event.preventDefault());
+                    btn.addEventListener('click', () => {
+                        const snippet = btn.dataset.mathKey;
+                        const stop = snippet.indexOf('|');
+                        const insert = stop === -1 ? snippet : snippet.replace('|', '');
+                        const at = texField.selectionStart ?? texField.value.length;
+                        texField.value = texField.value.slice(0, at) + insert
+                            + texField.value.slice(texField.selectionEnd ?? at);
+                        const caret = stop === -1 ? at + insert.length : at + stop;
+                        texField.focus();
+                        texField.setSelectionRange(caret, caret);
+                        texField.dispatchEvent(new window.Event('input', { bubbles: true }));
+                    });
+                });
                 texField.addEventListener('input', sync);
                 sync();
                 texField.focus();
@@ -559,24 +682,31 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         });
 
         if (action !== 'apply' || !state.tex.trim()) return null;
-        return { ...state };
+        return { ...state, openingRange };
     }
 
     async function insertMath() {
-        editor.focus();
         const built = await openMathDialog(null);
         if (!built) return;
 
         const el = document.createElement(built.mode === 'block' ? BLOCK_TAG : INLINE_TAG);
         el.textContent = built.tex.trim();
 
-        // The selection was live when the dialog opened; editors that kept
-        // it make an inline drop trivial, the helper covers blocks and
-        // engines that dropped it.
+        // Prefer the live selection; engines that dropped it when the modal
+        // opened get back exactly the range captured then.
+        editor.focus();
         const selection = window.getSelection();
+        // A selection anchored on the editor host itself (jsdom focus, some
+        // engines after the modal) carries no caret position.
+        const live = selection.rangeCount && editor.contains(selection.anchorNode)
+            && selection.anchorNode !== editor;
+        if (!live && built.openingRange) {
+            selection.removeAllRanges();
+            selection.addRange(built.openingRange);
+        }
         if (built.mode === 'block' && dropBlock) {
             if (!dropBlock(el)) return;
-        } else if (selection && selection.rangeCount && editor.contains(selection.anchorNode)) {
+        } else if (live || built.openingRange) {
             const range = selection.getRangeAt(0);
             range.deleteContents();
             range.insertNode(el);
@@ -591,6 +721,7 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         selection.addRange(caret);
         revealSource(el);
         activeEl = el;
+        mountChrome(el);
 
         edited();
         track('math_inserted');
@@ -620,6 +751,7 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         activeEl = null;
         normalise(editor);
         for (const el of editor.querySelectorAll('math-inline, math-block')) {
+            mountChrome(el);
             if (!sourceOf(el).trim()) continue;
             paint(el);
         }

@@ -1954,6 +1954,7 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
    colour, so formulas follow both themes with no extra tokens. Formulas are
    always LTR, even in Persian notes. */
 .editor math-inline {
+    position: relative;
     display: inline-block;
     max-width: 100%;
     overflow-x: auto;
@@ -1963,6 +1964,7 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 }
 
 .editor math-block {
+    position: relative;
     display: block;
     margin: 0 0 0.75em;
     padding: var(--space-3);
@@ -1972,6 +1974,64 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     overflow-x: auto;
     direction: ltr;
     text-align: center;
+}
+
+/* Runtime chrome: delete button. Appears on hover/focus; on touch it stays
+   visible. Positioned above inline formulas, inside the block's corner. */
+.math-chrome {
+    position: absolute;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.editor math-block .math-chrome {
+    top: 5px;
+    right: 5px;
+}
+
+.editor math-inline .math-chrome {
+    top: -20px;
+    right: -6px;
+}
+
+.editor math-block:hover .math-chrome,
+.editor math-block:focus-within .math-chrome,
+.editor math-inline:hover .math-chrome,
+.editor math-inline:focus-within .math-chrome { opacity: 1; }
+
+@media (hover: none) {
+    .math-chrome { opacity: 1; }
+}
+
+.math-chrome button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.math-chrome button:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.math-chrome button:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+}
+
+.math-chrome svg {
+    width: 13px;
+    height: 13px;
 }
 
 /* Raw LaTeX while the caret is inside. */
@@ -2060,6 +2120,40 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     margin: 0;
     font-size: 12px;
     color: var(--text-muted);
+}
+
+.math-builder__pad {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+    gap: 4px;
+    max-height: 112px;
+    padding: 2px;
+    overflow-y: auto;
+}
+
+.math-builder__key {
+    min-height: 30px;
+    padding: 2px 4px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    color: var(--text-body);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast),
+        background-color var(--transition-fast);
+}
+
+.math-builder__key:hover {
+    color: var(--text-strong);
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+}
+
+.math-builder__key:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
 }
 
 /* Syntax highlighting theme (Prism token classes), first-party so it follows
@@ -3672,6 +3766,8 @@ body.focus-mode .focus-exit { display: inline-flex; }
     /* Code prints with the light palette regardless of the viewing theme;
        the runtime chrome and its extra strip are not part of the note. */
     .codeblock-chrome { display: none !important; }
+
+    .math-chrome { display: none !important; }
 
     .editor math-block.math--editing,
     .editor math-inline.math--editing {

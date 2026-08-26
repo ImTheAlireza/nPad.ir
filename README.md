@@ -194,7 +194,11 @@ background in both themes (and in print, where the light palette is forced).
 ## Math typesetting
 
 The **Insert** menu adds a math formula: a dialog with a LaTeX field, an
-inline/block toggle and a live KaTeX preview with parse errors shown inline.
+inline/block toggle, a symbol keyboard (fractions, roots, sums, integrals,
+Greek letters — inserts at the caret with cursor stops) and a live KaTeX
+preview with parse errors shown inline. Formulas carry a delete button in
+their corner (with confirmation), removed again before saving like all
+runtime paint.
 Formulas are self-hosted KaTeX 0.18.4 (no CDN), lazy-loaded with a
 woff2-only stylesheet the first time a note actually contains one; KaTeX
 renders visible HTML plus hidden MathML, so screen readers get real math.

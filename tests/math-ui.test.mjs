@@ -250,6 +250,86 @@ export default async function run(check, group) {
         assert.ok(tracked.includes('math_edited'), 'math_edited not tracked');
     });
 
+    await step('inline insertion survives a dropped selection', async () => {
+        // Firefox and Safari drop the editor selection when a modal takes
+        // focus; the captured range must still place the formula.
+        editor.innerHTML = '<p>before </p><p><br></p>';
+        const p = editor.querySelector('p');
+        const range = document.createRange();
+        range.setStart(p.firstChild, p.firstChild.length);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new window.Event('selectionchange'));
+
+        clickMenuItem('insert-math');
+        await tick();
+        assert.equal(dialog.open, true, 'dialog did not open');
+        // Simulate the engine dropping the selection while the modal is open.
+        selection.removeAllRanges();
+        const texField = dialog.querySelector('[data-math-tex]');
+        texField.value = 'e = mc^2';
+        texField.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await tick();
+        click(dialog.querySelector('[data-action="apply"]'));
+        await tick();
+
+        const el = editor.querySelector('math-inline');
+        assert.ok(el, 'inline formula not inserted');
+        assert.equal(el.textContent, 'e = mc^2', 'wrong source');
+        assert.equal(el.parentNode, p, 'formula not placed at the captured range');
+    });
+
+    await step('the formula keyboard inserts at the textarea caret', async () => {
+        editor.innerHTML = '<p>x</p>';
+        clickMenuItem('insert-math');
+        await tick();
+        assert.equal(dialog.open, true, 'dialog did not open');
+        const texField = dialog.querySelector('[data-math-tex]');
+        const keys = [...dialog.querySelectorAll('[data-math-key]')];
+        assert.ok(keys.length >= 20, 'keyboard keys missing');
+        const fracKey = keys.find((k) => (k.dataset.mathKey || '').includes('frac'));
+
+        assert.ok(fracKey, 'frac key missing');
+        fracKey.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await tick();
+        assert.ok(texField.value.startsWith('\\frac{'), 'snippet not inserted: ' + texField.value);
+
+        // A second key appends at the caret; the preview keeps re-rendering.
+        const piKey = keys.find((k) => k.dataset.mathKey === '\\pi');
+        assert.ok(piKey, 'pi key missing');
+        texField.setSelectionRange(texField.value.length, texField.value.length);
+        piKey.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await tick();
+        assert.equal(texField.value, '\\frac{}{}\\pi', 'insert at caret failed: ' + texField.value);
+        assert.ok(dialog.querySelector('[data-math-preview]'), 'preview present');
+        click(dialog.querySelector('[data-action="cancel"]'));
+        await tick();
+    });
+
+    await step('formulas expose a delete button that removes them', async () => {
+        const paste = new window.Event('paste', { bubbles: true, cancelable: true });
+        paste.clipboardData = { getData: (type) => (type === 'text/html' ? '<p>keep</p><math-block>x^2</math-block>' : '') };
+        editor.dispatchEvent(paste);
+        await tick();
+        await tick();
+        const el = editor.querySelector('math-block');
+        const chrome = el.querySelector('[data-math-chrome]');
+        assert.ok(chrome, 'chrome not mounted');
+        assert.equal(chrome.getAttribute('contenteditable'), 'false');
+        const btn = chrome.querySelector('.math-delete');
+        assert.equal(btn.getAttribute('aria-label'), 'Delete formula');
+
+        click(btn);
+        await tick();
+        assert.equal(dialog.open, true, 'confirmation did not open');
+        click(dialog.querySelector('[data-action="confirm"]'));
+        await tick();
+        assert.equal(editor.querySelector('math-block'), null, 'formula not removed');
+        assert.equal(window.getSelection().anchorNode.tagName, 'P', 'caret not parked in a paragraph');
+    });
+
     await step('spellcheck skips formulas', async () => {
         editor.innerHTML = '<p>definately wrd</p><math-inline>x^2</math-inline>';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));

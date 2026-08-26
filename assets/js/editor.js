@@ -1396,7 +1396,7 @@ export function initEditor({ strings, onEvent }) {
         insertHtml(clean);
         normaliseTables(editor);
         code.refreshAll();
-        math.normalise(editor);
+        math.refreshAll();
         // Code pasted into a plain code block gets a language guess.
         code.autodetectCaretBlock();
         scheduleSave();
