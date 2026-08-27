@@ -15,7 +15,7 @@ require_once __DIR__ . '/includes/bootstrap.php';
 header('Content-Type: application/xml; charset=utf-8');
 
 /** path => files whose content determines that page's lastmod */
-$landingSlugs = ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app'];
+$landingSlugs = NPAD_LANDING_SLUGS;
 $landingFiles = ['includes/landing.php', 'lang/en.php', 'lang/fa.php'];
 
 $pages = [
@@ -38,6 +38,9 @@ $priorities = [
     '/markdown-editor' => '0.7', '/fa/markdown-editor' => '0.7',
     '/math-notepad' => '0.7', '/fa/math-notepad' => '0.7',
     '/checklist-app' => '0.7', '/fa/checklist-app' => '0.7',
+    '/text-editor' => '0.7', '/fa/text-editor' => '0.7',
+    '/word-counter' => '0.7', '/fa/word-counter' => '0.7',
+    '/rich-text-editor' => '0.7', '/fa/rich-text-editor' => '0.7',
 ];
 
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";

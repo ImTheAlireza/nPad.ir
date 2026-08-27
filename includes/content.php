@@ -127,6 +127,28 @@ $graph = [
     '@context' => 'https://schema.org',
     '@graph'   => [
         [
+            '@type'  => 'Organization',
+            '@id'    => npad_url('/') . '#organization',
+            'name'   => 'NPad',
+            'url'    => npad_url('/'),
+            'logo'   => [
+                '@type'  => 'ImageObject',
+                'url'    => npad_url('/icon-512.png'),
+                'width'  => 512,
+                'height' => 512,
+            ],
+            'email'  => 'alirezashabanzadeh01@gmail.com',
+        ],
+        [
+            '@type'      => 'WebSite',
+            '@id'        => npad_url('/') . '#website',
+            'name'       => 'NPad',
+            'url'        => npad_url('/'),
+            'description' => t('meta.description'),
+            'inLanguage' => $lang,
+            'publisher'  => ['@id' => npad_url('/') . '#organization'],
+        ],
+        [
             '@type'               => 'WebApplication',
             'name'                => 'NPad',
             'url'                 => npad_url($homePath),
@@ -135,6 +157,7 @@ $graph = [
             'operatingSystem'     => 'Any',
             'browserRequirements' => 'Requires JavaScript',
             'inLanguage'          => $lang,
+            'isPartOf'            => ['@id' => npad_url('/') . '#website'],
             'offers'              => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'USD'],
             'featureList'         => array_map(
                 static fn(array $f): string => $f['title'],

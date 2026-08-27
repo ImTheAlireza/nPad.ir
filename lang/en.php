@@ -502,6 +502,9 @@ return [
         'markdown-editor'  => 'Markdown editor',
         'math-notepad'     => 'Math & equations',
         'checklist-app'    => 'Checklists',
+        'text-editor'      => 'Text editor',
+        'word-counter'     => 'Word counter',
+        'rich-text-editor' => 'Rich text editor',
     ],
 
     'landing' => [
@@ -618,6 +621,84 @@ return [
                     ['q' => 'Can I share a checklist?', 'a' => 'Export it as DOCX, PDF or JSON and send the file; there is no server-side sharing link.'],
                     ['q' => 'Can I mix checklists with normal text?', 'a' => 'Yes — checklists, headings, tables and formulas can all live in the same note.'],
                     ['q' => 'Does it work on my phone?', 'a' => 'Yes — the layout adapts to small screens and checklists work with touch.'],
+                ],
+            ],
+
+            'text-editor' => [
+                'title'       => 'Free Online Text Editor — No Sign-Up, Works Offline — NPad',
+                'description' => 'A fast online text editor in your browser. Write, format and auto-save plain or rich text, then export to TXT, DOCX, PDF or Markdown. Free, private, no account.',
+                'h1'          => 'Online text editor',
+                'lede'        => 'A clean, distraction-free text editor that opens instantly in any browser. Type, format and organise — everything auto-saves to this device, and nothing is uploaded.',
+                'steps'       => [
+                    ['title' => 'Open the editor', 'desc' => 'No download, no login. The writing surface is ready the moment the page loads.'],
+                    ['title' => 'Write and format', 'desc' => 'Plain text when you want it, rich formatting when you need it — headings, lists, tables and links from the toolbar.'],
+                    ['title' => 'Save or export', 'desc' => 'Text auto-saves locally. Export to TXT, DOCX, PDF, Markdown, HTML, RTF or JSON at any time.'],
+                ],
+                'features'    => [
+                    ['title' => 'Instant and lightweight', 'desc' => 'No splash screens or onboarding — the editor is the page, ready to type into immediately.'],
+                    ['title' => 'Plain or rich text', 'desc' => 'Paste as plain text to strip formatting, or use the full rich-text toolbar when structure matters.'],
+                    ['title' => 'Automatic saving', 'desc' => 'Every change is written to local storage as you type and flushed the moment you close the tab.'],
+                    ['title' => 'Multiple documents', 'desc' => 'Keep several texts open in tabs, organise them with folders and colour-coded tags.'],
+                    ['title' => 'Works offline', 'desc' => 'After the first visit the editor loads with no network connection at all.'],
+                    ['title' => 'Private by design', 'desc' => 'Your text lives in your browser. There is no account and no server-side copy.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Is this text editor free?', 'a' => 'Yes — every feature is free, with no account and no paid tier.'],
+                    ['q' => 'Can I edit plain text without formatting?', 'a' => 'Yes. Use “Paste as plain text” and the plain TXT export to keep your text formatting-free end to end.'],
+                    ['q' => 'Are my documents saved automatically?', 'a' => 'Yes — every change is stored locally in your browser and reloads when you return.'],
+                    ['q' => 'Does it work without an internet connection?', 'a' => 'Yes. After the first load the editor works fully offline; your text was already on your device.'],
+                ],
+            ],
+
+            'word-counter' => [
+                'title'       => 'Free Online Word Counter — Live Word & Character Count — NPad',
+                'description' => 'Count words and characters online as you type, with a live count in the status bar. Free word counter with a full editor, auto-save and export. No sign-up.',
+                'h1'          => 'Online word counter',
+                'lede'        => 'See your word and character count update live as you write. NPad is a full editor with a built-in counter — no pasting into a separate tool, and your text never leaves your device.',
+                'steps'       => [
+                    ['title' => 'Start typing', 'desc' => 'Open the page and write, or paste an existing draft straight in.'],
+                    ['title' => 'Watch the count', 'desc' => 'The status bar shows a live word and character count that updates on every keystroke.'],
+                    ['title' => 'Keep writing or export', 'desc' => 'Your text auto-saves on this device; export to DOCX, PDF, Markdown or TXT whenever you are done.'],
+                ],
+                'features'    => [
+                    ['title' => 'Live word count', 'desc' => 'Words and characters update instantly as you type — no button to press, no delay.'],
+                    ['title' => 'Not just a counter', 'desc' => 'A real editor around the count: headings, lists, tables and formatting, so you can write and measure in one place.'],
+                    ['title' => 'Nothing uploaded', 'desc' => 'The text you are counting stays in your browser. It is never sent to a server.'],
+                    ['title' => 'Auto-save', 'desc' => 'Your draft is stored locally as you type, so a closed tab never loses the count or the content.'],
+                    ['title' => 'Works offline', 'desc' => 'Count words with no connection — the whole app runs from your device after the first visit.'],
+                    ['title' => 'Export anywhere', 'desc' => 'Take the finished piece to Word, PDF, Markdown, HTML, RTF or plain text.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Does the word count update as I type?', 'a' => 'Yes — the status bar shows a live word and character count that changes on every keystroke.'],
+                    ['q' => 'Is my text sent anywhere to be counted?', 'a' => 'No. Counting happens in your browser; the text never leaves your device.'],
+                    ['q' => 'Can I count words in a document I already have?', 'a' => 'Yes — paste it in, or open a .txt, .md or .html file, and the count appears immediately.'],
+                    ['q' => 'Is it free?', 'a' => 'Completely free, with no account required.'],
+                ],
+            ],
+
+            'rich-text-editor' => [
+                'title'       => 'Free Online Rich Text Editor — WYSIWYG, Export to Word — NPad',
+                'description' => 'A WYSIWYG rich text editor in your browser: headings, colours, tables, lists and links, with export to DOCX, PDF and HTML. Free, private, auto-saving, no sign-up.',
+                'h1'          => 'Online rich text editor',
+                'lede'        => 'Format as you write — headings, bold and italic, colours, tables, lists and links — in a true WYSIWYG editor. Export clean DOCX, PDF or HTML, all without an account.',
+                'steps'       => [
+                    ['title' => 'Open and write', 'desc' => 'A formatted document surface loads instantly — no setup, no login.'],
+                    ['title' => 'Format visually', 'desc' => 'Apply headings, emphasis, colours, lists, tables and links from the toolbar or with keyboard shortcuts.'],
+                    ['title' => 'Export clean output', 'desc' => 'Download a Word document, PDF or tidy HTML with your formatting fully preserved.'],
+                ],
+                'features'    => [
+                    ['title' => 'True WYSIWYG', 'desc' => 'What you see is what exports — no separate source view or preview pane to reconcile.'],
+                    ['title' => 'Full formatting', 'desc' => 'Bold, italic, underline, strikethrough, sub/superscript, colours, alignment, lists and links.'],
+                    ['title' => 'Tables and structure', 'desc' => 'Insert and edit real tables, collapsible sections, code blocks and checklists inline.'],
+                    ['title' => 'Clean export', 'desc' => 'DOCX, PDF, HTML, Markdown, RTF, TXT and JSON — formatting carried through, no junk markup.'],
+                    ['title' => 'Auto-save and offline', 'desc' => 'Every edit is stored locally and the editor keeps working with no connection.'],
+                    ['title' => 'Private by design', 'desc' => 'Your document stays in your browser; there is no account and no server-side copy.'],
+                ],
+                'faq'         => [
+                    ['q' => 'What is a rich text editor?', 'a' => 'An editor that shows formatting — headings, bold, colours, tables — as you apply it, instead of raw markup or plain text.'],
+                    ['q' => 'Can I export to Microsoft Word?', 'a' => 'Yes — the DOCX export produces a real Word document with your formatting, tables and lists intact.'],
+                    ['q' => 'Does the HTML export stay clean?', 'a' => 'Yes — the HTML export is sanitised and structured, not the tag soup some editors produce.'],
+                    ['q' => 'Do I need an account?', 'a' => 'No. Open the page and start writing; documents are stored in your browser.'],
                 ],
             ],
         ],

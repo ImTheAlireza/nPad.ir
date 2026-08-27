@@ -42,10 +42,14 @@ $skipTarget   = '#main';
 $pageTitle = $page['title'];
 $pageDesc  = $page['description'];
 
+// Each landing page shares its own card, not the generic homepage one.
+$ogTitle = $page['h1'];
+$ogDesc  = $page['description'];
+
 require __DIR__ . '/head.php';
 
 /** The other landing pages, for the internal-link mesh. */
-$related = ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app'];
+$related = NPAD_LANDING_SLUGS;
 ?>
 
 <div class="page">
@@ -160,6 +164,22 @@ $faqEntities = array_map(
 $graph = [
     '@context' => 'https://schema.org',
     '@graph'   => [
+        [
+            '@type'               => 'SoftwareApplication',
+            'name'                => $page['h1'],
+            'url'                 => npad_url($canonicalPath),
+            'description'         => $page['description'],
+            'applicationCategory' => 'UtilitiesApplication',
+            'operatingSystem'     => 'Any',
+            'browserRequirements' => 'Requires JavaScript',
+            'inLanguage'          => $lang,
+            'isPartOf'            => ['@type' => 'WebSite', 'name' => 'NPad', 'url' => npad_url('/')],
+            'offers'              => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'USD'],
+            'featureList'         => array_map(
+                static fn(array $f): string => $f['title'],
+                $page['features'],
+            ),
+        ],
         ['@type' => 'FAQPage', 'mainEntity' => $faqEntities],
         [
             '@type'           => 'BreadcrumbList',

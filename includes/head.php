@@ -22,6 +22,15 @@ $altLang        = $lang === 'en' ? 'fa' : 'en';
 // Pages without an editing surface (privacy, 404) pass their own target so
 // the link never points at an element that does not exist there.
 $skipTarget     = $skipTarget ?? '#editor';
+
+// Social-share metadata. Landing pages set $ogTitle/$ogDesc so each URL
+// shares its own card; the app pages fall back to the global marketing copy.
+// Titles reuse the page <title> when no dedicated OG title is supplied, and
+// descriptions reuse the meta description — never the generic homepage blurb.
+$ogTitle        = $ogTitle ?? t('meta.og_title');
+$ogDesc         = $ogDesc  ?? t('meta.og_desc');
+$twitterTitle   = $ogTitle;
+$twitterDesc    = $ogDesc;
 ?>
 <!DOCTYPE html>
 <html lang="<?= e($lang) ?>" dir="<?= e($dir) ?>">
@@ -50,13 +59,15 @@ $faAlt = $lang === 'fa' ? $canonicalPath
 <meta property="og:site_name" content="NPad">
 <meta property="og:locale" content="<?= e($locale) ?>">
 <meta property="og:url" content="<?= e(npad_url($canonicalPath)) ?>">
-<meta property="og:title" content="<?= e(t('meta.og_title')) ?>">
-<meta property="og:description" content="<?= e(t('meta.og_desc')) ?>">
+<meta property="og:title" content="<?= e($ogTitle) ?>">
+<meta property="og:description" content="<?= e($ogDesc) ?>">
 <meta property="og:image" content="<?= e(npad_url('/og-image.png')) ?>">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="<?= e(t('meta.og_title')) ?>">
+<meta property="og:image:alt" content="<?= e($ogTitle) ?>">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="<?= e($twitterTitle) ?>">
+<meta name="twitter:description" content="<?= e($twitterDesc) ?>">
 <meta name="twitter:image" content="<?= e(npad_url('/og-image.png')) ?>">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">

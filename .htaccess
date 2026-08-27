@@ -64,10 +64,16 @@ ErrorDocument 404 /404.php
     RewriteRule ^markdown-editor/?$ /markdown-editor.php [L]
     RewriteRule ^math-notepad/?$ /math-notepad.php [L]
     RewriteRule ^checklist-app/?$ /checklist-app.php [L]
+    RewriteRule ^text-editor/?$ /text-editor.php [L]
+    RewriteRule ^word-counter/?$ /word-counter.php [L]
+    RewriteRule ^rich-text-editor/?$ /rich-text-editor.php [L]
     RewriteRule ^fa/online-notepad/?$ /fa/online-notepad.php [L]
     RewriteRule ^fa/markdown-editor/?$ /fa/markdown-editor.php [L]
     RewriteRule ^fa/math-notepad/?$ /fa/math-notepad.php [L]
     RewriteRule ^fa/checklist-app/?$ /fa/checklist-app.php [L]
+    RewriteRule ^fa/text-editor/?$ /fa/text-editor.php [L]
+    RewriteRule ^fa/word-counter/?$ /fa/word-counter.php [L]
+    RewriteRule ^fa/rich-text-editor/?$ /fa/rich-text-editor.php [L]
 
     # Retire the old flat URLs.
     RewriteRule ^index\.html$ / [L,R=301]

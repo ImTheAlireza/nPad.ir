@@ -23,6 +23,25 @@ const NPAD_LANGS = [
 const NPAD_DEFAULT_LANG = 'en';
 
 /**
+ * SEO landing pages, in link-mesh / sitemap order.
+ *
+ * Single source of truth: sitemap.php, footer.php and includes/landing.php
+ * all iterate this list, and each slug has a matching entry file at the repo
+ * root (and under fa/), an .htaccess pretty-URL rewrite, and copy under
+ * landing.pages.<slug> in both lang files. Adding a page means adding it here
+ * plus those four places — the lang parity test guards the copy.
+ */
+const NPAD_LANDING_SLUGS = [
+    'online-notepad',
+    'markdown-editor',
+    'math-notepad',
+    'checklist-app',
+    'text-editor',
+    'word-counter',
+    'rich-text-editor',
+];
+
+/**
  * config.php holds DB credentials and is intentionally absent from git.
  * The public site must work without it; only the analytics layer needs it.
  */

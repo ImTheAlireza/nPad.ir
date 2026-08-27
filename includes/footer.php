@@ -17,7 +17,7 @@ $homePath = $lang === 'fa' ? '/fa/' : '/';
 $privacy  = $lang === 'fa' ? '/fa/privacy.php' : '/privacy.php';
 
 /** Landing pages: the internal-link mesh that keeps them crawled. */
-$tools = ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app'];
+$tools = NPAD_LANDING_SLUGS;
 ?>
 <footer class="footer">
     <p>&copy; <?= e($year) ?> NPad. <?= e(t('footer.rights')) ?></p>
