@@ -140,8 +140,11 @@ variant for machines without MySQL).
 
 ## Document import and export
 
-The File menu imports and exports **TXT, HTML, Markdown, NPad JSON, DOCX, PDF,
-and RTF**. Processing stays in the browser: imported active HTML passes through
+The File menu's **Export as** submenu exports **TXT, HTML, Markdown, NPad
+JSON, DOCX, PDF, and RTF** — a click-opened flyout with full keyboard
+support (arrows navigate, Escape closes the flyout before the menu) that
+becomes an inline expansion on small screens. Imports stay on the top level.
+Processing stays in the browser: imported active HTML passes through
 the same allow-list sanitizer as pasted content, and no document is uploaded.
 NPad JSON carries the current note's title, rich content, pinned state, folder,
 color-coded tags, and timestamps. Imported JSON note arrays create separate
