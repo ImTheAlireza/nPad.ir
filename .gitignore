@@ -11,10 +11,13 @@ error_log
 
 # Dependencies (test tooling only; the site itself ships no JS deps)
 node_modules/
-package-lock.json
+# package-lock.json is committed on purpose: CI runs npm ci.
 
 # Test output
 tests/rendered/
+
+# Runtime content-date cache written by npad_content_lastmod()
+.content-dates.json
 
 # Backups / dumps
 *.bak

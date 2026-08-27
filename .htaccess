@@ -15,11 +15,11 @@ ErrorDocument 404 /404.php
 # Protected files
 # ------------------------------------------------------------------------------
 
-<FilesMatch "^(config\.php|composer\.(json|lock)|package(-lock)?\.json|\.editorconfig|\.gitattributes)$">
+<FilesMatch "^(config\.php|config[^/]*\.php\.~|composer\.(json|lock)|package(-lock)?\.json|\.editorconfig|\.gitattributes)$">
     Require all denied
 </FilesMatch>
 
-<FilesMatch "\.(log|sql|sqlite|bak|old|backup|ini|md)$">
+<FilesMatch "\.(log|sql|sqlite|bak|old|backup|ini|md|mjs|lock)$">
     Require all denied
 </FilesMatch>
 
@@ -30,9 +30,12 @@ ErrorDocument 404 /404.php
 
 # Source directories are never requested directly. The partials also guard
 # themselves in PHP, but blocking at the server is the cheaper first line.
+# node_modules and dev tooling must never ship to the webroot; they are
+# blocked here in case a deploy copies them anyway.
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(includes|lang|tests)/ - [F,L]
+    RewriteRule ^(includes|lang|tests|node_modules)(/|$) - [F,L]
+    RewriteRule ^(dev-server|runone)\.mjs$ - [F,L]
 </IfModule>
 
 # ------------------------------------------------------------------------------
@@ -55,6 +58,17 @@ ErrorDocument 404 /404.php
     # Sitemap is generated so lastmod stays accurate.
     RewriteRule ^sitemap\.xml$ /sitemap.php [L]
 
+    # Landing pages: pretty URLs -> their PHP entry files. The entry files
+    # remain directly reachable too; canonical tags point at the pretty URL.
+    RewriteRule ^online-notepad/?$ /online-notepad.php [L]
+    RewriteRule ^markdown-editor/?$ /markdown-editor.php [L]
+    RewriteRule ^math-notepad/?$ /math-notepad.php [L]
+    RewriteRule ^checklist-app/?$ /checklist-app.php [L]
+    RewriteRule ^fa/online-notepad/?$ /fa/online-notepad.php [L]
+    RewriteRule ^fa/markdown-editor/?$ /fa/markdown-editor.php [L]
+    RewriteRule ^fa/math-notepad/?$ /fa/math-notepad.php [L]
+    RewriteRule ^fa/checklist-app/?$ /fa/checklist-app.php [L]
+
     # Retire the old flat URLs.
     RewriteRule ^index\.html$ / [L,R=301]
     RewriteRule ^track\.php$ /api/track.php [L,R=301]
@@ -70,6 +84,7 @@ ErrorDocument 404 /404.php
     Header always set X-Content-Type-Options "nosniff"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set Cross-Origin-Opener-Policy "same-origin"
+    Header always set Cross-Origin-Resource-Policy "same-origin"
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), interest-cohort=()"
 
     # frame-ancestors supersedes X-Frame-Options. X-XSS-Protection is
@@ -80,9 +95,12 @@ ErrorDocument 404 /404.php
     # connect-src 'self' while the page called three third-party geo-IP APIs,
     # so its own feature was permanently blocked.
     #
-    # 'unsafe-inline' in script-src covers the single pre-paint theme script;
-    # all other JavaScript is external. There are no inline event handlers.
-    Header always set Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'"
+    # script-src pins the single pre-paint theme snippet by SHA-256 hash
+    # (no 'unsafe-inline'); tests/static.test.mjs verifies the hash still
+    # matches includes/head.php, so editing that script requires updating
+    # both together. All other JavaScript is external. style-src keeps
+    # 'unsafe-inline' for the admin dashboard's inline <style> block.
+    Header always set Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'sha256-Bwfb4gtSgAV5R2bo/v5coIKJR4CmAExLM1y4qGuziK8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'"
 
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
 

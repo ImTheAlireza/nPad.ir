@@ -21,9 +21,8 @@ if (!npad_analytics_enabled()) {
 ini_set('session.cookie_httponly', '1');
 ini_set('session.use_strict_mode', '1');
 ini_set('session.cookie_samesite', 'Strict');
-if (!empty($_SERVER['HTTPS'])) {
-    ini_set('session.cookie_secure', '1');
-}
+// HTTPS-only site (enforced at the edge); always mark the cookie Secure.
+ini_set('session.cookie_secure', '1');
 
 session_start();
 

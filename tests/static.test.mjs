@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import engine from 'php-parser';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -150,7 +151,7 @@ export default function run(check, group) {
 
     check('source directories are blocked at the server', () => {
         const ht = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
-        assert.ok(/\^\(includes\|lang\|tests\)\//.test(ht),
+        assert.ok(/\^\(includes\|lang\|tests(\|node_modules)?\)\(/.test(ht),
             'includes/, lang/ and tests/ are reachable over HTTP');
     });
 
@@ -217,5 +218,105 @@ export default function run(check, group) {
         const phpEvents = [...php.match(/const ALLOWED_EVENTS = \[([\s\S]*?)\];/)[1]
             .matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
         assert.deepEqual(jsEvents, phpEvents, 'event allow-lists differ');
+    });
+    group('static: hardening invariants');
+
+    check('CSP script hash matches the inline theme script', () => {
+        const head = fs.readFileSync(path.join(ROOT, 'includes/head.php'), 'utf8');
+        const script = head.match(/<script>\n([\s\S]*?)\n<\/script>/)?.[1];
+        assert.ok(script, 'inline theme script not found in head.php');
+        const hash = 'sha256-' + crypto.createHash('sha256').update(script, 'utf8').digest('base64');
+        const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        assert.ok(
+            htaccess.includes(`'${hash}'`),
+            `CSP does not pin the theme script hash (${hash}); update .htaccess and head.php together`,
+        );
+        assert.ok(
+            !/script-src[^";\r\n]*unsafe-inline/.test(htaccess),
+            "script-src must not contain 'unsafe-inline'",
+        );
+    });
+
+    check('the 170 KB dictionary is not on the eager module graph', () => {
+        const jsDir = path.join(ROOT, 'assets/js');
+        for (const file of walk(jsDir, (n) => n.endsWith('.js') && !n.includes('.min.'))) {
+            const text = fs.readFileSync(file, 'utf8');
+            const staticImport = text.match(/import\s*(?:\{[^}]*\}|[\w$*]+(?:\s*,\s*\{[^}]*\})?)\s*from\s*['"]\.\/wordlist\.js['"]/);
+            assert.equal(staticImport, null, `${rel(file)} statically imports wordlist.js`);
+        }
+        const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+        assert.ok(!sw.includes('wordlist'), 'service worker precaches the dictionary');
+    });
+
+    check('dev tooling is blocked at the server and not deployed', () => {
+        const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        assert.ok(/\(includes\|lang\|tests\|node_modules\)/.test(htaccess), 'rewrite does not deny node_modules');
+        assert.ok(/\(dev-server\|runone\)\\\.mjs\$/.test(htaccess), 'rewrite does not deny dev *.mjs files');
+        assert.ok(/\(log\|sql\|sqlite\|bak\|old\|backup\|ini\|md\|mjs\|lock\)\$/.test(htaccess), 'FilesMatch does not deny *.mjs');
+        const cpanel = fs.readFileSync(path.join(ROOT, '.cpanel.yml'), 'utf8');
+        assert.ok(!/cp\s+-R\s+\*/.test(cpanel), '.cpanel.yml still blind-copies the checkout');
+    });
+
+    check('flyout submenus cannot be clipped or scrolled by their parent panel', () => {
+        const css = fs.readFileSync(path.join(ROOT, 'assets/css/app.css'), 'utf8');
+        assert.match(css, /\.menu__panel--submenu\s*{[\s\S]*?display:\s*none/,
+            'a closed flyout must be display:none - visibility:hidden keeps its layout and the abspos panel adds scroll area to the parent');
+        assert.match(css, /\.menu__panel--has-submenu\s*{[\s\S]*?overflow:\s*visible/,
+            'a panel containing a flyout must let it escape its overflow (else the flyout is masked and the parent grows scrollbars)');
+        const appbar = fs.readFileSync(path.join(ROOT, 'includes/appbar.php'), 'utf8');
+        assert.ok(appbar.includes('menu__panel--has-submenu'),
+            'the renderer must emit the has-submenu class (no :has() dependency)');
+    });
+
+    check('og image and favicon.ico exist', () => {
+        assert.ok(fs.existsSync(path.join(ROOT, 'og-image.png')), 'missing og-image.png');
+        assert.ok(fs.existsSync(path.join(ROOT, 'favicon.ico')), 'missing favicon.ico');
+    });
+
+    group('static: landing pages');
+
+    const slugs = ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app'];
+
+    check('every landing slug has EN and FA entry files', () => {
+        for (const slug of slugs) {
+            assert.ok(fs.existsSync(path.join(ROOT, `${slug}.php`)), `missing ${slug}.php`);
+            assert.ok(fs.existsSync(path.join(ROOT, 'fa', `${slug}.php`)), `missing fa/${slug}.php`);
+        }
+    });
+
+    check('pretty URLs are rewritten and listed in the sitemap', () => {
+        const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        const sitemap = fs.readFileSync(path.join(ROOT, 'sitemap.php'), 'utf8');
+        for (const slug of slugs) {
+            assert.ok(htaccess.includes(`RewriteRule ^${slug}/?$ `),
+                `.htaccess missing rewrite for /${slug}`);
+            assert.ok(htaccess.includes(`RewriteRule ^fa/${slug}/?$ `),
+                `.htaccess missing rewrite for /fa/${slug}`);
+            assert.ok(sitemap.includes(`'${slug}'`), `sitemap missing /${slug}`);
+        }
+    });
+
+    check('the footer link mesh covers every landing page in both locales', () => {
+        const footer = fs.readFileSync(path.join(ROOT, 'includes/footer.php'), 'utf8');
+        for (const slug of slugs) {
+            assert.ok(footer.includes(`"${slug}"`) || footer.includes("'${slug}'") || footer.includes('$tool'),
+                `footer does not link /${slug}`);
+        }
+        const en = fs.readFileSync(path.join(ROOT, 'lang/en.php'), 'utf8');
+        const fa = fs.readFileSync(path.join(ROOT, 'lang/fa.php'), 'utf8');
+        for (const slug of slugs) {
+            assert.ok(en.includes(`'${slug}' =>`), `lang/en.php missing landing copy for ${slug}`);
+            assert.ok(fa.includes(`'${slug}' =>`), `lang/fa.php missing landing copy for ${slug}`);
+        }
+    });
+
+    check('landing renderer emits self-canonicals, breadcrumbs and FAQ schema', () => {
+        const landing = fs.readFileSync(path.join(ROOT, 'includes/landing.php'), 'utf8');
+        assert.ok(landing.includes('BreadcrumbList'), 'no BreadcrumbList schema');
+        assert.ok(landing.includes('FAQPage'), 'no FAQPage schema');
+        assert.ok(landing.includes('$canonicalPath'), 'canonical path not derived from slug');
+        const head = fs.readFileSync(path.join(ROOT, 'includes/head.php'), 'utf8');
+        assert.ok(head.includes('str_replace(\'/fa/\', \'/\', $canonicalPath)'),
+            'hreflang alternates must mirror the canonical URL, not hardcode the home page');
     });
 }

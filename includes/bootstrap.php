@@ -9,7 +9,7 @@
 declare(strict_types=1);
 
 define('NPAD_ROOT', dirname(__DIR__));
-define('NPAD_VERSION', '2.17.0');
+define('NPAD_VERSION', '2.24.0');
 
 /**
  * Supported interface languages.
@@ -126,4 +126,69 @@ function t(string $key, ?array $strings = null)
 function npad_url(string $path = '/'): string
 {
     return 'https://npad.ir' . '/' . ltrim($path, '/');
+}
+
+/**
+ * The visitor's IP for rate limiting and (truncated) analytics.
+ *
+ * REMOTE_ADDR is the only trustworthy source by default. Behind Cloudflare
+ * it holds the edge IP unless the host restores the real client address, so
+ * config.php may define TRUST_PROXY_HEADERS === true to prefer
+ * CF-Connecting-IP (single, hard-to-spoof value) when it is present and
+ * valid. Leave it undefined unless the host sits behind a proxy you control.
+ */
+function npad_client_ip(): string
+{
+    $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+
+    if (defined('TRUST_PROXY_HEADERS') && TRUST_PROXY_HEADERS === true) {
+        $forwarded = (string) ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? '');
+        if (filter_var($forwarded, FILTER_VALIDATE_IP)) {
+            return $forwarded;
+        }
+    }
+
+    return $remote;
+}
+
+/**
+ * Date a piece of content last *actually* changed.
+ *
+ * filemtime() resets on every deploy (cp touches every file), which made
+ * sitemap lastmod and the privacy page's "updated" stamp move on each
+ * release even when nothing changed. This hashes the file contents and
+ * remembers the date each new hash was first seen, so deploys without
+ * content changes keep their original date.
+ */
+function npad_content_lastmod(string ...$files): string
+{
+    $hashInput = '';
+    foreach ($files as $file) {
+        $absolute = str_starts_with($file, '/') ? $file : NPAD_ROOT . '/' . ltrim($file, '/');
+        $hashInput .= $absolute . "\0" . (string) @file_get_contents($absolute) . "\0";
+    }
+    $hash = hash('sha256', $hashInput);
+
+    $cacheFile = NPAD_ROOT . '/.content-dates.json';
+    $dates = [];
+    if (is_readable($cacheFile)) {
+        $decoded = json_decode((string) file_get_contents($cacheFile), true);
+        if (is_array($decoded)) {
+            $dates = $decoded;
+        }
+    }
+
+    if (isset($dates[$hash]) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $dates[$hash])) {
+        return (string) $dates[$hash];
+    }
+
+    $today = date('Y-m-d');
+    // Keep the map bounded: oldest entries fall off first.
+    if (count($dates) > 64) {
+        $dates = array_slice($dates, -48, null, true);
+    }
+    $dates[$hash] = $today;
+    @file_put_contents($cacheFile, json_encode($dates), LOCK_EX);
+
+    return $today;
 }

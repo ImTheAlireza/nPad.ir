@@ -2,38 +2,24 @@
  * Service worker — makes the "works offline" claim in the FAQ true.
  *
  * Strategy:
- *   - navigations: network-first, falling back to the cached shell
- *   - static assets: stale-while-revalidate
- *   - /api/: never cached
+ *   - navigations: network-first, falling back to the cached page, then the
+ *     locale-matched offline page
+ *   - static assets: stale-while-revalidate (this is what makes the app
+ *     work offline — every module is cached the first time it loads)
+ *   - /api/ and /admin/: never cached
+ *
+ * The install precache intentionally holds only the offline fallbacks: all
+ * application assets are runtime-cached during the first online load, so
+ * precaching them too would duplicate ~1 MB of downloads per visitor.
  */
 
-const VERSION = 'npad-v2.17.0';
+const VERSION = 'npad-v2.24.0';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 
 const PRECACHE = [
-    '/',
-    '/fa/',
     '/offline.html',
-    '/assets/css/app.css',
-    '/assets/js/app.js',
-    '/assets/js/editor.js',
-    '/assets/js/table.js',
-    '/assets/js/spellcheck.js',
-    '/assets/js/wordlist.js',
-    '/assets/js/storage.js',
-    '/assets/js/sanitize.js',
-    '/assets/js/formats.js',
-    '/assets/js/codeblock.js',
-    '/assets/js/mathblock.js',
-    '/assets/js/outline.js',
-    '/assets/js/checklist.js',
-    '/assets/js/vendor/prism-1.30.0.min.js',
-    '/assets/js/vendor/katex-0.18.4.min.js',
-    '/assets/css/katex-0.18.4.min.css',
-    '/assets/js/ui.js',
-    '/assets/js/theme.js',
-    '/assets/js/analytics.js',
+    '/fa/offline.html',
 ];
 
 self.addEventListener('install', (event) => {
@@ -78,15 +64,21 @@ self.addEventListener('fetch', (event) => {
                     return response;
                 })
                 .catch(async () => {
-                    const cached = await caches.match(request);
-                    return cached || (await caches.match('/offline.html')) || Response.error();
+                    const cached = await caches.match(request, { ignoreSearch: true });
+                    if (cached) return cached;
+                    const offline = url.pathname.startsWith('/fa/')
+                        ? '/fa/offline.html'
+                        : '/offline.html';
+                    return (await caches.match(offline)) || Response.error();
                 }),
         );
         return;
     }
 
     event.respondWith(
-        caches.match(request).then((cached) => {
+        // ignoreSearch lets a precached/query-less entry satisfy the same
+        // asset requested with the cache-busting ?v= parameter.
+        caches.match(request, { ignoreSearch: true }).then((cached) => {
             const network = fetch(request)
                 .then((response) => {
                     if (response && response.status === 200) {

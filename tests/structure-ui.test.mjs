@@ -170,8 +170,129 @@ export default async function run(check, group) {
         assert.equal(details.open, true, 'did not expand');
     });
 
+    await step('blocks inserted from the summary land inside the section body', async () => {
+        editor.innerHTML = '<p><br></p>';
+        putCaret(editor.querySelector('p'));
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-section');
+        await tick();
+
+        const details = editor.querySelector('details');
+        const summary = details.querySelector('summary');
+        putCaret(summary, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+
+        // Checklist from the summary: into the body start, never the title.
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-checklist');
+        await tick();
+        const list = editor.querySelector('ul.checklist');
+        assert.ok(list, 'checklist missing');
+        assert.ok(!summary.contains(list), 'checklist landed inside the summary');
+        assert.equal(list.parentElement, details, 'checklist not in the section body');
+        assert.equal(list.previousElementSibling, summary, 'checklist not at the body start');
+
+        // Horizontal rule from the summary: same rule.
+        putCaret(summary, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-hr');
+        await tick();
+        const rule = editor.querySelector('details hr');
+        assert.ok(rule, 'hr missing');
+        assert.ok(!summary.contains(rule), 'hr landed inside the summary');
+        assert.equal(rule.closest('details'), details, 'hr not in the section body');
+    });
+
+    await step('a section inserted from the summary is a sibling; from the body it nests', async () => {
+        editor.innerHTML = '<p><br></p>';
+        putCaret(editor.querySelector('p'));
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-section');
+        await tick();
+        const first = editor.querySelector('details');
+
+        // From the summary: a new top-level section after it.
+        putCaret(first.querySelector('summary'), true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-section');
+        await tick();
+        let all = [...editor.querySelectorAll('details')];
+        assert.equal(all.length, 2, 'expected two sections');
+        assert.deepEqual(all.map((d) => d.parentElement), [editor, editor], 'sections are not siblings');
+        assert.equal(all[0].nextElementSibling, all[1], 'new section not directly after the first');
+
+        // From the body: nested inside.
+        const body = first.querySelector('p');
+        putCaret(body, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-section');
+        await tick();
+        all = [...editor.querySelectorAll('details')];
+        assert.equal(all.length, 3, 'expected three sections');
+        const nested = all.find((d) => d.parentElement !== editor);
+        assert.ok(nested, 'no nested section found');
+        assert.ok(first.contains(nested), 'section from the body did not nest');
+        assert.equal(nested.parentElement, first, 'nested section not a direct body child');
+    });
+
+    await step('Enter from the summary enters a checklist body without adding a stray paragraph', async () => {
+        editor.innerHTML = '<p><br></p>';
+        putCaret(editor.querySelector('p'));
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-section');
+        await tick();
+        const details = editor.querySelector('details');
+        const summary = details.querySelector('summary');
+
+        putCaret(summary, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-checklist');
+        await tick();
+        const before = details.children.length;
+
+        putCaret(summary, true);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        await tick();
+        const anchor = window.getSelection().anchorNode;
+        const item = details.querySelector('ul.checklist li');
+        assert.ok(item === anchor || item.contains(anchor), 'caret did not enter the first item');
+        assert.equal(details.children.length, before, 'a stray paragraph was appended');
+    });
+
+    await step('blocks inserted from a checklist item land after the whole list', async () => {
+        editor.innerHTML = '<p><br></p>';
+        putCaret(editor.querySelector('p'));
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-section');
+        await tick();
+        const details = editor.querySelector('details');
+        const body = details.querySelector('p');
+        body.textContent = 'section body';
+        putCaret(body, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-checklist');
+        await tick();
+
+        const list = details.querySelector('ul.checklist');
+        const item = list.querySelector('li');
+        item.appendChild(document.createTextNode('task'));
+        putCaret(item, true);
+        document.dispatchEvent(new window.Event('selectionchange'));
+        clickMenu(insertMenuTrigger, insertMenuPanel, 'insert-section');
+        await tick();
+
+        const sections = details.querySelectorAll('details');
+        assert.equal(sections.length, 1, 'section not inserted');
+        const nested = sections[0];
+        assert.equal(nested.parentElement, details, 'section not in the section body');
+        assert.equal(nested.previousElementSibling, list, 'section not placed after the whole list');
+        assert.notEqual(nested.parentElement, list, 'section landed inside the list');
+    });
+
     await step('the outline panel lists headings and sections and jumps', async () => {
-        editor.innerHTML = '<h2>Plan</h2><p>text</p><details open><summary>Boxed</summary><p>in box</p></details><h1>Fin</h1>';
+        editor.innerHTML = '<h2>Plan</h2><p>text</p>'
+            + '<details open><summary>Boxed</summary><p>in box</p>'
+            + '<details open><summary>Inner</summary><p>deep</p></details></details>'
+            + '<h1>Fin</h1>';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         await tick();
 
@@ -182,9 +303,13 @@ export default async function run(check, group) {
         assert.equal(outlinePanel.hidden, false, 'panel did not open');
 
         const entries = [...outlinePanel.querySelectorAll('.outline-panel__entry')];
-        assert.deepEqual(entries.map((el) => el.textContent.replace('▸', '').trim()), ['Plan', 'Boxed', 'Fin']);
+        assert.deepEqual(entries.map((el) => el.textContent.replace('▸', '').trim()), ['Plan', 'Boxed', 'Inner', 'Fin']);
+        // Nested summaries indent one level deeper than their parent.
+        const outerPad = parseFloat((entries[1].style.paddingInlineStart.match(/\+ (\d+)px/) || [0, 0])[1]);
+        const innerPad = parseFloat((entries[2].style.paddingInlineStart.match(/\+ (\d+)px/) || [0, 0])[1]);
+        assert.ok(innerPad > outerPad, `nested summary not indented (${outerPad} vs ${innerPad})`);
 
-        entries[2].click();
+        entries[3].click();
         await tick();
         const selection = window.getSelection();
         assert.ok(editor.querySelector('h1').contains(selection.anchorNode), 'caret not at the jumped heading');
@@ -206,6 +331,15 @@ export default async function run(check, group) {
         const item = list.querySelector('li');
         assert.ok(item.contains(window.getSelection().anchorNode), 'caret not in the item');
 
+        // The first item is empty with a placeholder mark — never literal text.
+        assert.equal(item.textContent.trim(), '', 'first item contains literal text');
+        assert.ok(item.classList.contains('checklist-empty'), 'placeholder mark missing');
+
+        // Type the task text; the placeholder mark drops synchronously.
+        item.appendChild(document.createTextNode('write the report'));
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.ok(!item.classList.contains('checklist-empty'), 'typing did not drop the placeholder mark');
+
         input.checked = true;
         input.dispatchEvent(new window.Event('change', { bubbles: true }));
         assert.ok(item.classList.contains('task-checked'), 'class not synced');
@@ -217,6 +351,8 @@ export default async function run(check, group) {
         const storedHtml = (JSON.parse(saved)?.notes || []).map((n) => n.html).join('');
         assert.match(storedHtml, /<ul class="checklist"><li class="task-checked"><input type="checkbox" checked[^>]*>/,
             'stored form lost the checklist');
+        assert.ok(!storedHtml.includes('checklist-empty'),
+            'the transient placeholder class leaked into the stored note');
     });
 
     await step('the Tasks dialog aggregates across notes and toggles them', async () => {

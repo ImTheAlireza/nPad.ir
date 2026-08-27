@@ -42,7 +42,20 @@ function apply(theme, animate = false) {
 }
 
 export function initTheme({ onChange } = {}) {
-    apply(currentTheme());
+    // The inline pre-paint script in head.php sets data-theme before first
+    // paint, but this function must not blindly trust it: proxying layers
+    // (e.g. Cloudflare Rocket Loader) can defer or rewrite inline scripts,
+    // and any boot order that skips it would apply light mode over a saved
+    // dark preference. localStorage is the source of truth; the DOM
+    // attribute is only a pre-paint cache of it.
+    let stored = null;
+    try {
+        const value = localStorage.getItem(STORAGE_KEY);
+        if (value === 'dark' || value === 'light') stored = value;
+    } catch {
+        stored = null;
+    }
+    apply(stored || (systemPrefersDark() ? 'dark' : 'light'));
 
     document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {

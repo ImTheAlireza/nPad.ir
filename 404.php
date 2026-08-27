@@ -20,12 +20,13 @@ t('', $strings);
 $pageTitle     = t('error.404_title') . ' — NPad';
 $pageDesc      = t('error.404_body');
 $canonicalPath = NPAD_LANGS[$lang]['path'];
+$skipTarget    = '#main';
 
 require __DIR__ . '/includes/head.php';
 ?>
 <div class="page">
     <div class="center-panel">
-        <div>
+        <div id="main">
             <h1><?= e(t('error.404_title')) ?></h1>
             <p style="margin:var(--space-3) 0 var(--space-5)"><?= e(t('error.404_body')) ?></p>
             <a class="btn btn--primary" href="<?= e(NPAD_LANGS[$lang]['path']) ?>">

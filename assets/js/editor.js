@@ -16,6 +16,7 @@ import {
     saveNote,
     saveNoteSync,
     deleteNote,
+    clearNotes,
     getActiveNoteId,
     setActiveNoteId,
     getOpenNoteIds,
@@ -67,17 +68,6 @@ import {
     placeCaretInCell,
     selectionRectCells,
 } from './table.js';
-import {
-    htmlToMarkdown,
-    markdownToHtml,
-    noteToJson,
-    parseNoteJson,
-    htmlToRtf,
-    rtfToHtml,
-    htmlToDocx,
-    docxToHtml,
-    pdfToHtml,
-} from './formats.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
 import { initCodeblocks, detectLanguage } from './codeblock.js';
@@ -85,6 +75,14 @@ import { initMath } from './mathblock.js';
 import { initOutline } from './outline.js';
 import { initChecklist } from './checklist.js';
 import { detectDirection, isolate } from './bidi.js';
+
+/**
+ * Import/export codecs (Markdown, JSON, DOCX, PDF, RTF — ~60 KB) are only
+ * needed once a File-menu conversion runs or a document is imported, so the
+ * module is fetched on first use instead of on every page load.
+ * Declared inside initEditor so it can localise its failure message.
+ * @returns {Promise<typeof import('./formats.js')>}
+ */
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -112,6 +110,19 @@ export function initEditor({ strings, onEvent }) {
     if (!editor) return;
 
     const track = typeof onEvent === 'function' ? onEvent : () => {};
+
+    let formatsModule = null;
+    async function ensureFormats() {
+        try {
+            formatsModule ??= await import('./formats.js');
+        } catch {
+            // Offline before the codecs were ever fetched: surface it
+            // instead of failing silently on a File-menu action.
+            toast((strings && strings.exportUnavailable) || 'Formats are unavailable until the page has loaded once online.', 'error');
+            throw new Error('formats module unavailable');
+        }
+        return formatsModule;
+    }
 
     const countsEl = document.getElementById('statusCounts');
     const stateEl = document.getElementById('saveState');
@@ -248,6 +259,12 @@ export function initEditor({ strings, onEvent }) {
         });
         // The caret highlight is a runtime-only affordance: it never persists.
         clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
+        // Checklist placeholder hints are CSS paint keyed off this class —
+        // the class itself never persists.
+        clone.querySelectorAll('li.checklist-empty').forEach((el) => {
+            el.classList.remove('checklist-empty');
+            if (!el.classList.length) el.removeAttribute('class');
+        });
         // Code blocks keep only their plain stored form: token spans and the
         // language/copy chrome are runtime paint, exactly like search marks.
         code.stripRuntime(clone);
@@ -1608,11 +1625,41 @@ export function initEditor({ strings, onEvent }) {
             range.insertNode(element);
             return true;
         }
+
+        // A block never belongs inside a <summary>: the summary is a
+        // one-line title. With the caret on it, generic blocks open the
+        // section and land at the start of its body; another section
+        // becomes a sibling after it, so inserting twice yields two
+        // sections rather than a nested accident.
+        const summaryHost = (range.startContainer.nodeType === 1
+            ? range.startContainer
+            : range.startContainer.parentElement)?.closest?.('summary');
+        if (summaryHost) {
+            const hostDetails = summaryHost.closest('details');
+            if (hostDetails && editor.contains(hostDetails)) {
+                if (element.tagName === 'DETAILS') {
+                    hostDetails.after(element);
+                } else {
+                    hostDetails.open = true;
+                    summaryHost.after(element);
+                }
+                return true;
+            }
+        }
+
         let block = range.startContainer.nodeType === 1
             ? range.startContainer
             : range.startContainer.parentElement;
         block = block?.closest?.('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre');
         if (block && block !== editor) {
+            // Inside a list item the block goes after the whole list —
+            // never between items (a block child of <ul>/<ol> is invalid
+            // and breaks the checklist/Markdown models).
+            if (block.tagName === 'LI') {
+                block = block.closest('ul, ol') || block;
+                block.after(element);
+                return true;
+            }
             const empty = !block.textContent.trim() && !block.querySelector('table, ul, ol, blockquote, pre');
             if (empty) block.replaceWith(element);
             else block.after(element);
@@ -2690,6 +2737,10 @@ export function initEditor({ strings, onEvent }) {
                     <input class="field__input" type="url" id="linkUrl" placeholder="https://example.com"
                            autocomplete="off" spellcheck="false">
                 </label>
+                <label class="field field--inline">
+                    <input type="checkbox" id="linkNewTab" checked>
+                    <span class="field__label">${escapeHtml(strings.linkNewTab || 'Open in a new tab')}</span>
+                </label>
                 <p class="field__error" id="linkError" hidden>${escapeHtml(strings.linkInvalid)}</p>`,
             buttons: [
                 { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
@@ -2700,6 +2751,7 @@ export function initEditor({ strings, onEvent }) {
         if (action !== 'confirm') return;
 
         const input = document.getElementById('linkUrl');
+        const newTab = document.getElementById('linkNewTab');
         const raw = input ? input.value.trim() : '';
         if (!raw) return;
 
@@ -2725,8 +2777,12 @@ export function initEditor({ strings, onEvent }) {
         }
         exec('createLink', url.href);
 
-        // execCommand cannot set rel; harden the anchor afterwards.
+        // execCommand cannot set rel; harden the anchor afterwards. Only
+        // new-tab links get target/rel — the user can now opt for in-page
+        // navigation with the dialog's checkbox.
+        const openExternally = !newTab || newTab.checked;
         editor.querySelectorAll('a[href]:not([rel])').forEach((a) => {
+            if (!openExternally) return;
             a.setAttribute('rel', 'noopener noreferrer');
             a.setAttribute('target', '_blank');
         });
@@ -2933,15 +2989,20 @@ export function initEditor({ strings, onEvent }) {
                 } else if (extension === 'html' || extension === 'htm') {
                     imported = [{ title, html: sanitizeHtml(await file.text()) }];
                 } else if (extension === 'md' || extension === 'markdown') {
+                    const { markdownToHtml } = await ensureFormats();
                     imported = [{ title, html: markdownToHtml(await file.text()) }];
                 } else if (extension === 'json') {
+                    const { parseNoteJson } = await ensureFormats();
                     imported = parseNoteJson(await file.text());
                     if (!imported.length) throw new Error('No notes in JSON');
                 } else if (extension === 'rtf') {
+                    const { rtfToHtml } = await ensureFormats();
                     imported = [{ title, html: rtfToHtml(await file.text()) }];
                 } else if (extension === 'docx') {
+                    const { docxToHtml } = await ensureFormats();
                     imported = [{ title, html: await docxToHtml(await file.arrayBuffer()) }];
                 } else if (extension === 'pdf') {
+                    const { pdfToHtml } = await ensureFormats();
                     imported = [{ title, html: await pdfToHtml(await file.arrayBuffer()) }];
                 } else {
                     toast(strings.openUnsupportedType, 'error');
@@ -3005,12 +3066,14 @@ ${exportHtml()}
     }
 
     async function saveAsMarkdown() {
+        const { htmlToMarkdown } = await ensureFormats();
         const html = exportHtml();
         download(`${exportBaseName()}.md`, htmlToMarkdown(html), 'text/markdown;charset=utf-8');
         track('download_markdown');
     }
 
     async function saveAsJson() {
+        const { noteToJson } = await ensureFormats();
         const note = currentExportNote();
         note.html = exportHtml();
         download(`${exportBaseName()}.json`, noteToJson(note, organization), 'application/json;charset=utf-8');
@@ -3018,7 +3081,12 @@ ${exportHtml()}
     }
 
     async function saveAsDocx() {
-        const html = exportHtml();
+        const { htmlToDocx } = await ensureFormats();
+        let html = exportHtml();
+        // Formulas become native Word math when KaTeX is available; if it
+        // could not load (offline first visit) docxMath returns the input
+        // unchanged and the LaTeX source is exported as before.
+        if (math.docxMath) html = await math.docxMath(html);
         download(
             `${exportBaseName()}.docx`,
             htmlToDocx(html, { direction: currentDir() }),
@@ -3028,6 +3096,7 @@ ${exportHtml()}
     }
 
     async function saveAsRtf() {
+        const { htmlToRtf } = await ensureFormats();
         const html = exportHtml();
         download(
             `${exportBaseName()}.rtf`,
@@ -3252,9 +3321,10 @@ ${exportHtml()}
         });
         if (!ok) return;
         if (dirty) await persist();
-        for (const note of notes) {
-            await saveBackup(note, { reason: 'cleared', force: true });
-        }
+        // A failing backup write (quota, private mode) must never block the
+        // deletion the user confirmed — best effort, then clear regardless.
+        await Promise.allSettled(notes.map((note) =>
+            saveBackup(note, { reason: 'cleared', force: true })));
         window.clearTimeout(saveTimer);
         await clearNotes();
         notes = [];
@@ -3897,7 +3967,11 @@ ${exportHtml()}
         if (initialDocumentTitle === null) initialDocumentTitle = document.title;
         const note = activeNote();
         const title = (noteTitleInput?.value || (note ? displayTitle(note) : '') || '').trim();
-        document.title = title ? `${isolate(title)} — NPad` : initialDocumentTitle;
+        // An untouched note keeps the marketing <title>: replacing it with the
+        // "Untitled note" placeholder made every tab, bookmark and search-
+        // engine snippet read "Untitled note — NPad".
+        const isDefault = title === '' || title === (strings.noteUntitled || 'Untitled note');
+        document.title = title && !isDefault ? `${isolate(title)} — NPad` : initialDocumentTitle;
     }
 
     const actions = {

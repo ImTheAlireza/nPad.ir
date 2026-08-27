@@ -22,7 +22,8 @@
 
 import { confirmDialog, showDialog, toast, escapeHtml } from './ui.js';
 import { caretAtEdge } from './caret.js';
-import { isPlausibleMath } from './formats.js';
+import { isPlausibleMath } from './math-heuristics.js';
+import { mathmlToOmml } from './math-omml.js';
 
 /* Generated from npm katex@0.18.4 and never hand-edited: version-pinned
    paths are cache-immutable at the server. */
@@ -731,6 +732,49 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         }
     });
 
+    /* ------------------------------------------------------------------
+       DOCX export support: formulas become native Word math (OMML)
+       ------------------------------------------------------------------ */
+
+    /**
+     * Replace every math element in an export HTML string with a marker
+     * span carrying OMML, which formats.js inlines into document.xml.
+     * Never throws: on any failure the original HTML (LaTeX source text)
+     * is returned so DOCX export still works offline.
+     */
+    async function docxMath(html) {
+        try {
+            const template = document.createElement('template');
+            template.innerHTML = String(html || '');
+            const maths = template.content.querySelectorAll('math-inline, math-block');
+            if (!maths.length) return html;
+            const katex = await loadKatex();
+            for (const el of maths) {
+                const tex = el.textContent || '';
+                const markup = katex.renderToString(tex, {
+                    output: 'mathml',
+                    throwOnError: false,
+                    strict: false,
+                    trust: false,
+                    displayMode: el.tagName === BLOCK_TAG,
+                });
+                const start = markup.indexOf('<math');
+                const end = markup.lastIndexOf('</math>');
+                if (start < 0 || end < 0) throw new Error('no MathML in KaTeX output');
+                const omml = mathmlToOmml(markup.slice(start, end + '</math>'.length));
+                const span = document.createElement('span');
+                span.setAttribute('data-npad-omml', el.tagName === BLOCK_TAG ? 'block' : 'inline');
+                // Stored as text so template.innerHTML escapes it safely;
+                // formats.js reads textContent back to the raw XML.
+                span.textContent = omml;
+                el.replaceWith(span);
+            }
+            return template.innerHTML;
+        } catch {
+            return html; // graceful fallback: LaTeX source, as before
+        }
+    }
+
     return {
         insertMath,
         editMath,
@@ -739,5 +783,6 @@ export function initMath({ editor, strings = {}, onEvent, onEdit, placeBlock }) 
         stripRuntime,
         insertKeydown: handleKeydown,
         syncSelection,
+        docxMath,
     };
 }

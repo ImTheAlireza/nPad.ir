@@ -34,6 +34,7 @@ assert.ok(window.katex.renderToString, 'KaTeX did not initialise');
 const { sanitizeHtml } = await import(`file://${path.join(ROOT, 'assets/js/sanitize.js')}`);
 const formats = await import(`file://${path.join(ROOT, 'assets/js/formats.js')}`);
 const { initMath } = await import(`file://${path.join(ROOT, 'assets/js/mathblock.js')}`);
+const { mathmlToOmml } = await import(`file://${path.join(ROOT, 'assets/js/math-omml.js')}`);
 const tick = () => new Promise((resolve) => window.setTimeout(resolve, 5));
 const BS = String.fromCharCode(92); // one literal backslash
 const NEWLINE = String.fromCharCode(10);
@@ -81,6 +82,68 @@ export default async function run(check, group) {
             console.log(`        ${String(err.message).split('\n').slice(0, 4).join(' | ')}`);
         }
     };
+
+    group('math: DOCX (OMML)');
+
+    await step('KaTeX MathML converts to OMML structures Word renders', () => {
+        const render = (tex) => window.katex.renderToString(tex, { output: 'mathml', throwOnError: false, strict: false, trust: false });
+        const frac = mathmlToOmml(render('\\frac{a}{b}'));
+        assert.match(frac, /<m:f><m:num><m:r><m:t xml:space="preserve">a<\/m:t><\/m:r><\/m:num>/, 'fraction numerator not an OMML run');
+        assert.match(frac, /<m:den><m:r><m:t xml:space="preserve">b<\/m:t><\/m:r><\/m:den><\/m:f>/, 'fraction denominator wrong');
+        assert.match(mathmlToOmml(render('x^{2}')), /<m:sSup>.*<m:sup>.*2.*<\/m:sup><\/m:sSup>/, 'superscript not m:sSup');
+        assert.match(mathmlToOmml(render('x_{i}')), /<m:sSub>/, 'subscript not m:sSub');
+        assert.match(mathmlToOmml(render('\\sqrt{x}')), /<m:rad><m:radPr><m:degHide m:val="1"\/><\/m:radPr>/, 'square root not a hidden-degree radical');
+        assert.match(mathmlToOmml(render('\\sqrt[3]{x}')), /<m:deg>.*3.*<\/m:deg>/, 'root index lost');
+        const sum = mathmlToOmml(render('\\sum_{i=1}^{n} i'));
+        assert.match(sum, /<m:nary><m:naryPr><m:chr m:val="\u2211"\/>/, 'sum not converted to an n-ary operator');
+        assert.match(sum, /<m:limLoc m:val="supSub"\/>/, 'inline-style sum limits should sit beside the operator');
+        assert.match(mathmlToOmml(render('\\int_0^1 x')), /<m:chr m:val="\u222b"\/>/, 'integral not an n-ary operator');
+        assert.match(sum, /<m:sub>(?:(?!<\/m:sub>).)*i.*=.*1.*<\/m:sub>/s, 'sum lower limit lost');
+        assert.match(sum, /<m:sup>(?:(?!<\/m:sup>).)*n.*<\/m:sup>/s, 'sum upper limit lost');
+        assert.match(mathmlToOmml(render('\\hat{x}')), /<m:acc><m:accPr><m:chr m:val="\^"\/><\/m:accPr>/, 'accent (hat) not m:acc');
+        assert.match(mathmlToOmml(render('\\bar{x}')), /<m:acc><m:accPr><m:chr m:val="\u02c9"\/><\/m:accPr>/, 'accent (bar) not m:acc');
+        assert.match(mathmlToOmml(render('\\vec{x}')), /<m:acc><m:accPr><m:chr m:val="\u20d7"\/><\/m:accPr>/, 'accent (vec) not m:acc');
+        // Text is escaped: raw XML cannot be smuggled through a formula.
+        assert.ok(!mathmlToOmml(render('a<b')).includes('<m:t><b>'), 'unescaped markup in output');
+    });
+
+    await step('docxMath swaps formulas for OMML markers, and htmlToDocx inlines native math', async () => {
+        const { editor, api } = makeEditor('<p>text</p>');
+        const marked = await api.docxMath('<p>a</p><math-block>\\frac{1}{2}</math-block><p><math-inline>x^{2}</math-inline> b</p>');
+        assert.match(marked, /<span data-npad-omml="block">/, 'block marker missing');
+        assert.match(marked, /<span data-npad-omml="inline">/, 'inline marker missing');
+        assert.ok(!/math-block|math-inline/.test(marked), 'math elements not replaced');
+
+        const bytes = Buffer.from(formats.htmlToDocx(marked));
+        const xml = bytes.toString('latin1');
+        assert.match(xml, /xmlns:m="http:\/\/schemas.openxmlformats.org\/officeDocument\/2006\/math"/, 'math namespace missing');
+        assert.match(xml, /<m:oMathPara><m:oMath><m:f>/, 'display formula not an oMathPara');
+        assert.match(xml, /<m:oMath><m:sSup>/, 'inline formula not an oMath');
+        editor.remove();
+    });
+
+    await step('docxMath keeps the LaTeX source when KaTeX fails', async () => {
+        const { editor, api } = makeEditor('<p>x</p>');
+        const realKatex = window.katex;
+        window.katex = { render: () => {}, renderToString: () => { throw new Error('katex broken'); } };
+        try {
+            const result = await api.docxMath('<p>a</p><math-block>\\frac{1}{2}</math-block></p>');
+            assert.ok(!result.includes('data-npad-omml'), 'marker emitted despite render failure');
+            assert.ok(result.includes('math-block'), 'LaTeX source element dropped');
+        } finally {
+            window.katex = realKatex;
+            editor.remove();
+        }
+    });
+
+    await step('a re-imported DOCX keeps formulas as readable text', async () => {
+        const { editor, api } = makeEditor('<p>x</p>');
+        const marked = await api.docxMath('<p>a</p><math-block>\\frac{a}{b}</math-block><p>b <math-inline>x^{2}</math-inline> c</p>');
+        const reimported = await formats.docxToHtml(Buffer.from(formats.htmlToDocx(marked)));
+        assert.ok(/a\/b/.test(reimported), `fraction text lost on import: ${reimported}`);
+        assert.ok(/x\^\(2\)/.test(reimported), `power text lost on import: ${reimported}`);
+        editor.remove();
+    });
 
     group('math: sanitiser');
     await step('math tags are kept with their text source', () => {

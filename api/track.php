@@ -46,7 +46,9 @@ if (($_SERVER['HTTP_DNT'] ?? '') === '1' || ($_SERVER['HTTP_SEC_GPC'] ?? '') ===
  * Same-origin check.
  *
  * sendBeacon does not always send an Origin header, so prefer the
- * Sec-Fetch-Site metadata header and fall back to Origin/Referer.
+ * Sec-Fetch-Site metadata header and fall back to Origin/Referer. A request
+ * carrying none of the three (old browsers, curl) is rejected — beacons from
+ * real browsers always carry at least one.
  */
 $fetchSite = $_SERVER['HTTP_SEC_FETCH_SITE'] ?? '';
 if ($fetchSite !== '' && !in_array($fetchSite, ['same-origin', 'same-site', 'none'], true)) {
@@ -56,12 +58,14 @@ if ($fetchSite !== '' && !in_array($fetchSite, ['same-origin', 'same-site', 'non
 
 if ($fetchSite === '') {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '';
-    if ($origin !== '') {
-        $host = parse_url($origin, PHP_URL_HOST);
-        if ($host !== null && $host !== ($_SERVER['HTTP_HOST'] ?? '')) {
-            http_response_code(403);
-            exit('Forbidden');
-        }
+    if ($origin === '') {
+        http_response_code(403);
+        exit('Forbidden');
+    }
+    $host = parse_url($origin, PHP_URL_HOST);
+    if ($host !== null && $host !== ($_SERVER['HTTP_HOST'] ?? '')) {
+        http_response_code(403);
+        exit('Forbidden');
     }
 }
 
@@ -117,16 +121,17 @@ if ($event === '' || !in_array($event, ALLOWED_EVENTS, true)) {
 }
 
 /**
- * Client IP. REMOTE_ADDR only — forwarded headers are attacker-controlled
- * unless a trusted proxy list is configured.
+ * Client IP (see npad_client_ip in bootstrap: REMOTE_ADDR unless the host
+ * config explicitly opts into trusting Cloudflare's CF-Connecting-IP).
  */
-$ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+$ip = npad_client_ip();
 
 /**
  * Fixed-window rate limit.
  *
  * Written with LOCK_EX so concurrent beacons cannot corrupt the counter,
- * which the previous read-modify-write could.
+ * which the previous read-modify-write could. Files from earlier windows
+ * are swept opportunistically — they used to accumulate in /tmp forever.
  */
 function npad_rate_limited(string $ip): bool
 {
@@ -135,7 +140,9 @@ function npad_rate_limited(string $ip): bool
         return false;
     }
 
-    $file = sys_get_temp_dir() . '/npad_rate_' . hash('sha256', $ip . date('YmdHi'));
+    $prefix = sys_get_temp_dir() . '/npad_rate_';
+    $file = $prefix . hash('sha256', $ip . date('YmdHi'));
+    $freshWindow = !is_file($file);
 
     $handle = @fopen($file, 'c+');
     if ($handle === false) {
@@ -155,6 +162,16 @@ function npad_rate_limited(string $ip): bool
         flock($handle, LOCK_UN);
     }
     fclose($handle);
+
+    // One visitor-minute creates exactly one file; sweep previous windows
+    // on the first hit of a new one, bounding /tmp usage.
+    if ($freshWindow) {
+        foreach (glob($prefix . '*') ?: [] as $stale) {
+            if ($stale !== $file && is_file($stale) && (time() - (int) filemtime($stale)) > 180) {
+                @unlink($stale);
+            }
+        }
+    }
 
     return $limited;
 }

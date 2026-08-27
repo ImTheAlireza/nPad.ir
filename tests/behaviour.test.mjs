@@ -152,6 +152,79 @@ export default async function run(check, group) {
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
+    const subTrigger = document.getElementById('fileMenuExportTrigger');
+    const subPanel = document.getElementById('fileMenuExportPanel');
+
+    check('all export formats live in the Export-as flyout, none at top level', () => {
+        assert.ok(subTrigger && subPanel, 'flyout markup missing');
+        const flyoutActions = [...subPanel.querySelectorAll('[data-action]')].map((b) => b.dataset.action);
+        assert.deepEqual(flyoutActions, [
+            'save', 'save-html', 'save-markdown', 'save-json', 'save-docx', 'save-pdf', 'save-rtf',
+        ]);
+        const topActions = [...panel.querySelectorAll(':scope > button[data-action]')].map((b) => b.dataset.action);
+        assert.deepEqual(topActions, ['new', 'open', 'print', 'details', 'backups', 'clear'],
+            'exports still exposed at the top level');
+        assert.equal(subTrigger.getAttribute('aria-haspopup'), 'menu');
+        // The renderer marks panels that contain a flyout so CSS can stop
+        // the parent from clipping/scrolling the submenu (layout containment).
+        assert.ok(panel.classList.contains('menu__panel--has-submenu'),
+            'parent panel missing the has-submenu containment class');
+    });
+
+    check('flyout opens on click and keeps the parent menu open', () => {
+        trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        subTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'true', 'flyout did not open');
+        assert.equal(subTrigger.getAttribute('aria-expanded'), 'true');
+        assert.equal(panel.dataset.open, 'true', 'parent menu closed unexpectedly');
+    });
+
+    check('Escape closes the flyout first, then the menu', () => {
+        subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'false', 'flyout did not close');
+        assert.equal(panel.dataset.open, 'true', 'menu should survive the first Escape');
+        assert.equal(document.activeElement, subTrigger, 'focus not returned to the flyout trigger');
+        subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(panel.dataset.open, 'false', 'second Escape did not close the menu');
+    });
+
+    check('ArrowRight opens the flyout; ArrowLeft returns to the trigger', () => {
+        trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        subTrigger.focus();
+        subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'true', 'ArrowRight did not open the flyout');
+        const firstItem = subPanel.querySelector('[data-action]');
+        assert.equal(document.activeElement, firstItem, 'focus not moved into the flyout');
+        firstItem.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'false', 'ArrowLeft did not close the flyout');
+        assert.equal(document.activeElement, subTrigger, 'focus not returned to the trigger');
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    check('activating a flyout export closes the whole menu and fires the action', () => {
+        window.URL.createObjectURL = () => 'blob:mock';
+        window.URL.revokeObjectURL = () => {};
+        // jsdom tries (and fails loudly) to navigate on anchor clicks.
+        const nativeAnchorClick = window.HTMLAnchorElement.prototype.click;
+        window.HTMLAnchorElement.prototype.click = function () {
+            if (String(this.href || '').startsWith('blob:')) return;
+            nativeAnchorClick.call(this);
+        };
+        try {
+            trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            subTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            subPanel.querySelector('[data-action="save-html"]')
+                .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            assert.equal(panel.dataset.open, 'false', 'menu did not close after export');
+            assert.equal(subPanel.dataset.open, 'false', 'flyout did not close after export');
+            assert.ok(tracked.includes('download_html'), 'export action did not run');
+        } finally {
+            delete window.URL.createObjectURL;
+            delete window.URL.revokeObjectURL;
+            window.HTMLAnchorElement.prototype.click = nativeAnchorClick;
+        }
+    });
+
     let fileAccept = '';
     const nativeInputClick = window.HTMLInputElement.prototype.click;
     window.HTMLInputElement.prototype.click = function () {
@@ -193,6 +266,22 @@ export default async function run(check, group) {
 
     check('toggle reports the change for analytics', () => {
         assert.ok(tracked.some((e) => e.startsWith('dark_mode_')), `tracked: ${tracked}`);
+    });
+
+    check('a saved dark preference wins even when the pre-paint script did not run', () => {
+        const previous = window.localStorage.getItem('npad:theme');
+        window.localStorage.setItem('npad:theme', 'dark');
+        // Simulate a boot where the inline pre-paint script never set the
+        // attribute (e.g. a proxy like Rocket Loader deferring inline
+        // scripts): initTheme itself must read storage, not trust the DOM.
+        delete document.documentElement.dataset.theme;
+        initTheme({ onChange: () => {} });
+        assert.equal(currentTheme(), 'dark', 'saved dark preference ignored at boot');
+        assert.equal(document.documentElement.dataset.theme, 'dark', 'dataset not restored');
+        // Leave the suite in the state the toggle tests had produced.
+        if (previous === null) window.localStorage.removeItem('npad:theme');
+        else window.localStorage.setItem('npad:theme', previous);
+        initTheme({ onChange: () => {} });
     });
 
     group('behaviour: custom formatting controls');
@@ -293,6 +382,12 @@ export default async function run(check, group) {
     const tabByTitle = (title) => tabItems().find((tab) =>
         tab.querySelector('.document-tab__title').textContent === title);
     const settle = () => new Promise((resolve) => window.setTimeout(resolve, 20));
+    // Async renders (tag saves, note updates) resolve after storage writes;
+    // a fixed 20ms settle is not always enough under load.
+    const eventually = async (predicate) => {
+        const deadline = Date.now() + 2000;
+        while (!predicate() && Date.now() < deadline) await settle();
+    };
 
     check('responsive sidebar exposes named create, search and note controls', () => {
         assert.ok(document.getElementById('notesSidebar'), 'notes sidebar missing');
@@ -479,6 +574,7 @@ export default async function run(check, group) {
     [...document.querySelectorAll('#noteFolderOptions [role="option"]')]
         .find((option) => option.textContent.includes('Work'))
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await eventually(() => (noteByTitle('Renamed original')?.querySelector('.note-item__folder') || {}).textContent === 'Work');
     check('the active note can be assigned to a folder', () => {
         assert.equal(noteByTitle('Renamed original').querySelector('.note-item__folder').textContent, 'Work');
         assert.equal(document.querySelector('#foldersList .organization-filter__count').textContent, '1');
@@ -504,7 +600,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     document.querySelector('#appDialog [data-action="save-tag"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await settle();
+    await eventually(() => document.querySelector('#tagsList [data-filter-type="tag"]'));
 
     check('color-coded tags can be created', () => {
         const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
@@ -520,7 +616,10 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     document.querySelector('#appDialog [data-action="save-tag"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await settle();
+    await eventually(() => {
+        const row = document.querySelector('#tagsList [data-filter-type="tag"]');
+        return row && row.querySelector('.organization-filter__name').textContent === 'Priority';
+    });
     check('tags can be renamed and recolored', () => {
         const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
         assert.equal(tagFilter.querySelector('.organization-filter__name').textContent, 'Priority');
@@ -534,7 +633,7 @@ export default async function run(check, group) {
     tagCheckbox.checked = true;
     document.querySelector('#appDialog [data-action="apply-tags"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await settle();
+    await eventually(() => document.querySelector('#currentNoteTags .tag-chip'));
 
     check('tags can be assigned and are shown on the note card and document', () => {
         assert.equal(document.querySelector('#currentNoteTags .tag-chip').textContent, 'Priority');
@@ -544,6 +643,8 @@ export default async function run(check, group) {
 
     document.querySelector('#foldersList [data-filter-type="folder"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await eventually(() => noteItems().length === 1
+        && noteItems()[0].querySelector('.note-item__title').textContent === 'Renamed original');
     check('folder filters show only notes in that folder', () => {
         assert.equal(noteItems().length, 1);
         assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
@@ -552,6 +653,8 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     document.querySelector('#tagsList [data-filter-type="tag"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await eventually(() => noteItems().length === 1
+        && noteItems()[0].querySelector('.note-item__title').textContent === 'Renamed original');
     check('tag filters show only notes with that tag', () => {
         assert.equal(noteItems().length, 1);
         assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
@@ -605,11 +708,17 @@ export default async function run(check, group) {
 
     deletedProjectBackup.querySelector('[data-backup-action="restore"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await settle();
     const restoredTitle = `Project ${strings.backupRestoredSuffix}`;
+    // The restore handler is async (it may persist the current note first),
+    // so poll for the result instead of assuming a fixed tick is enough.
+    const restoreDeadline = Date.now() + 2000;
+    while (noteTitle.value !== restoredTitle && Date.now() < restoreDeadline) {
+        await settle();
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
     check('restoring a backup creates a separate active note', () => {
         assert.equal(document.getElementById('backupDialog').open, false);
-        assert.equal(noteTitle.value, restoredTitle);
+        assert.equal(noteTitle.value, restoredTitle, 'restored note did not become active');
         assert.equal(editor.textContent, 'Project draft');
         assert.ok(noteByTitle(restoredTitle));
         assert.ok(noteByTitle('Renamed original'), 'restore overwrote another note');
@@ -1376,6 +1485,42 @@ export default async function run(check, group) {
         editor.innerHTML = sanitizeHtml(dirty);
         assert.equal(window.__pwned, undefined, 'script executed');
         assert.ok(editor.textContent.includes('ok'));
+    });
+
+    group('behaviour: delete all notes');
+
+    check('File -> Delete all notes clears storage and starts a fresh note', async () => {
+        const editor = document.getElementById('editor');
+        // Two notes with content.
+        editor.innerHTML = '<p>note one</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        document.querySelector('[data-action="new"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+        editor.innerHTML = '<p>note two</p>';
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        const before = (JSON.parse(window.localStorage.getItem('npad:notes') || '{}').notes || []).length;
+        assert.ok(before >= 2, `expected 2+ notes before clearing, got ${before}`);
+
+        // File -> Delete all notes -> confirm.
+        trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        panel.querySelector('[data-action="clear"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 20));
+        const dialog = document.getElementById('appDialog');
+        assert.equal(dialog.open, true, 'confirmation dialog did not open');
+        dialog.querySelector('[data-action="confirm"]')
+            .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+
+        const stored = JSON.parse(window.localStorage.getItem('npad:notes') || '{}');
+        const remaining = (stored.notes || []).filter((n) => (n.html || '').trim());
+        assert.equal(remaining.length, 0, `notes survived the clear: ${remaining.length}`);
+        assert.equal(dialog.open, false, 'dialog still open after confirming');
+        assert.equal(editor.textContent.trim(), '', 'editor not reset to a fresh note');
+        assert.ok(tracked.includes('clear_data'), 'clear_data not tracked');
     });
 
     check('no uncaught errors during the whole run', () => {

@@ -13,7 +13,30 @@
  * setEnabled()/refresh()/isEnabled().
  */
 
-import { WORD_LIST, DICTIONARY } from './wordlist.js';
+/**
+ * The dictionary (170 KB) is loaded off the critical path: it is imported
+ * dynamically on first use, and until it arrives no word is flagged. The
+ * module's API stays synchronous — callers never await anything.
+ */
+
+let WORD_LIST = null;
+let DICTIONARY = null;
+let dictionaryLoad = null;
+
+function ensureDictionary() {
+    if (DICTIONARY) return dictionaryLoad;
+    dictionaryLoad ??= import('./wordlist.js')
+        .then((module) => {
+            WORD_LIST = module.WORD_LIST;
+            DICTIONARY = module.DICTIONARY;
+        })
+        .catch(() => {
+            // Offline before the first fetch, or storage unavailable: allow a
+            // later pass to retry instead of caching the failure forever.
+            dictionaryLoad = null;
+        });
+    return dictionaryLoad;
+}
 
 const MAX_SUGGESTIONS = 4;
 const LS_CUSTOM = 'npad.customWords';
@@ -90,7 +113,7 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         if (/^[A-Z]{2,}$/.test(word) && /^[A-Za-z]+$/.test(word)) return false;
 
         const n = norm(word);
-        if (DICTIONARY.has(n) || custom.has(n) || ignored.has(n)) return false;
+        if (!DICTIONARY || DICTIONARY.has(n) || custom.has(n) || ignored.has(n)) return false;
         return true;
     }
 
@@ -235,6 +258,13 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         if (!enabled) return;
         const text = editor.textContent || '';
         if (text === lastText) return;
+        if (!DICTIONARY) {
+            // Dictionary still loading: remember nothing, so the pass that
+            // runs once it arrives re-marks the current text.
+            lastText = null;
+            ensureDictionary().then(() => scheduleRemark(0));
+            return;
+        }
         lastText = text;
 
         const focusedControl = captureExternalFocus();
@@ -273,7 +303,7 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
 
     function suggest(word) {
         const n = norm(word);
-        if (!n) return [];
+        if (!n || !WORD_LIST) return [];
         const first = n[0];
         const results = [];
 
@@ -516,6 +546,10 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
     try {
         if (localStorage.getItem(LS_ENABLED) === '0') enabled = false;
     } catch { /* private mode */ }
+
+    // Start the dictionary download immediately (it does not block the
+    // editor or first paint) and mark any existing content once it lands.
+    ensureDictionary().then(() => scheduleRemark(0));
 
     const btn = document.querySelector('[data-action="toggle-spellcheck"]');
     if (btn) btn.setAttribute('aria-pressed', String(enabled));

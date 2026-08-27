@@ -29,11 +29,77 @@ if (!npad_analytics_enabled()) {
 ini_set('session.cookie_httponly', '1');
 ini_set('session.use_strict_mode', '1');
 ini_set('session.cookie_samesite', 'Strict');
-if (!empty($_SERVER['HTTPS'])) {
-    ini_set('session.cookie_secure', '1');
-}
+// The site is HTTPS-only at the edge (Cloudflare "Always Use HTTPS"), so the
+// session cookie can be Secure unconditionally — even when the origin leg
+// the request arrives on is plain HTTP and $_SERVER['HTTPS'] is unset.
+ini_set('session.cookie_secure', '1');
 
 session_start();
+
+/**
+ * Failed-login throttle (shared-password brute-force guard).
+ *
+ * File-based like api/track.php's limiter: LOCK_EX writes, one counter file
+ * per IP, hard lockout after $maxFails failures inside the window. Also
+ * sweeps stale throttle files so /tmp cannot fill up.
+ */
+const LOGIN_MAX_FAILS  = 8;    // failures before lockout
+const LOGIN_WINDOW     = 900;  // counted within 15 minutes
+const LOGIN_LOCKOUT    = 900;  // lockout duration: 15 minutes
+
+function npad_login_throttle_file(string $ip): string
+{
+    return sys_get_temp_dir() . '/npad_login_' . hash('sha256', $ip);
+}
+
+/** @return array{count:int,until:int} */
+function npad_login_state(string $ip): array
+{
+    $raw = @file_get_contents(npad_login_throttle_file($ip));
+    $data = $raw ? json_decode($raw, true) : null;
+    return is_array($data) && isset($data['count'], $data['until'])
+        ? ['count' => (int) $data['count'], 'until' => (int) $data['until']]
+        : ['count' => 0, 'until' => 0];
+}
+
+function npad_login_write(string $ip, array $state): void
+{
+    @file_put_contents(npad_login_throttle_file($ip), json_encode($state), LOCK_EX);
+}
+
+/** True while the IP is locked out. */
+function npad_login_locked(string $ip): bool
+{
+    $state = npad_login_state($ip);
+    return $state['until'] > time();
+}
+
+/** Record a failure; arm the lockout past the threshold. */
+function npad_login_fail(string $ip): void
+{
+    $state = npad_login_state($ip);
+    if ($state['until'] <= time()) {
+        $state['count'] += 1;
+        if ($state['count'] >= LOGIN_MAX_FAILS) {
+            $state['until'] = time() + LOGIN_LOCKOUT;
+            $state['count'] = 0;
+        }
+    }
+    npad_login_write($ip, $state);
+
+    // Opportunistic sweep: drop throttle files untouched for 2+ hours.
+    $prefix = sys_get_temp_dir() . '/npad_login_';
+    foreach (glob($prefix . '*') ?: [] as $stale) {
+        if (is_file($stale) && (time() - (int) filemtime($stale)) > 7200) {
+            @unlink($stale);
+        }
+    }
+}
+
+function npad_login_clear(string $ip): void
+{
+    @unlink(npad_login_throttle_file($ip));
+}
 
 function csrfToken(): string
 {
@@ -51,14 +117,19 @@ function csrfValid(?string $token): bool
 }
 
 $sessionLifetime = defined('SESSION_LIFETIME') ? (int) SESSION_LIFETIME : 1800;
+// Absolute cap: an idle-refreshed session still cannot outlive 12 hours.
+$sessionMaxAge = 12 * 3600;
 
 /* ---------------------------------------------------------------------------
-   Logout
+   Logout — POST + CSRF only. The old ?logout link could be triggered by any
+   external page with <img src="…?logout"> (CSRF logout).
    --------------------------------------------------------------------------- */
 
-if (isset($_GET['logout'])) {
-    $_SESSION = [];
-    session_destroy();
+if (isset($_POST['logout'])) {
+    if (csrfValid($_POST['csrf_token'] ?? null)) {
+        $_SESSION = [];
+        session_destroy();
+    }
     header('Location: dashboard.php');
     exit;
 }
@@ -69,7 +140,8 @@ if (isset($_GET['logout'])) {
 
 if (!empty($_SESSION['logged_in'])) {
     $idle = time() - (int) ($_SESSION['last_activity'] ?? time());
-    if ($idle > $sessionLifetime) {
+    $age  = time() - (int) ($_SESSION['login_time'] ?? time());
+    if ($idle > $sessionLifetime || $age > $sessionMaxAge) {
         $_SESSION = [];
         session_destroy();
         session_start();
@@ -80,13 +152,18 @@ if (!empty($_SESSION['logged_in'])) {
 }
 
 /* ---------------------------------------------------------------------------
-   Login
+   Login (throttled per IP)
    --------------------------------------------------------------------------- */
 
 if (isset($_POST['password'])) {
-    if (!csrfValid($_POST['csrf_token'] ?? null)) {
+    $throttleIp = npad_client_ip();
+    if (npad_login_locked($throttleIp)) {
+        http_response_code(429);
+        $_SESSION['login_error'] = 'Too many failed attempts. Try again in about 15 minutes.';
+    } elseif (!csrfValid($_POST['csrf_token'] ?? null)) {
         $_SESSION['login_error'] = 'Invalid security token. Please try again.';
     } elseif (function_exists('verifyAdminPassword') && verifyAdminPassword((string) $_POST['password'])) {
+        npad_login_clear($throttleIp);
         session_regenerate_id(true);
         $_SESSION['logged_in']     = true;
         $_SESSION['login_time']    = time();
@@ -95,6 +172,7 @@ if (isset($_POST['password'])) {
         header('Location: dashboard.php');
         exit;
     } else {
+        npad_login_fail($throttleIp);
         $_SESSION['login_error'] = 'Incorrect password.';
         usleep(400000);
     }
@@ -158,7 +236,7 @@ try {
     exit('Database connection failed.');
 }
 
-$adminIp = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+$adminIp = npad_client_ip();
 
 $filters = ['all' => 'All time', 'today' => 'Today', 'week' => '7 days', 'month' => '30 days'];
 $filter  = isset($_GET['filter']) && isset($filters[$_GET['filter']]) ? $_GET['filter'] : 'all';
@@ -308,7 +386,11 @@ $hasChartJs = is_file(NPAD_ROOT . '/assets/js/vendor/chart.umd.min.js');
                 <?php endforeach; ?>
             </div>
             <a class="iconbtn" href="export.php" title="Export CSV" aria-label="Export CSV"><?= icon('download') ?></a>
-            <a class="iconbtn" href="?logout" title="Sign out" aria-label="Sign out"><?= icon('close') ?></a>
+            <form method="post" action="dashboard.php" class="inline-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+                <button type="submit" class="iconbtn" name="logout" value="1"
+                        title="Sign out" aria-label="Sign out"><?= icon('close') ?></button>
+            </form>
         </div>
     </header>
 

@@ -16,6 +16,10 @@ Live: <https://npad.ir>
 ├─ index.php              English notepad  (canonical, /)
 ├─ fa/index.php           Persian notepad  (/fa/)
 ├─ privacy.php            Privacy policy   (+ fa/privacy.php)
+├─ online-notepad.php     SEO landing pages, pretty URLs (+ fa/):
+├─ markdown-editor.php      /online-notepad  /markdown-editor
+├─ math-notepad.php         /math-notepad    /checklist-app
+├─ checklist-app.php        rendered by includes/landing.php from lang copy
 ├─ 404.php                Error page
 ├─ sitemap.php            Generated sitemap (served at /sitemap.xml)
 ├─ sw.js                  Service worker — offline support
@@ -87,6 +91,12 @@ define('ADMIN_PASSWORD_HASH', password_hash('choose-a-strong-password', PASSWORD
 define('SESSION_LIFETIME', 1800);
 define('MAX_REQUESTS_PER_MINUTE', 60);
 
+// Only when the host does NOT restore the visitor's real IP into REMOTE_ADDR
+// (ask the host; Cloudflare proxies otherwise leave the edge IP there, which
+// makes the rate limit shared across all visitors). When enabled, the
+// collector and dashboard prefer CF-Connecting-IP.
+// define('TRUST_PROXY_HEADERS', true);
+
 function getDBConnection(): mysqli {
     $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
     if ($conn->connect_error) { throw new RuntimeException('DB connection failed'); }
@@ -134,8 +144,11 @@ variant for machines without MySQL).
 
 ## Document import and export
 
-The File menu imports and exports **TXT, HTML, Markdown, NPad JSON, DOCX, PDF,
-and RTF**. Processing stays in the browser: imported active HTML passes through
+The File menu's **Export as** submenu exports **TXT, HTML, Markdown, NPad
+JSON, DOCX, PDF, and RTF** — a click-opened flyout with full keyboard
+support (arrows navigate, Escape closes the flyout before the menu) that
+becomes an inline expansion on small screens. Imports stay on the top level.
+Processing stays in the browser: imported active HTML passes through
 the same allow-list sanitizer as pasted content, and no document is uploaded.
 NPad JSON carries the current note's title, rich content, pinned state, folder,
 color-coded tags, and timestamps. Imported JSON note arrays create separate
@@ -217,8 +230,17 @@ as a legacy rendering path). While the caret is inside a formula it shows
 raw LaTeX in monospace (always LTR); on leaving it re-renders. Enter at the
 end of a block formula hands the caret to the next paragraph, Backspace on
 an emptied formula removes it, and double-click reopens the dialog.
-DOCX/RTF keep the LaTeX source in monospace; PDF export prints the
-rendered formula for free.
+DOCX export converts every formula to **native Word math (OMML)** —
+KaTeX's MathML is translated to the Office math dialect (fractions,
+radicals, sub/superscripts, n-ary operators with limits, accents,
+matrices), so equations render and re-edit as real formulas in Word, not
+as LaTeX source text. Display formulas become centred `oMathPara`
+paragraphs; inline ones sit in the text flow. If KaTeX could not load
+(offline first visit), the export falls back to the LaTeX source, and
+re-importing a Word file flattens OMML back to readable linear text
+(`a/b`, `x^(2)`, `√(x)`, `∑_{i}^{n}`) rather than dropping it. RTF keeps
+the LaTeX source in monospace; PDF export prints the rendered formula
+for free.
 
 ## Collapsible sections, outline and checklists
 
@@ -229,14 +251,24 @@ Sections are native `<details>/<summary>`: the stored note keeps the source
 *and* each section's open/collapsed state, clicking the summary toggles it
 (the one deterministic behaviour across engines), printing expands every
 section and restores it after, and Markdown passes sections through as raw
-HTML blocks. The **Outline** panel lists the note's H1–H6 headings and
-section summaries indented by level — click to jump, `Esc` to close, rebuilt
-live while typing.
+HTML blocks. **The section body is a normal editing space**: anything
+inserted with the caret inside it — text, tables, checklists, code, math,
+or another collapsible section — lands inside the body, and sections nest
+arbitrarily. Inserting with the caret on a *title* puts the block at the
+start of that section's body (another section becomes a sibling after it),
+never inside the `<summary>`. Enter on a title jumps into the first body
+block, whatever it is. The **Outline** panel lists the note's H1–H6 headings
+and section summaries indented by level (nested sections indent deeper) —
+click to jump, `Esc` to close, rebuilt live while typing.
 
-Checklists are GFM-compatible: `- [ ]` / `- [x]` round-trip through Markdown,
-items are real checkboxes (toggle with the mouse or Space), checked items
-dim with a strike-through, and the checked state persists in the note. The
-sanitizer admits checkbox inputs only inside checklist lists.
+Checklists are GFM-compatible: `- [ ]` / `- [x]` round-trip through Markdown
+(empty items included), items are real checkboxes (toggle with the mouse or
+Space), checked items dim with a strike-through, and the checked state
+persists in the note. A new checklist starts with one **empty** item: the
+"Add a task…" hint is CSS paint keyed to a transient class (stripped before
+every save and export, exactly like spell marks), so placeholder text can
+never become note content. The sanitizer admits checkbox inputs only inside
+checklist lists.
 
 **Edit → Tasks…** aggregates every checklist task across all notes into one
 dialog — open and completed sections, live counts, toggling a row updates
@@ -286,6 +318,27 @@ JSON exports, and are serialised to GFM pipe tables in Markdown, real
 `w:tbl` tables in DOCX, and tab-separated rows in RTF; pasted tables from
 Excel, Word or the web are normalised (nested tables lifted, spans bounded)
 before they enter the grid model.
+
+## SEO landing pages
+
+The home page is an application, not a document: it answers no specific
+query. Four landing pages give each search intent a stable, crawlable URL
+in both locales — `/online-notepad`, `/markdown-editor`,
+`/math-notepad`, `/checklist-app` (plus `/fa/…` mirrors). All copy lives
+in `lang/{en,fa}.php` under `landing.pages`, so the lang parity test
+guarantees no locale ships a half-translated page, and
+`includes/landing.php` renders any slug from that copy: hero, numbered
+how-it-works, features, FAQ (`<details>`), related-tools links and a
+final CTA into the app.
+
+Each page carries a self-referencing canonical (the pretty URL, served
+via `.htaccess` rewrites), hreflang alternates that mirror the canonical
+in the other locale, FAQPage + BreadcrumbList JSON-LD built from the
+visible copy, and the same OG/Twitter card as the app. `sitemap.php`
+lists all eight URLs with content-hash lastmods, and the footer links
+every tool on every page so the whole set stays crawled. The render
+suite executes the pages with real PHP and pins the canonicals,
+hreflang pairs, breadcrumb and schema.
 
 ## Tests
 

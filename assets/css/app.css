@@ -500,6 +500,73 @@ button, input, select, textarea {
 }
 
 /* --------------------------------------------------------------------------
+   Flyout submenus (File -> Export as)
+   -------------------------------------------------------------------------- */
+
+.menu__submenu {
+    position: relative;
+}
+
+.menu__submenu-arrow {
+    margin-inline-start: auto;
+    width: 0;
+    height: 0;
+    border-block: 4px solid transparent;
+    border-inline-start: 5px solid currentColor;
+    transition: transform var(--transition-fast);
+}
+
+.menu__item[aria-expanded='true'] .menu__submenu-arrow {
+    transform: rotate(90deg);
+}
+
+/* A closed flyout is display:none — NOT the visibility/opacity hiding the
+   root panels use. visibility:hidden still occupies layout, and an
+   absolutely-positioned panel inside the parent's overflow-y:auto scroller
+   both adds scrollbars to the parent and gets clipped by it (the flyout
+   opened invisible and the File menu scrolled). display:none removes it
+   from the flow and the scroll area entirely. */
+.menu__panel--submenu {
+    display: none;
+    top: calc(0px - var(--space-1));
+    inset-inline-start: calc(100% - var(--space-2));
+    min-width: 220px;
+}
+
+.menu__panel--submenu[data-open='true'] {
+    display: block;
+}
+
+/* A panel that contains a flyout must let it escape: the root panel's
+   overflow-y:auto/max-height would clip the flyout and borrow scrollbars.
+   The File menu is short enough (7 items) never to need its own scroll.
+   The modifier class is emitted by the renderer, so it does not depend
+   on :has() support. */
+.menu__panel--has-submenu {
+    overflow: visible;
+    max-height: none;
+}
+
+/* Small screens: the flyout becomes an inline expansion of the parent panel
+   instead of overflowing the viewport edge, and the parent scrolls again —
+   with the flyout in flow there is nothing to clip. */
+@media (max-width: 640px) {
+    .menu__panel--has-submenu {
+        overflow-y: auto;
+        max-height: calc(100vh - 64px);
+        max-height: calc(100dvh - 64px);
+    }
+    .menu__panel--submenu {
+        position: static;
+        min-width: 0;
+        margin-block: var(--space-1);
+        margin-inline-start: var(--space-3);
+        box-shadow: none;
+        transform: none;
+    }
+}
+
+/* --------------------------------------------------------------------------
    8. Theme + language controls
    -------------------------------------------------------------------------- */
 
@@ -2769,6 +2836,23 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 
 .field { display: block; margin-top: var(--space-3); }
 
+/* Checkbox rows (e.g. the link dialog's "open in a new tab"). */
+.field--inline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.field--inline .field__label { margin: 0; }
+
+.field--inline input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--accent, #0e7490);
+    flex: none;
+}
+
 .field__label {
     display: block;
     margin-bottom: var(--space-1);
@@ -3137,6 +3221,60 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 }
 
 .hero__actions { margin-top: var(--space-5); }
+
+.hero__note {
+    margin-inline-start: var(--space-3);
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* Landing pages: home › tool trail and the numbered how-it-works grid. */
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.breadcrumb a { color: var(--text-muted); }
+.breadcrumb a:hover { color: var(--accent); }
+.breadcrumb [aria-current='page'] { color: var(--text-body); }
+
+.steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.steps__item {
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-sm);
+}
+
+.steps__n {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--surface-page, #fff);
+    font-weight: 600;
+}
+
+.steps__title { margin-bottom: var(--space-1); font-size: 16px; }
+.steps__item p { margin: 0; color: var(--text-body); font-size: 15px; }
+
 
 .section__title {
     display: flex;
@@ -3812,6 +3950,13 @@ body.focus-mode .focus-exit { display: inline-flex; }
     margin-inline: var(--space-3);
 }
 
+/* A section nested inside another section keeps a visible boundary — the
+   sunken surface alone would be indistinguishable from its parent's. */
+.editor details > details {
+    border: 1px solid var(--border-subtle);
+    margin-block-end: var(--space-2);
+}
+
 .editor details > *:last-child {
     margin-bottom: var(--space-3) !important;
     padding-top: var(--space-1);
@@ -3834,6 +3979,19 @@ body.focus-mode .focus-exit { display: inline-flex; }
     margin-inline-end: var(--space-2);
     accent-color: var(--accent);
     vertical-align: middle;
+}
+
+/* Empty items show a localized hint instead of literal text. The text comes
+   from the translation table (checklist.js sets the custom property), so it
+   never enters the DOM and can never be saved, exported or counted. The
+   second declaration is the alt-text form: where supported it keeps screen
+   readers from announcing the hint per item. */
+.editor ul.checklist li.checklist-empty::after {
+    content: var(--checklist-placeholder, 'Add a task…');
+    content: var(--checklist-placeholder, 'Add a task…') / '';
+    color: var(--text-muted);
+    pointer-events: none;
+    user-select: none;
 }
 
 .editor ul.checklist li.task-checked {
@@ -3945,6 +4103,9 @@ body.focus-mode .focus-exit { display: inline-flex; }
     .skip-link { display: none !important; }
 
     .spell-err::after { display: none; }
+
+    /* Placeholder hints are editing affordances, not note content. */
+    .editor ul.checklist li.checklist-empty::after { content: none; }
 
     body { background: #fff; color: #000; }
 
