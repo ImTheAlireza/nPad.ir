@@ -16,6 +16,11 @@ const ALLOWED_TAGS = new Set([
 
 const ALLOWED_ATTRS = {
     A: new Set(['href', 'title', 'target', 'rel']),
+    // Inert export marker: mathblock.docxMath rewrites formulas into
+    // <span data-npad-omml="inline|block"> carrying escaped OMML for the
+    // DOCX writer. The value is constrained below; it styles nothing and
+    // scripts nothing in the browser.
+    SPAN: new Set(['data-npad-omml']),
     CODE: new Set(['class']),
     DETAILS: new Set(['open']),
     FONT: new Set(['color', 'face', 'size']),
@@ -113,6 +118,13 @@ function cleanElement(el) {
 
         if (name === 'href') {
             if (!SAFE_URL.test(attr.value.trim())) el.removeAttribute(attr.name);
+            continue;
+        }
+
+        if (name === 'data-npad-omml') {
+            if (attr.value !== 'inline' && attr.value !== 'block') {
+                el.removeAttribute(attr.name);
+            }
             continue;
         }
 

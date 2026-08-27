@@ -16,6 +16,7 @@ import {
     saveNote,
     saveNoteSync,
     deleteNote,
+    clearNotes,
     getActiveNoteId,
     setActiveNoteId,
     getOpenNoteIds,
@@ -3081,7 +3082,11 @@ ${exportHtml()}
 
     async function saveAsDocx() {
         const { htmlToDocx } = await ensureFormats();
-        const html = exportHtml();
+        let html = exportHtml();
+        // Formulas become native Word math when KaTeX is available; if it
+        // could not load (offline first visit) docxMath returns the input
+        // unchanged and the LaTeX source is exported as before.
+        if (math.docxMath) html = await math.docxMath(html);
         download(
             `${exportBaseName()}.docx`,
             htmlToDocx(html, { direction: currentDir() }),
@@ -3316,9 +3321,10 @@ ${exportHtml()}
         });
         if (!ok) return;
         if (dirty) await persist();
-        for (const note of notes) {
-            await saveBackup(note, { reason: 'cleared', force: true });
-        }
+        // A failing backup write (quota, private mode) must never block the
+        // deletion the user confirmed — best effort, then clear regardless.
+        await Promise.allSettled(notes.map((note) =>
+            saveBackup(note, { reason: 'cleared', force: true })));
         window.clearTimeout(saveTimer);
         await clearNotes();
         notes = [];

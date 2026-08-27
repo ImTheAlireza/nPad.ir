@@ -226,8 +226,17 @@ as a legacy rendering path). While the caret is inside a formula it shows
 raw LaTeX in monospace (always LTR); on leaving it re-renders. Enter at the
 end of a block formula hands the caret to the next paragraph, Backspace on
 an emptied formula removes it, and double-click reopens the dialog.
-DOCX/RTF keep the LaTeX source in monospace; PDF export prints the
-rendered formula for free.
+DOCX export converts every formula to **native Word math (OMML)** —
+KaTeX's MathML is translated to the Office math dialect (fractions,
+radicals, sub/superscripts, n-ary operators with limits, accents,
+matrices), so equations render and re-edit as real formulas in Word, not
+as LaTeX source text. Display formulas become centred `oMathPara`
+paragraphs; inline ones sit in the text flow. If KaTeX could not load
+(offline first visit), the export falls back to the LaTeX source, and
+re-importing a Word file flattens OMML back to readable linear text
+(`a/b`, `x^(2)`, `√(x)`, `∑_{i}^{n}`) rather than dropping it. RTF keeps
+the LaTeX source in monospace; PDF export prints the rendered formula
+for free.
 
 ## Collapsible sections, outline and checklists
 

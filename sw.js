@@ -13,7 +13,7 @@
  * precaching them too would duplicate ~1 MB of downloads per visitor.
  */
 
-const VERSION = 'npad-v2.22.0';
+const VERSION = 'npad-v2.23.0';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 
