@@ -1624,11 +1624,41 @@ export function initEditor({ strings, onEvent }) {
             range.insertNode(element);
             return true;
         }
+
+        // A block never belongs inside a <summary>: the summary is a
+        // one-line title. With the caret on it, generic blocks open the
+        // section and land at the start of its body; another section
+        // becomes a sibling after it, so inserting twice yields two
+        // sections rather than a nested accident.
+        const summaryHost = (range.startContainer.nodeType === 1
+            ? range.startContainer
+            : range.startContainer.parentElement)?.closest?.('summary');
+        if (summaryHost) {
+            const hostDetails = summaryHost.closest('details');
+            if (hostDetails && editor.contains(hostDetails)) {
+                if (element.tagName === 'DETAILS') {
+                    hostDetails.after(element);
+                } else {
+                    hostDetails.open = true;
+                    summaryHost.after(element);
+                }
+                return true;
+            }
+        }
+
         let block = range.startContainer.nodeType === 1
             ? range.startContainer
             : range.startContainer.parentElement;
         block = block?.closest?.('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre');
         if (block && block !== editor) {
+            // Inside a list item the block goes after the whole list —
+            // never between items (a block child of <ul>/<ol> is invalid
+            // and breaks the checklist/Markdown models).
+            if (block.tagName === 'LI') {
+                block = block.closest('ul, ol') || block;
+                block.after(element);
+                return true;
+            }
             const empty = !block.textContent.trim() && !block.querySelector('table, ul, ol, blockquote, pre');
             if (empty) block.replaceWith(element);
             else block.after(element);

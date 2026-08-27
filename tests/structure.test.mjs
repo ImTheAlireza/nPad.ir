@@ -403,6 +403,38 @@ export default async function run(check, group) {
         editor.remove();
     });
 
+    await step('Enter from the summary enters the first body block, whatever it is', () => {
+        document.body.innerHTML = '<div id="ed"><details open><summary>Title</summary>'
+            + '<ul class="checklist"><li><input type="checkbox">milk</li><li><input type="checkbox">tea</li></ul>'
+            + '</details></div>';
+        const editor = document.getElementById('ed');
+        initOutline({ editor, strings: {}, onEvent: () => {}, onEdit: () => {}, placeBlock: () => true });
+        const details = editor.querySelector('details');
+        const before = details.children.length;
+        caretIn(details.querySelector('summary').firstChild, 2);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        const selection = window.getSelection();
+        const item = details.querySelector('li');
+        assert.ok(item.contains(selection.anchorNode) || selection.anchorNode === item,
+            'caret did not enter the first list item');
+        assert.equal(selection.anchorOffset, 1, 'caret not right after the checkbox');
+        assert.equal(details.children.length, before, 'a stray block was appended instead of entering the list');
+        editor.remove();
+    });
+
+    await step('Enter from the summary creates a paragraph only when the body is empty', () => {
+        document.body.innerHTML = '<div id="ed"><details open><summary>Title</summary></details></div>';
+        const editor = document.getElementById('ed');
+        initOutline({ editor, strings: {}, onEvent: () => {}, onEdit: () => {}, placeBlock: () => true });
+        const details = editor.querySelector('details');
+        caretIn(details.querySelector('summary').firstChild, 2);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        const body = details.querySelector('p');
+        assert.ok(body, 'empty body did not gain a paragraph');
+        assert.ok(body.contains(window.getSelection().anchorNode), 'caret not in the new paragraph');
+        editor.remove();
+    });
+
     check(`structure: ${steps.length} steps`, () => {
         assert.deepEqual(stepFailures, [], stepFailures.join(', '));
     });

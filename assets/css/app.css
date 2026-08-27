@@ -3829,6 +3829,13 @@ body.focus-mode .focus-exit { display: inline-flex; }
     margin-inline: var(--space-3);
 }
 
+/* A section nested inside another section keeps a visible boundary — the
+   sunken surface alone would be indistinguishable from its parent's. */
+.editor details > details {
+    border: 1px solid var(--border-subtle);
+    margin-block-end: var(--space-2);
+}
+
 .editor details > *:last-child {
     margin-bottom: var(--space-3) !important;
     padding-top: var(--space-1);

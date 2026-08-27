@@ -235,9 +235,15 @@ Sections are native `<details>/<summary>`: the stored note keeps the source
 *and* each section's open/collapsed state, clicking the summary toggles it
 (the one deterministic behaviour across engines), printing expands every
 section and restores it after, and Markdown passes sections through as raw
-HTML blocks. The **Outline** panel lists the note's H1–H6 headings and
-section summaries indented by level — click to jump, `Esc` to close, rebuilt
-live while typing.
+HTML blocks. **The section body is a normal editing space**: anything
+inserted with the caret inside it — text, tables, checklists, code, math,
+or another collapsible section — lands inside the body, and sections nest
+arbitrarily. Inserting with the caret on a *title* puts the block at the
+start of that section's body (another section becomes a sibling after it),
+never inside the `<summary>`. Enter on a title jumps into the first body
+block, whatever it is. The **Outline** panel lists the note's H1–H6 headings
+and section summaries indented by level (nested sections indent deeper) —
+click to jump, `Esc` to close, rebuilt live while typing.
 
 Checklists are GFM-compatible: `- [ ]` / `- [x]` round-trip through Markdown
 (empty items included), items are real checkboxes (toggle with the mouse or

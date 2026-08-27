@@ -57,7 +57,17 @@ export function initOutline({ editor, strings = {}, onEvent, onEdit, placeBlock 
         const entries = [];
         editor.querySelectorAll('h1, h2, h3, h4, h5, h6, details > summary').forEach((el) => {
             const isSummary = el.tagName === 'SUMMARY';
-            const level = isSummary ? 2 : Number(el.tagName[1]);
+            // Nested sections indent: a summary inside another section sits
+            // one level deeper per ancestor <details>.
+            let level = Number(el.tagName[1]);
+            if (isSummary) {
+                level = 2;
+                let parent = el.parentElement?.parentElement;
+                while (parent && parent !== editor) {
+                    if (parent.tagName === 'DETAILS') level += 1;
+                    parent = parent.parentElement;
+                }
+            }
             const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 90);
             entries.push({
                 el,
@@ -256,16 +266,44 @@ export function initOutline({ editor, strings = {}, onEvent, onEdit, placeBlock 
         if (event.key === 'Enter') {
             event.preventDefault();
             event.stopPropagation();
-            let body = details.querySelector(':scope > p, :scope > div');
+            // Moving the caret consumes the keystroke completely. Later
+            // listeners on this same event must not act on the NEW caret
+            // position (the checklist's Enter model would otherwise see the
+            // freshly-entered empty item and dismantle the list).
+            event.stopImmediatePropagation();
+            details.open = true;
+
+            // Enter the first body block, whatever it is — a fresh section
+            // body may legitimately start with a checklist, table, code
+            // block or nested section rather than a paragraph.
+            let body = details.querySelector(':scope > *:not(summary)');
             if (!body) {
                 body = document.createElement('p');
                 body.appendChild(document.createElement('br'));
                 details.appendChild(body);
+                caretInto(body, 0);
+                edited();
+                return;
             }
-            details.open = true;
             editor.focus();
             const range = document.createRange();
-            range.setStart(body, 0);
+            if (body.tagName === 'UL' || body.tagName === 'OL') {
+                const item = body.querySelector(':scope > li');
+                if (!item) {
+                    range.setStart(body, 0);
+                } else if (item.firstChild?.tagName === 'INPUT') {
+                    // Right after a checklist's checkbox.
+                    range.setStart(item, 1);
+                } else {
+                    range.setStart(item, 0);
+                }
+            } else if (body.tagName === 'TABLE') {
+                range.setStart(body.querySelector('td, th') || body, 0);
+            } else if (body.tagName === 'DETAILS') {
+                range.setStart(body.querySelector('summary') || body, 0);
+            } else {
+                range.setStart(body, 0);
+            }
             range.collapse(true);
             selection.removeAllRanges();
             selection.addRange(range);
