@@ -9,7 +9,7 @@
 declare(strict_types=1);
 
 define('NPAD_ROOT', dirname(__DIR__));
-define('NPAD_VERSION', '2.18.0');
+define('NPAD_VERSION', '2.19.0');
 
 /**
  * Supported interface languages.

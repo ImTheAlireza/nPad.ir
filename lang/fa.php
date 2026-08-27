@@ -291,7 +291,7 @@ return [
     ],
 
     'checklist' => [
-        'task'     => 'کار',
+        'placeholder' => 'افزودن کار…',
         'inserted' => 'چک‌لیست افزوده شد',
     ],
 

@@ -206,6 +206,15 @@ export default async function run(check, group) {
         const item = list.querySelector('li');
         assert.ok(item.contains(window.getSelection().anchorNode), 'caret not in the item');
 
+        // The first item is empty with a placeholder mark — never literal text.
+        assert.equal(item.textContent.trim(), '', 'first item contains literal text');
+        assert.ok(item.classList.contains('checklist-empty'), 'placeholder mark missing');
+
+        // Type the task text; the placeholder mark drops synchronously.
+        item.appendChild(document.createTextNode('write the report'));
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.ok(!item.classList.contains('checklist-empty'), 'typing did not drop the placeholder mark');
+
         input.checked = true;
         input.dispatchEvent(new window.Event('change', { bubbles: true }));
         assert.ok(item.classList.contains('task-checked'), 'class not synced');
@@ -217,6 +226,8 @@ export default async function run(check, group) {
         const storedHtml = (JSON.parse(saved)?.notes || []).map((n) => n.html).join('');
         assert.match(storedHtml, /<ul class="checklist"><li class="task-checked"><input type="checkbox" checked[^>]*>/,
             'stored form lost the checklist');
+        assert.ok(!storedHtml.includes('checklist-empty'),
+            'the transient placeholder class leaked into the stored note');
     });
 
     await step('the Tasks dialog aggregates across notes and toggles them', async () => {

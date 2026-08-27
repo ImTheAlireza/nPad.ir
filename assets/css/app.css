@@ -3853,6 +3853,19 @@ body.focus-mode .focus-exit { display: inline-flex; }
     vertical-align: middle;
 }
 
+/* Empty items show a localized hint instead of literal text. The text comes
+   from the translation table (checklist.js sets the custom property), so it
+   never enters the DOM and can never be saved, exported or counted. The
+   second declaration is the alt-text form: where supported it keeps screen
+   readers from announcing the hint per item. */
+.editor ul.checklist li.checklist-empty::after {
+    content: var(--checklist-placeholder, 'Add a task…');
+    content: var(--checklist-placeholder, 'Add a task…') / '';
+    color: var(--text-muted);
+    pointer-events: none;
+    user-select: none;
+}
+
 .editor ul.checklist li.task-checked {
     color: var(--text-muted);
     text-decoration: line-through;
@@ -3962,6 +3975,9 @@ body.focus-mode .focus-exit { display: inline-flex; }
     .skip-link { display: none !important; }
 
     .spell-err::after { display: none; }
+
+    /* Placeholder hints are editing affordances, not note content. */
+    .editor ul.checklist li.checklist-empty::after { content: none; }
 
     body { background: #fff; color: #000; }
 

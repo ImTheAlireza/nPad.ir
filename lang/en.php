@@ -291,7 +291,7 @@ return [
     ],
 
     'checklist' => [
-        'task'     => 'Task',
+        'placeholder' => 'Add a task…',
         'inserted' => 'Checklist added',
     ],
 

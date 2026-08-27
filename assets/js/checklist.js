@@ -14,6 +14,13 @@
  * class) never depends on form-field quirks. A normaliser keeps exactly one
  * checkbox per item, whatever Enter/undo/paste does to the DOM.
  *
+ * Empty items show a localized "Add a task…" hint. The hint is pure CSS
+ * paint (a ::after pseudo-element reading a custom property), never DOM
+ * text, so it cannot be saved, exported, counted or searched. The
+ * transient `checklist-empty` class that drives it is maintained by the
+ * same code paths that normalise the list, and is stripped before every
+ * save exactly like spell marks and search highlights.
+ *
  * The task overview scans every note's checklists into a single dialog:
  * toggling a row updates the source note (the live editor for the active
  * note, storage for the rest), and each row carries a jump link that opens
@@ -28,6 +35,16 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
     const dropBlock = typeof placeBlock === 'function' ? placeBlock : null;
     let normaliseTimer = 0;
 
+    // The placeholder text lives in the translation table; expose it to the
+    // CSS layer as a custom property (JSON.stringify produces a valid,
+    // fully-escaped CSS string).
+    try {
+        editor.style.setProperty(
+            '--checklist-placeholder',
+            JSON.stringify(strings.checklistPlaceholder || 'Add a task…'),
+        );
+    } catch { /* styling unavailable */ }
+
     /* ------------------------------------------------------------------
        Normalisation: exactly one checkbox, first child of each item
        ------------------------------------------------------------------ */
@@ -38,14 +55,21 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
             const inputs = [...item.children].filter((el) => el.tagName === 'INPUT');
             for (const extra of inputs.slice(1)) extra.remove();
             let input = inputs[0];
+            // Checked truth is the class OR a surviving checked attribute:
+            // pasted items can carry the attribute without the class, and
+            // resetting from the class alone silently unchecked them.
+            const done = item.classList.contains('task-checked')
+                || (input ? input.hasAttribute('checked') : false);
             if (!input) {
                 input = document.createElement('input');
                 input.type = 'checkbox';
                 item.prepend(input);
             }
-            input.checked = item.classList.contains('task-checked');
-            if (input.checked) input.setAttribute('checked', '');
+            input.checked = done;
+            if (done) input.setAttribute('checked', '');
             else input.removeAttribute('checked');
+            item.classList.toggle('task-checked', done);
+            markEmpty(item);
         }
     }
 
@@ -54,6 +78,28 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
             ? [root]
             : [...editor.querySelectorAll('ul.checklist')];
         for (const list of scope) normaliseList(list);
+    }
+
+    /* ------------------------------------------------------------------
+       Empty-item placeholder (transient class, CSS paints the hint)
+       ------------------------------------------------------------------ */
+
+    function itemText(item) {
+        const clone = item.cloneNode(true);
+        for (const input of clone.querySelectorAll('input')) input.remove();
+        return clone.textContent || '';
+    }
+
+    function markEmpty(item) {
+        item.classList.toggle('checklist-empty', !itemText(item).trim());
+    }
+
+    function refreshEmptyMarks() {
+        for (const list of editor.querySelectorAll('ul.checklist')) {
+            for (const item of list.children) {
+                if (item.tagName === 'LI') markEmpty(item);
+            }
+        }
     }
 
     /* ------------------------------------------------------------------
@@ -67,9 +113,7 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
         const item = document.createElement('li');
         const input = document.createElement('input');
         input.type = 'checkbox';
-        const text = document.createElement('span');
-        text.textContent = strings.checklistTask || 'Task';
-        item.append(input, text);
+        item.append(input);
         list.appendChild(item);
 
         if (!dropBlock(list)) return;
@@ -80,12 +124,10 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
             list.after(spacer);
         }
 
-        const selection = window.getSelection();
-        const caret = document.createRange();
-        caret.setStart(text, 0);
-        caret.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(caret);
+        // The first item starts empty with a placeholder hint — never with
+        // literal text the user would have to delete before typing.
+        markEmpty(item);
+        caretInto(item, 1); // right after the checkbox
 
         edited();
         track('checklist_inserted');
@@ -106,7 +148,10 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
     }, true);
 
     // Enter/undo/paste can clone or drop checkboxes; tidy up shortly after.
+    // Empty-item marks update synchronously so the placeholder never lags
+    // behind the first (or last deleted) character.
     editor.addEventListener('input', () => {
+        refreshEmptyMarks();
         window.clearTimeout(normaliseTimer);
         normaliseTimer = window.setTimeout(() => normalise(editor), 300);
     });
@@ -115,12 +160,6 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
         const element = node.nodeType === 1 ? node : node.parentElement;
         const item = element?.closest('ul.checklist > li, ol.checklist > li');
         return item && editor.contains(item) ? item : null;
-    }
-
-    function itemText(item) {
-        const clone = item.cloneNode(true);
-        for (const input of clone.querySelectorAll('input')) input.remove();
-        return clone.textContent || '';
     }
 
     function caretToEnd(node) {
@@ -177,6 +216,7 @@ export function initChecklist({ editor, strings = {}, onEvent, onEdit, placeBloc
             const input = document.createElement('input');
             input.type = 'checkbox';
             next.appendChild(input);
+            markEmpty(next);
             item.after(next);
             caretInto(next, 1); // right after the fresh box
             edited();

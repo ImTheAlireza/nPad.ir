@@ -368,7 +368,8 @@ export function markdownToHtml(markdown) {
                 const match = lines[index].match(/^\s*([-+*]|\d+[.)])\s+(.+)$/);
                 if (!match || /^\d/.test(match[1]) !== ordered) break;
                 // GFM task item: "- [ ] " / "- [x] " opens a checklist.
-                const task = match[2].match(/^\[([ xX])\]\s+(.*)$/);
+                // \s* (not \s+) so an empty item ("- [ ]") round-trips too.
+                const task = match[2].match(/^\[([ xX])\]\s*(.*)$/);
                 if (task) {
                     tasks += 1;
                     const done = task[1].toLowerCase() === 'x';

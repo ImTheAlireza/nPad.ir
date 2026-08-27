@@ -258,6 +258,12 @@ export function initEditor({ strings, onEvent }) {
         });
         // The caret highlight is a runtime-only affordance: it never persists.
         clone.querySelectorAll('.npad-cell-active').forEach((el) => el.classList.remove('npad-cell-active'));
+        // Checklist placeholder hints are CSS paint keyed off this class —
+        // the class itself never persists.
+        clone.querySelectorAll('li.checklist-empty').forEach((el) => {
+            el.classList.remove('checklist-empty');
+            if (!el.classList.length) el.removeAttribute('class');
+        });
         // Code blocks keep only their plain stored form: token spans and the
         // language/copy chrome are runtime paint, exactly like search marks.
         code.stripRuntime(clone);

@@ -161,13 +161,13 @@ export default async function run(check, group) {
     });
 
     group('structure: checklists');
-    await step('insertChecklist builds a GFM-shaped list with the caret in it', () => {
+    await step('insertChecklist creates an empty first item with a placeholder, not literal text', () => {
         const edits = [];
         const tracked = [];
         document.body.innerHTML = '<div id="ed"><p><br></p></div>';
         const editor = document.getElementById('ed');
         const api = initChecklist({
-            editor, strings: { checklistTask: 'Task' }, onEvent: (e) => tracked.push(e),
+            editor, strings: { checklistPlaceholder: 'Add a task…' }, onEvent: (e) => tracked.push(e),
             onEdit: () => edits.push(1), placeBlock: (el) => { editor.appendChild(el); return true; },
         });
         putCaretAtEnd(editor.querySelector('p'));
@@ -176,10 +176,64 @@ export default async function run(check, group) {
         assert.ok(list, 'list not created');
         const input = list.querySelector('li input[type="checkbox"]');
         assert.ok(input, 'checkbox missing');
-        assert.equal(list.querySelector('li span').textContent, 'Task');
-        assert.equal(window.getSelection().anchorNode, list.querySelector('li span'), 'caret not in the item');
+        const item = list.querySelector('li');
+        assert.equal(item.textContent.trim(), '', 'first item must not contain literal text');
+        assert.ok(item.classList.contains('checklist-empty'), 'empty item not marked for the placeholder');
+        assert.equal(
+            editor.style.getPropertyValue('--checklist-placeholder'),
+            '"Add a task…"',
+            'placeholder text not exposed to CSS',
+        );
+        const anchor = window.getSelection().anchorNode;
+        assert.ok(item === anchor || item.contains(anchor), 'caret not in the item');
         assert.ok(tracked.includes('checklist_inserted'), 'not tracked');
         editor.remove();
+    });
+
+    await step('typing fills the item and drops the placeholder mark synchronously', () => {
+        document.body.innerHTML = '<div id="ed"><p><br></p></div>';
+        const editor = document.getElementById('ed');
+        const api = initChecklist({
+            editor, strings: {}, onEvent: () => {}, onEdit: () => {},
+            placeBlock: (el) => { editor.appendChild(el); return true; },
+        });
+        api.insertChecklist();
+        const item = editor.querySelector('ul.checklist li');
+        assert.ok(item.classList.contains('checklist-empty'));
+        item.appendChild(document.createTextNode('milk'));
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.ok(!item.classList.contains('checklist-empty'), 'filled item still marked empty');
+        // The text node sits after the checkbox; delete it like Backspace would.
+        assert.equal(item.lastChild.nodeType, 3, 'unexpected item structure');
+        item.lastChild.remove();
+        editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+        assert.ok(item.classList.contains('checklist-empty'), 'emptied item not re-marked');
+        editor.remove();
+    });
+
+    await step('normalise marks empties and preserves a checked attribute without the class', () => {
+        document.body.innerHTML = '<div id="ed"><ul class="checklist">'
+            + '<li><input type="checkbox" checked></li>'
+            + '<li><input type="checkbox">x</li></ul></div>';
+        const editor = document.getElementById('ed');
+        const api = initChecklist({ editor, strings: {}, onEvent: () => {}, onEdit: () => {}, placeBlock: () => true });
+        api.normalise(editor);
+        const items = editor.querySelectorAll('li');
+        assert.ok(items[0].classList.contains('task-checked'), 'checked attribute lost on normalise');
+        assert.ok(items[0].classList.contains('checklist-empty'), 'empty item not marked');
+        assert.ok(!items[1].classList.contains('checklist-empty'), 'filled item marked empty');
+        editor.remove();
+    });
+
+    await step('empty checklist items round-trip through Markdown', () => {
+        const html = '<ul class="checklist">'
+            + '<li><input type="checkbox"></li>'
+            + '<li class="task-checked"><input type="checkbox" checked>done</li></ul>';
+        const md = formats.htmlToMarkdown(html);
+        assert.match(md, /- \[ \]\s*\n/, 'empty item not exported as an open task');
+        const back = formats.markdownToHtml(md);
+        assert.match(back, /<li><input type="checkbox"><\/li>/, 'empty item lost on import');
+        assert.match(back, /class="task-checked"/, 'checked item lost on import');
     });
 
     await step('checkbox changes sync the item class and save', () => {

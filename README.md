@@ -239,10 +239,14 @@ HTML blocks. The **Outline** panel lists the note's H1–H6 headings and
 section summaries indented by level — click to jump, `Esc` to close, rebuilt
 live while typing.
 
-Checklists are GFM-compatible: `- [ ]` / `- [x]` round-trip through Markdown,
-items are real checkboxes (toggle with the mouse or Space), checked items
-dim with a strike-through, and the checked state persists in the note. The
-sanitizer admits checkbox inputs only inside checklist lists.
+Checklists are GFM-compatible: `- [ ]` / `- [x]` round-trip through Markdown
+(empty items included), items are real checkboxes (toggle with the mouse or
+Space), checked items dim with a strike-through, and the checked state
+persists in the note. A new checklist starts with one **empty** item: the
+"Add a task…" hint is CSS paint keyed to a transient class (stripped before
+every save and export, exactly like spell marks), so placeholder text can
+never become note content. The sanitizer admits checkbox inputs only inside
+checklist lists.
 
 **Edit → Tasks…** aggregates every checklist task across all notes into one
 dialog — open and completed sections, live counts, toggling a row updates
