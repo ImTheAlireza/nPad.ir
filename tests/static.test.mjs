@@ -257,6 +257,17 @@ export default function run(check, group) {
         assert.ok(!/cp\s+-R\s+\*/.test(cpanel), '.cpanel.yml still blind-copies the checkout');
     });
 
+    check('flyout submenus cannot be clipped or scrolled by their parent panel', () => {
+        const css = fs.readFileSync(path.join(ROOT, 'assets/css/app.css'), 'utf8');
+        assert.match(css, /\.menu__panel--submenu\s*{[\s\S]*?display:\s*none/,
+            'a closed flyout must be display:none - visibility:hidden keeps its layout and the abspos panel adds scroll area to the parent');
+        assert.match(css, /\.menu__panel--has-submenu\s*{[\s\S]*?overflow:\s*visible/,
+            'a panel containing a flyout must let it escape its overflow (else the flyout is masked and the parent grows scrollbars)');
+        const appbar = fs.readFileSync(path.join(ROOT, 'includes/appbar.php'), 'utf8');
+        assert.ok(appbar.includes('menu__panel--has-submenu'),
+            'the renderer must emit the has-submenu class (no :has() dependency)');
+    });
+
     check('og image and favicon.ico exist', () => {
         assert.ok(fs.existsSync(path.join(ROOT, 'og-image.png')), 'missing og-image.png');
         assert.ok(fs.existsSync(path.join(ROOT, 'favicon.ico')), 'missing favicon.ico');

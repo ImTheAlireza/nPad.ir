@@ -165,6 +165,10 @@ export default async function run(check, group) {
         assert.deepEqual(topActions, ['new', 'open', 'print', 'details', 'backups', 'clear'],
             'exports still exposed at the top level');
         assert.equal(subTrigger.getAttribute('aria-haspopup'), 'menu');
+        // The renderer marks panels that contain a flyout so CSS can stop
+        // the parent from clipping/scrolling the submenu (layout containment).
+        assert.ok(panel.classList.contains('menu__panel--has-submenu'),
+            'parent panel missing the has-submenu containment class');
     });
 
     check('flyout opens on click and keeps the parent menu open', () => {

@@ -116,13 +116,14 @@ function npad_render_menu(string $id, string $label, array $items): void
         </button>
         <?php
     };
+    $hasSubmenu = (bool) array_filter($items, static fn(array $item): bool => !empty($item['children']));
     ?>
     <div class="menu">
         <button type="button" class="menu__trigger" id="<?= e($id) ?>Trigger"
                 aria-haspopup="true" aria-expanded="false" aria-controls="<?= e($id) ?>Panel">
             <?= e($label) ?>
         </button>
-        <div class="menu__panel" id="<?= e($id) ?>Panel" role="menu"
+        <div class="menu__panel<?= $hasSubmenu ? ' menu__panel--has-submenu' : '' ?>" id="<?= e($id) ?>Panel" role="menu"
              aria-labelledby="<?= e($id) ?>Trigger" data-open="false">
             <?php foreach ($items as $index => $item): ?>
                 <?php $renderItem($item, $id, $index); ?>

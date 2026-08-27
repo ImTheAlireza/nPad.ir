@@ -520,15 +520,42 @@ button, input, select, textarea {
     transform: rotate(90deg);
 }
 
+/* A closed flyout is display:none — NOT the visibility/opacity hiding the
+   root panels use. visibility:hidden still occupies layout, and an
+   absolutely-positioned panel inside the parent's overflow-y:auto scroller
+   both adds scrollbars to the parent and gets clipped by it (the flyout
+   opened invisible and the File menu scrolled). display:none removes it
+   from the flow and the scroll area entirely. */
 .menu__panel--submenu {
+    display: none;
     top: calc(0px - var(--space-1));
     inset-inline-start: calc(100% - var(--space-2));
     min-width: 220px;
 }
 
+.menu__panel--submenu[data-open='true'] {
+    display: block;
+}
+
+/* A panel that contains a flyout must let it escape: the root panel's
+   overflow-y:auto/max-height would clip the flyout and borrow scrollbars.
+   The File menu is short enough (7 items) never to need its own scroll.
+   The modifier class is emitted by the renderer, so it does not depend
+   on :has() support. */
+.menu__panel--has-submenu {
+    overflow: visible;
+    max-height: none;
+}
+
 /* Small screens: the flyout becomes an inline expansion of the parent panel
-   instead of overflowing the viewport edge. */
+   instead of overflowing the viewport edge, and the parent scrolls again —
+   with the flyout in flow there is nothing to clip. */
 @media (max-width: 640px) {
+    .menu__panel--has-submenu {
+        overflow-y: auto;
+        max-height: calc(100vh - 64px);
+        max-height: calc(100dvh - 64px);
+    }
     .menu__panel--submenu {
         position: static;
         min-width: 0;
