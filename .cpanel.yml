@@ -9,5 +9,6 @@ deployment:
     - /bin/cp -R assets css $DEPLOYPATH 2>/dev/null || true
     - /bin/cp -R fonts $DEPLOYPATH
     - /bin/cp -R includes lang api admin fa $DEPLOYPATH
+    - /bin/cp online-notepad.php markdown-editor.php math-notepad.php checklist-app.php $DEPLOYPATH
     - /bin/cp index.php privacy.php 404.php sitemap.php offline.html sw.js robots.txt site.webmanifest .htaccess .user.ini favicon.svg favicon.ico og-image.png icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png apple-touch-icon.png $DEPLOYPATH
     - /bin/cp -a /home/gniwvzcf/config_backup.php $DEPLOYPATH/config.php 2>/dev/null || true
