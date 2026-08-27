@@ -363,9 +363,10 @@ export default async function run(check, group) {
         const bootstrapSrc = fs.readFileSync(path.join(ROOT, 'includes/bootstrap.php'), 'utf8');
         const slugsBlock = bootstrapSrc.match(/NPAD_LANDING_SLUGS\s*=\s*\[([\s\S]*?)\]/)?.[1] ?? '';
         const slugs = [...slugsBlock.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-        // 4 fixed pages (/, /fa/, /privacy.php, /fa/privacy.php) + landing URLs
-        // (each slug in both locales).
-        const expected = 4 + slugs.length * 2;
+        // 4 fixed pages (/, /fa/, /privacy.php, /fa/privacy.php)
+        // + landing URLs (each slug in both locales)
+        // + the comparison page in both locales (/compare, /fa/compare).
+        const expected = 4 + slugs.length * 2 + 2;
         assert.equal(locs.length, expected, `expected ${expected} URLs, got ${locs.length}`);
         assert.equal(locs.filter((u) => /\/blog\//.test(u)).length, 0, 'phantom blog URLs');
         for (const slug of slugs) {

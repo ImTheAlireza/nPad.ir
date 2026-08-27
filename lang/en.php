@@ -10,10 +10,10 @@ declare(strict_types=1);
 
 return [
     'meta' => [
-        'title'       => 'NPad — Free Online Notepad with Auto-Save',
-        'description' => 'A free online notepad that works in your browser. Rich text formatting, automatic saving, dark mode, and full offline support. No sign-up required.',
-        'og_title'    => 'NPad — Free Online Notepad',
-        'og_desc'     => 'Write, format and save notes directly in your browser. Free, private and offline-capable.',
+        'title'       => 'NPad — Private Online Notepad That Works Offline',
+        'description' => 'A private online notepad: your notes never leave your device and it keeps working with no internet. Rich text, LaTeX math that exports to editable Word equations, auto-save. Free, no sign-up.',
+        'og_title'    => 'NPad — Private Notes That Work Offline',
+        'og_desc'     => 'Your notes stay on your device and work with no connection. Rich text, tables, and LaTeX math that exports to editable Word equations. Free, no account.',
     ],
 
     'skip_link'   => 'Skip to editor',
@@ -388,14 +388,14 @@ return [
     ],
 
     'hero' => [
-        'title' => 'A free online notepad that respects your privacy',
-        'lede'  => 'NPad is a rich text editor that runs entirely in your browser. Format text, build lists and insert links — everything saves automatically to this device. No account, no downloads, no tracking of what you write.',
-        'cta'   => 'Start writing',
+        'title' => 'Private notes that work offline — no account, ever',
+        'lede'  => 'NPad is a full rich-text editor that runs entirely in your browser. Your notes are saved on this device and never touch a server, so they stay private and keep working with no internet. Write tables, checklists and LaTeX math — then export it all to editable Word documents.',
+        'cta'   => 'Start writing — free',
     ],
 
     'why' => [
         'title' => 'Why NPad?',
-        'body'  => 'Most online notepads either strip out formatting or ask you to sign up first. NPad does neither. It keeps the formatting tools of a full editor while storing every note locally, so your writing stays on your machine and remains available even without a connection.',
+        'body'  => 'Most online notepads either strip out your formatting, ask you to sign up, or quietly upload everything you type. NPad does none of that. It gives you the tools of a full editor — tables, checklists, code blocks and LaTeX math — while storing every note locally, so your writing stays on your machine, works with no connection, and exports to editable Word, PDF and Markdown when you need it elsewhere. The math even exports as real, editable Word equations, not screenshots.',
     ],
 
     'features' => [
@@ -457,6 +457,7 @@ return [
     'footer' => [
         'tagline' => 'A free, private online notepad.',
         'home'    => 'Home',
+        'compare' => 'Compare',
         'privacy' => 'Privacy',
         'contact' => 'Contact',
         'rights'  => 'All rights reserved.',
@@ -505,6 +506,56 @@ return [
         'text-editor'      => 'Text editor',
         'word-counter'     => 'Word counter',
         'rich-text-editor' => 'Rich text editor',
+    ],
+
+    'compare' => [
+        'title'       => 'NPad vs Google Keep vs Notion vs Evernote — Private Notes Compared',
+        'description' => 'How NPad compares to Google Keep, Notion and Evernote for private note-taking: no account, notes that stay on your device, real offline support, and export to editable Word. Free.',
+        'h1'          => 'NPad vs Google Keep, Notion & Evernote',
+        'lede'        => 'Most note apps want an account and sync everything you type to their servers. NPad takes the opposite approach: your notes stay on your device, work with no internet, and export to editable Word — with no sign-up. Here is how it stacks up.',
+        'intro_title' => 'The short version',
+        'intro_body'  => 'Google Keep, Notion and Evernote are cloud-first tools built around accounts and team collaboration. That is a real strength when you need multi-device sync or shared workspaces — and a real cost in privacy, speed and lock-in. NPad is the opposite trade: instant, private and local, with genuine offline support and clean exports, but no cloud account. Pick the one that matches what you actually need.',
+        'table_title' => 'Feature comparison',
+        'table_caption' => 'How NPad compares to popular note apps',
+        'col_feature' => 'Feature',
+        'col_npad'    => 'NPad',
+        'col_keep'    => 'Google Keep',
+        'col_notion'  => 'Notion',
+        'col_evernote' => 'Evernote',
+        'yes'         => 'Yes',
+        'no'          => 'No',
+        'partial'     => 'Partial',
+        'rows' => [
+            ['feature' => 'Works with no account',        'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Notes stay on your device',     'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Full offline use',              'npad' => 'Yes', 'keep' => 'Partial', 'notion' => 'Partial', 'evernote' => 'Partial'],
+            ['feature' => 'Free with no paid tier',        'npad' => 'Yes', 'keep' => 'Yes',     'notion' => 'Partial', 'evernote' => 'No'],
+            ['feature' => 'Rich text, tables & code',      'npad' => 'Yes', 'keep' => 'No',      'notion' => 'Yes',     'evernote' => 'Yes'],
+            ['feature' => 'LaTeX math → editable Word',    'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Export to DOCX, PDF, Markdown', 'npad' => 'Yes', 'keep' => 'No',      'notion' => 'Partial', 'evernote' => 'Partial'],
+            ['feature' => 'No tracking of what you write', 'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Real-time team collaboration',  'npad' => 'No',  'keep' => 'Partial', 'notion' => 'Yes',     'evernote' => 'Partial'],
+            ['feature' => 'Multi-device cloud sync',       'npad' => 'No',  'keep' => 'Yes',     'notion' => 'Yes',     'evernote' => 'Yes'],
+        ],
+        'when_title'  => 'When NPad is the right choice',
+        'when_items'  => [
+            ['title' => 'You want privacy, not a login', 'desc' => 'Your notes never reach a server, so there is no account to hack and nothing to leak. Clear your browser data and it is gone for good.'],
+            ['title' => 'You work offline',              'desc' => 'On a plane, a train, or dead Wi-Fi, NPad keeps working — the app and your notes are already on the device.'],
+            ['title' => 'You need real exports',         'desc' => 'Take a note to Word, PDF or Markdown with formatting intact. Math exports as native, editable Word equations, not images.'],
+            ['title' => 'You want it instant',           'desc' => 'No onboarding, no workspace setup — the page loads and you type. Ideal for quick capture and scratch notes.'],
+        ],
+        'when_not_title' => 'When another tool fits better',
+        'when_not_body'  => 'If your work centres on real-time collaboration with a team, a shared knowledge base across an organisation, or automatic sync across many devices, a cloud tool like Notion or Evernote is the better fit — that is what they are built for. NPad is deliberately single-device and private. It is a scratchpad and writing surface, not a team wiki.',
+        'faq_title'   => 'Questions and answers',
+        'faq' => [
+            ['q' => 'Is NPad a replacement for Notion?', 'a' => 'For private, single-person note-taking and writing, yes. For team wikis, databases and shared workspaces, no — Notion is built for collaboration and NPad is built for privacy and speed.'],
+            ['q' => 'Can I sync NPad across devices?', 'a' => 'There is no cloud sync, by design. To move a note, export it as JSON or DOCX and open it on the other device. Nothing you write is uploaded.'],
+            ['q' => 'Is NPad really free?', 'a' => 'Yes — every feature, with no paid tier and no account. Unlike Evernote and parts of Notion, there is nothing gated behind a subscription.'],
+            ['q' => 'How is NPad more private than Google Keep?', 'a' => 'Google Keep stores your notes on Google’s servers tied to your account. NPad stores them only in your browser on your device; the server never receives your note content.'],
+        ],
+        'cta_title'   => 'Try the private option',
+        'cta_body'    => 'No account, no cloud, no tracking. Open NPad and start writing — your notes stay with you.',
+        'cta_button'  => 'Open NPad',
     ],
 
     'landing' => [

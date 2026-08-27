@@ -28,6 +28,7 @@ $tools = NPAD_LANDING_SLUGS;
                 <?= e(t("footer_tools.{$tool}")) ?>
             </a>
         <?php endforeach; ?>
+        <a href="<?= e($lang === 'fa' ? '/fa/compare' : '/compare') ?>"><?= e(t('footer.compare')) ?></a>
         <a href="<?= e($privacy) ?>"><?= e(t('footer.privacy')) ?></a>
         <a href="mailto:alirezashabanzadeh01@gmail.com"><?= e(t('footer.contact')) ?></a>
     </nav>

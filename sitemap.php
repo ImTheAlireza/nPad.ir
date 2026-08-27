@@ -31,6 +31,11 @@ foreach ($landingSlugs as $landingSlug) {
     $pages["/fa/{$landingSlug}"]  = $landingFiles;
 }
 
+// Comparison page: its own template, not a landing.pages.* slug.
+$compareFiles = ['includes/compare.php', 'lang/en.php', 'lang/fa.php'];
+$pages['/compare']    = $compareFiles;
+$pages['/fa/compare'] = $compareFiles;
+
 $priorities = [
     '/' => '1.0', '/fa/' => '0.9',
     '/privacy.php' => '0.3', '/fa/privacy.php' => '0.3',
@@ -41,6 +46,7 @@ $priorities = [
     '/text-editor' => '0.7', '/fa/text-editor' => '0.7',
     '/word-counter' => '0.7', '/fa/word-counter' => '0.7',
     '/rich-text-editor' => '0.7', '/fa/rich-text-editor' => '0.7',
+    '/compare' => '0.6', '/fa/compare' => '0.6',
 ];
 
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
