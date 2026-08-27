@@ -87,6 +87,12 @@ define('ADMIN_PASSWORD_HASH', password_hash('choose-a-strong-password', PASSWORD
 define('SESSION_LIFETIME', 1800);
 define('MAX_REQUESTS_PER_MINUTE', 60);
 
+// Only when the host does NOT restore the visitor's real IP into REMOTE_ADDR
+// (ask the host; Cloudflare proxies otherwise leave the edge IP there, which
+// makes the rate limit shared across all visitors). When enabled, the
+// collector and dashboard prefer CF-Connecting-IP.
+// define('TRUST_PROXY_HEADERS', true);
+
 function getDBConnection(): mysqli {
     $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
     if ($conn->connect_error) { throw new RuntimeException('DB connection failed'); }

@@ -22,7 +22,7 @@
 
 import { confirmDialog, showDialog, toast, escapeHtml } from './ui.js';
 import { caretAtEdge } from './caret.js';
-import { isPlausibleMath } from './formats.js';
+import { isPlausibleMath } from './math-heuristics.js';
 
 /* Generated from npm katex@0.18.4 and never hand-edited: version-pinned
    paths are cache-immutable at the server. */

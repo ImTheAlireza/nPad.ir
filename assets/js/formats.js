@@ -41,25 +41,10 @@ function htmlBody(html) {
    Math delimiters ($…$ inline, $$…$$ block)
    ------------------------------------------------------------------------- */
 
-const CURRENCY_LIKE = /^[\d\s.,'’-]+$/;
-const MATHISH = /[\\^_{}=+\-*/<>|]/;
-
-/**
- * Heuristic gate before a `$…$` span becomes math. Mirrors the editor's
- * typing rules: the content must hug both delimiters, must not look like
- * money ("I paid $5 and $10") and must actually be present.
- * @returns {boolean}
- */
-export function isPlausibleMath(content) {
-    const tex = String(content ?? '');
-    if (!tex.trim()) return false;
-    if (/^\s|\s$/.test(tex)) return false;
-    if (CURRENCY_LIKE.test(tex)) return false;
-    // One math-ish character keeps prose ("10 for lunch.") out of formulas;
-    // anything a user really means as math has at least one of these.
-    if (!MATHISH.test(tex)) return false;
-    return true;
-}
+// Moved to math-heuristics.js so the eager math module does not drag this
+// 60 KB codec file into the critical path. Re-exported for API stability.
+import { isPlausibleMath } from './math-heuristics.js';
+export { isPlausibleMath };
 
 /* -------------------------------------------------------------------------
    Markdown

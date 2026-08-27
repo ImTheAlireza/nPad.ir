@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import engine from 'php-parser';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -150,7 +151,7 @@ export default function run(check, group) {
 
     check('source directories are blocked at the server', () => {
         const ht = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
-        assert.ok(/\^\(includes\|lang\|tests\)\//.test(ht),
+        assert.ok(/\^\(includes\|lang\|tests(\|node_modules)?\)\(/.test(ht),
             'includes/, lang/ and tests/ are reachable over HTTP');
     });
 
@@ -217,5 +218,47 @@ export default function run(check, group) {
         const phpEvents = [...php.match(/const ALLOWED_EVENTS = \[([\s\S]*?)\];/)[1]
             .matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
         assert.deepEqual(jsEvents, phpEvents, 'event allow-lists differ');
+    });
+    group('static: hardening invariants');
+
+    check('CSP script hash matches the inline theme script', () => {
+        const head = fs.readFileSync(path.join(ROOT, 'includes/head.php'), 'utf8');
+        const script = head.match(/<script>\n([\s\S]*?)\n<\/script>/)?.[1];
+        assert.ok(script, 'inline theme script not found in head.php');
+        const hash = 'sha256-' + crypto.createHash('sha256').update(script, 'utf8').digest('base64');
+        const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        assert.ok(
+            htaccess.includes(`'${hash}'`),
+            `CSP does not pin the theme script hash (${hash}); update .htaccess and head.php together`,
+        );
+        assert.ok(
+            !/script-src[^";\r\n]*unsafe-inline/.test(htaccess),
+            "script-src must not contain 'unsafe-inline'",
+        );
+    });
+
+    check('the 170 KB dictionary is not on the eager module graph', () => {
+        const jsDir = path.join(ROOT, 'assets/js');
+        for (const file of walk(jsDir, (n) => n.endsWith('.js') && !n.includes('.min.'))) {
+            const text = fs.readFileSync(file, 'utf8');
+            const staticImport = text.match(/import\s*(?:\{[^}]*\}|[\w$*]+(?:\s*,\s*\{[^}]*\})?)\s*from\s*['"]\.\/wordlist\.js['"]/);
+            assert.equal(staticImport, null, `${rel(file)} statically imports wordlist.js`);
+        }
+        const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+        assert.ok(!sw.includes('wordlist'), 'service worker precaches the dictionary');
+    });
+
+    check('dev tooling is blocked at the server and not deployed', () => {
+        const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        assert.ok(/\(includes\|lang\|tests\|node_modules\)/.test(htaccess), 'rewrite does not deny node_modules');
+        assert.ok(/\(dev-server\|runone\)\\\.mjs\$/.test(htaccess), 'rewrite does not deny dev *.mjs files');
+        assert.ok(/\(log\|sql\|sqlite\|bak\|old\|backup\|ini\|md\|mjs\|lock\)\$/.test(htaccess), 'FilesMatch does not deny *.mjs');
+        const cpanel = fs.readFileSync(path.join(ROOT, '.cpanel.yml'), 'utf8');
+        assert.ok(!/cp\s+-R\s+\*/.test(cpanel), '.cpanel.yml still blind-copies the checkout');
+    });
+
+    check('og image and favicon.ico exist', () => {
+        assert.ok(fs.existsSync(path.join(ROOT, 'og-image.png')), 'missing og-image.png');
+        assert.ok(fs.existsSync(path.join(ROOT, 'favicon.ico')), 'missing favicon.ico');
     });
 }

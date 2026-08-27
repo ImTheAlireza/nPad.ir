@@ -19,15 +19,16 @@ t('', $strings);
 $pageTitle     = t('privacy.title') . ' — NPad';
 $pageDesc      = t('privacy.intro');
 $canonicalPath = $lang === 'fa' ? '/fa/privacy.php' : '/privacy.php';
+$skipTarget    = '#main';
 
 require __DIR__ . '/includes/head.php';
 ?>
 <div class="page">
     <?php require __DIR__ . '/includes/appbar.php'; ?>
 
-    <article class="doc">
+    <article class="doc" id="main">
         <h1><?= e(t('privacy.title')) ?></h1>
-        <p class="doc__meta"><?= e(t('privacy.updated')) ?>: <?= e(date('Y-m-d', filemtime(__FILE__))) ?></p>
+        <p class="doc__meta"><?= e(t('privacy.updated')) ?>: <?= e(npad_content_lastmod('privacy.php', 'lang/' . $lang . '.php')) ?></p>
         <p><?= e(t('privacy.intro')) ?></p>
 
         <?php foreach (t('privacy.sections') as $section): ?>

@@ -67,17 +67,6 @@ import {
     placeCaretInCell,
     selectionRectCells,
 } from './table.js';
-import {
-    htmlToMarkdown,
-    markdownToHtml,
-    noteToJson,
-    parseNoteJson,
-    htmlToRtf,
-    rtfToHtml,
-    htmlToDocx,
-    docxToHtml,
-    pdfToHtml,
-} from './formats.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
 import { initCodeblocks, detectLanguage } from './codeblock.js';
@@ -85,6 +74,14 @@ import { initMath } from './mathblock.js';
 import { initOutline } from './outline.js';
 import { initChecklist } from './checklist.js';
 import { detectDirection, isolate } from './bidi.js';
+
+/**
+ * Import/export codecs (Markdown, JSON, DOCX, PDF, RTF — ~60 KB) are only
+ * needed once a File-menu conversion runs or a document is imported, so the
+ * module is fetched on first use instead of on every page load.
+ * Declared inside initEditor so it can localise its failure message.
+ * @returns {Promise<typeof import('./formats.js')>}
+ */
 
 const AUTOSAVE_DELAY = 800;      // was 3000ms with no flush on unload
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -112,6 +109,19 @@ export function initEditor({ strings, onEvent }) {
     if (!editor) return;
 
     const track = typeof onEvent === 'function' ? onEvent : () => {};
+
+    let formatsModule = null;
+    async function ensureFormats() {
+        try {
+            formatsModule ??= await import('./formats.js');
+        } catch {
+            // Offline before the codecs were ever fetched: surface it
+            // instead of failing silently on a File-menu action.
+            toast((strings && strings.exportUnavailable) || 'Formats are unavailable until the page has loaded once online.', 'error');
+            throw new Error('formats module unavailable');
+        }
+        return formatsModule;
+    }
 
     const countsEl = document.getElementById('statusCounts');
     const stateEl = document.getElementById('saveState');
@@ -2690,6 +2700,10 @@ export function initEditor({ strings, onEvent }) {
                     <input class="field__input" type="url" id="linkUrl" placeholder="https://example.com"
                            autocomplete="off" spellcheck="false">
                 </label>
+                <label class="field field--inline">
+                    <input type="checkbox" id="linkNewTab" checked>
+                    <span class="field__label">${escapeHtml(strings.linkNewTab || 'Open in a new tab')}</span>
+                </label>
                 <p class="field__error" id="linkError" hidden>${escapeHtml(strings.linkInvalid)}</p>`,
             buttons: [
                 { label: strings.cancel, action: 'cancel', variant: 'btn--ghost' },
@@ -2700,6 +2714,7 @@ export function initEditor({ strings, onEvent }) {
         if (action !== 'confirm') return;
 
         const input = document.getElementById('linkUrl');
+        const newTab = document.getElementById('linkNewTab');
         const raw = input ? input.value.trim() : '';
         if (!raw) return;
 
@@ -2725,8 +2740,12 @@ export function initEditor({ strings, onEvent }) {
         }
         exec('createLink', url.href);
 
-        // execCommand cannot set rel; harden the anchor afterwards.
+        // execCommand cannot set rel; harden the anchor afterwards. Only
+        // new-tab links get target/rel — the user can now opt for in-page
+        // navigation with the dialog's checkbox.
+        const openExternally = !newTab || newTab.checked;
         editor.querySelectorAll('a[href]:not([rel])').forEach((a) => {
+            if (!openExternally) return;
             a.setAttribute('rel', 'noopener noreferrer');
             a.setAttribute('target', '_blank');
         });
@@ -2933,15 +2952,20 @@ export function initEditor({ strings, onEvent }) {
                 } else if (extension === 'html' || extension === 'htm') {
                     imported = [{ title, html: sanitizeHtml(await file.text()) }];
                 } else if (extension === 'md' || extension === 'markdown') {
+                    const { markdownToHtml } = await ensureFormats();
                     imported = [{ title, html: markdownToHtml(await file.text()) }];
                 } else if (extension === 'json') {
+                    const { parseNoteJson } = await ensureFormats();
                     imported = parseNoteJson(await file.text());
                     if (!imported.length) throw new Error('No notes in JSON');
                 } else if (extension === 'rtf') {
+                    const { rtfToHtml } = await ensureFormats();
                     imported = [{ title, html: rtfToHtml(await file.text()) }];
                 } else if (extension === 'docx') {
+                    const { docxToHtml } = await ensureFormats();
                     imported = [{ title, html: await docxToHtml(await file.arrayBuffer()) }];
                 } else if (extension === 'pdf') {
+                    const { pdfToHtml } = await ensureFormats();
                     imported = [{ title, html: await pdfToHtml(await file.arrayBuffer()) }];
                 } else {
                     toast(strings.openUnsupportedType, 'error');
@@ -3005,12 +3029,14 @@ ${exportHtml()}
     }
 
     async function saveAsMarkdown() {
+        const { htmlToMarkdown } = await ensureFormats();
         const html = exportHtml();
         download(`${exportBaseName()}.md`, htmlToMarkdown(html), 'text/markdown;charset=utf-8');
         track('download_markdown');
     }
 
     async function saveAsJson() {
+        const { noteToJson } = await ensureFormats();
         const note = currentExportNote();
         note.html = exportHtml();
         download(`${exportBaseName()}.json`, noteToJson(note, organization), 'application/json;charset=utf-8');
@@ -3018,6 +3044,7 @@ ${exportHtml()}
     }
 
     async function saveAsDocx() {
+        const { htmlToDocx } = await ensureFormats();
         const html = exportHtml();
         download(
             `${exportBaseName()}.docx`,
@@ -3028,6 +3055,7 @@ ${exportHtml()}
     }
 
     async function saveAsRtf() {
+        const { htmlToRtf } = await ensureFormats();
         const html = exportHtml();
         download(
             `${exportBaseName()}.rtf`,
@@ -3897,7 +3925,11 @@ ${exportHtml()}
         if (initialDocumentTitle === null) initialDocumentTitle = document.title;
         const note = activeNote();
         const title = (noteTitleInput?.value || (note ? displayTitle(note) : '') || '').trim();
-        document.title = title ? `${isolate(title)} — NPad` : initialDocumentTitle;
+        // An untouched note keeps the marketing <title>: replacing it with the
+        // "Untitled note" placeholder made every tab, bookmark and search-
+        // engine snippet read "Untitled note — NPad".
+        const isDefault = title === '' || title === (strings.noteUntitled || 'Untitled note');
+        document.title = title && !isDefault ? `${isolate(title)} — NPad` : initialDocumentTitle;
     }
 
     const actions = {
