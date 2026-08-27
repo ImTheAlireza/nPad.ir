@@ -16,6 +16,10 @@ Live: <https://npad.ir>
 ├─ index.php              English notepad  (canonical, /)
 ├─ fa/index.php           Persian notepad  (/fa/)
 ├─ privacy.php            Privacy policy   (+ fa/privacy.php)
+├─ online-notepad.php     SEO landing pages, pretty URLs (+ fa/):
+├─ markdown-editor.php      /online-notepad  /markdown-editor
+├─ math-notepad.php         /math-notepad    /checklist-app
+├─ checklist-app.php        rendered by includes/landing.php from lang copy
 ├─ 404.php                Error page
 ├─ sitemap.php            Generated sitemap (served at /sitemap.xml)
 ├─ sw.js                  Service worker — offline support
@@ -314,6 +318,27 @@ JSON exports, and are serialised to GFM pipe tables in Markdown, real
 `w:tbl` tables in DOCX, and tab-separated rows in RTF; pasted tables from
 Excel, Word or the web are normalised (nested tables lifted, spans bounded)
 before they enter the grid model.
+
+## SEO landing pages
+
+The home page is an application, not a document: it answers no specific
+query. Four landing pages give each search intent a stable, crawlable URL
+in both locales — `/online-notepad`, `/markdown-editor`,
+`/math-notepad`, `/checklist-app` (plus `/fa/…` mirrors). All copy lives
+in `lang/{en,fa}.php` under `landing.pages`, so the lang parity test
+guarantees no locale ships a half-translated page, and
+`includes/landing.php` renders any slug from that copy: hero, numbered
+how-it-works, features, FAQ (`<details>`), related-tools links and a
+final CTA into the app.
+
+Each page carries a self-referencing canonical (the pretty URL, served
+via `.htaccess` rewrites), hreflang alternates that mirror the canonical
+in the other locale, FAQPage + BreadcrumbList JSON-LD built from the
+visible copy, and the same OG/Twitter card as the app. `sitemap.php`
+lists all eight URLs with content-hash lastmods, and the footer links
+every tool on every page so the whole set stays crawled. The render
+suite executes the pages with real PHP and pins the canonicals,
+hreflang pairs, breadcrumb and schema.
 
 ## Tests
 

@@ -75,10 +75,14 @@ const handler = new PHPRequestHandler({
     php,
     documentRoot: VFS,
     absoluteUrl: `http://127.0.0.1:${PORT}/`,
-    // Mirrors the .htaccess rewrite: the sitemap is generated. Note the
-    // handler strips trailing slashes from the URL prefix, so rules must
-    // match the leading-slash form.
-    rewriteRules: [{ match: /^\/sitemap\.xml$/, replacement: '/sitemap.php' }],
+    // Mirrors the .htaccess rewrites: the sitemap is generated and the
+    // landing pages live at pretty URLs. Note the handler strips trailing
+    // slashes from the URL prefix, so rules must match the leading-slash form.
+    rewriteRules: [
+        { match: /^\/sitemap\.xml$/, replacement: '/sitemap.php' },
+        { match: /^\/(online-notepad|markdown-editor|math-notepad|checklist-app)\/?$/, replacement: '/$1.php' },
+        { match: /^\/fa\/(online-notepad|markdown-editor|math-notepad|checklist-app)\/?$/, replacement: '/fa/$1.php' },
+    ],
     // Mirrors ErrorDocument 404 /404.php; the original REQUEST_URI is
     // preserved so the 404 page can keep Persian visitors in Persian.
     getFileNotFoundAction: () => ({ type: 'internal-redirect', uri: '/404.php' }),

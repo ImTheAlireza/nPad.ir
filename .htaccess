@@ -58,6 +58,17 @@ ErrorDocument 404 /404.php
     # Sitemap is generated so lastmod stays accurate.
     RewriteRule ^sitemap\.xml$ /sitemap.php [L]
 
+    # Landing pages: pretty URLs -> their PHP entry files. The entry files
+    # remain directly reachable too; canonical tags point at the pretty URL.
+    RewriteRule ^online-notepad/?$ /online-notepad.php [L]
+    RewriteRule ^markdown-editor/?$ /markdown-editor.php [L]
+    RewriteRule ^math-notepad/?$ /math-notepad.php [L]
+    RewriteRule ^checklist-app/?$ /checklist-app.php [L]
+    RewriteRule ^fa/online-notepad/?$ /fa/online-notepad.php [L]
+    RewriteRule ^fa/markdown-editor/?$ /fa/markdown-editor.php [L]
+    RewriteRule ^fa/math-notepad/?$ /fa/math-notepad.php [L]
+    RewriteRule ^fa/checklist-app/?$ /fa/checklist-app.php [L]
+
     # Retire the old flat URLs.
     RewriteRule ^index\.html$ / [L,R=301]
     RewriteRule ^track\.php$ /api/track.php [L,R=301]

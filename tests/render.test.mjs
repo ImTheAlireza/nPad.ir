@@ -56,6 +56,8 @@ async function renderAll() {
         privacyFa: await run('/site/fa/privacy.php', '/fa/privacy.php'),
         notFound: await run('/site/404.php', '/nope'),
         sitemap: await run('/site/sitemap.php', '/sitemap.xml'),
+        landingEn: await run('/site/online-notepad.php', '/online-notepad'),
+        landingFa: await run('/site/fa/math-notepad.php', '/fa/math-notepad'),
         partials: Object.fromEntries(
             await Promise.all(
                 ['appbar', 'editor', 'content', 'head', 'footer', 'page'].map(async (n) => [
@@ -323,12 +325,46 @@ export default async function run(check, group) {
         assert.ok(document.querySelector('a[href="/"]'));
     });
 
+    group('markup: landing pages');
+
+    check('landing page renders with self-canonical, breadcrumb and schema', () => {
+        const { document } = new JSDOM(pages.landingEn.body).window;
+        assert.equal(document.querySelector('h1')?.textContent, 'Free online notepad');
+        assert.equal(document.querySelector('link[rel="canonical"]')?.href,
+            'https://npad.ir/online-notepad', 'canonical is not the pretty URL');
+        const alternates = [...document.querySelectorAll('link[rel="alternate"][hreflang]')]
+            .map((l) => `${l.hreflang}:${l.href}`);
+        assert.ok(alternates.includes('fa:https://npad.ir/fa/online-notepad'),
+            `hreflang fa does not mirror the landing URL: ${alternates.join(' ')}`);
+        assert.ok(document.querySelector('.breadcrumb [aria-current="page"]'), 'no breadcrumb current item');
+        const schema = JSON.parse([...document.querySelectorAll('script[type="application/ld+json"]')]
+            .map((n) => n.textContent).find((t) => t.includes('FAQPage')));
+        assert.ok(schema['@graph'].some((n) => n['@type'] === 'BreadcrumbList'), 'no BreadcrumbList');
+        assert.ok(document.querySelector('meta[property="og:image"]')?.content.includes('og-image.png'),
+            'no og:image');
+    });
+
+    check('fa landing renders RTL with its own canonical', () => {
+        const { document } = new JSDOM(pages.landingFa.body).window;
+        assert.equal(document.documentElement.getAttribute('dir'), 'rtl');
+        assert.equal(document.querySelector('link[rel="canonical"]')?.href,
+            'https://npad.ir/fa/math-notepad');
+        assert.ok(document.querySelector('h1')?.textContent.trim().length > 0, 'no Persian H1');
+        const footer = [...document.querySelectorAll('.footer__links a')].map((a) => a.getAttribute('href'));
+        assert.ok(footer.includes('/fa/online-notepad'), 'fa footer missing tool mesh');
+    });
+
     group('sitemap');
 
     check('lists only URLs that exist', () => {
         const locs = [...pages.sitemap.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-        assert.equal(locs.length, 4, `expected 4 URLs, got ${locs.length}`);
+        // 4 original pages + 8 landing URLs (4 slugs x 2 locales).
+        assert.equal(locs.length, 12, `expected 12 URLs, got ${locs.length}`);
         assert.equal(locs.filter((u) => /\/blog\//.test(u)).length, 0, 'phantom blog URLs');
+        for (const slug of ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app']) {
+            assert.ok(locs.includes(`https://npad.ir/${slug}`), `sitemap missing /${slug}`);
+            assert.ok(locs.includes(`https://npad.ir/fa/${slug}`), `sitemap missing /fa/${slug}`);
+        }
     });
 
     check('lastmod is current, not hardcoded', () => {

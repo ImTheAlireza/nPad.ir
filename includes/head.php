@@ -35,9 +35,16 @@ $skipTarget     = $skipTarget ?? '#editor';
 <meta name="color-scheme" content="light dark">
 
 <link rel="canonical" href="<?= e(npad_url($canonicalPath)) ?>">
-<link rel="alternate" hreflang="en" href="<?= e(npad_url('/')) ?>">
-<link rel="alternate" hreflang="fa" href="<?= e(npad_url('/fa/')) ?>">
-<link rel="alternate" hreflang="x-default" href="<?= e(npad_url('/')) ?>">
+<?php
+// hreflang alternates mirror the canonical URL in the other locale, so
+// landing pages point at their own translation, not at the home page.
+$enAlt = $lang === 'fa' ? str_replace('/fa/', '/', $canonicalPath) : $canonicalPath;
+$faAlt = $lang === 'fa' ? $canonicalPath
+    : ($canonicalPath === '/' ? '/fa/' : '/fa' . $canonicalPath);
+?>
+<link rel="alternate" hreflang="en" href="<?= e(npad_url($enAlt)) ?>">
+<link rel="alternate" hreflang="fa" href="<?= e(npad_url($faAlt)) ?>">
+<link rel="alternate" hreflang="x-default" href="<?= e(npad_url($enAlt)) ?>">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="NPad">

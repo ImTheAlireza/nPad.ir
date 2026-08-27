@@ -495,4 +495,131 @@ return [
         '404_body'  => 'That page does not exist. It may have been moved or removed.',
         'back'      => 'Back to the notepad',
     ],
+
+    'footer_tools' => [
+        'label'            => 'Tools',
+        'online-notepad'   => 'Online notepad',
+        'markdown-editor'  => 'Markdown editor',
+        'math-notepad'     => 'Math & equations',
+        'checklist-app'    => 'Checklists',
+    ],
+
+    'landing' => [
+        'breadcrumb_home' => 'Home',
+        'open_app'        => 'Start writing — it’s free',
+        'open_app_note'   => 'No sign-up. Nothing to install.',
+        'steps_title'     => 'How it works',
+        'features_title'  => 'What you get',
+        'faq_title'       => 'Questions and answers',
+        'related_title'   => 'Related tools',
+        'cta_title'       => 'Ready when you are',
+        'cta_body'        => 'Open NPad in a tab and start typing. Your notes stay on this device — no account, no cloud, no tracking of what you write.',
+        'cta_button'      => 'Open NPad',
+
+        'pages' => [
+            'online-notepad' => [
+                'title'       => 'Free Online Notepad — No Sign-Up, Works Offline — NPad',
+                'description' => 'A free online notepad that saves as you type. Rich-text formatting, folders, tags and offline access — no account, nothing leaves your device.',
+                'h1'          => 'Free online notepad',
+                'lede'        => 'Open a tab and write. NPad saves your notes automatically in this browser, keeps them organised with folders and tags, and keeps working when the connection drops.',
+                'steps'       => [
+                    ['title' => 'Open npad.ir', 'desc' => 'The notepad is the home page. There is nothing to install and no account to create.'],
+                    ['title' => 'Type and format', 'desc' => 'Headings, bold and italic, lists, tables, checklists and collapsible sections — all from the toolbar or keyboard.'],
+                    ['title' => 'Keep or export', 'desc' => 'Notes auto-save on this device. Export any note as DOCX, PDF, Markdown, HTML, RTF, TXT or JSON whenever you need it elsewhere.'],
+                ],
+                'features'    => [
+                    ['title' => 'Automatic saving', 'desc' => 'Every keystroke is saved locally within seconds. Close the tab, come back tomorrow — your text is still there.'],
+                    ['title' => 'Real formatting', 'desc' => 'A proper rich-text editor, not a bare textarea: fonts, colours, tables and nested lists.'],
+                    ['title' => 'Folders and tags', 'desc' => 'Colour-coded tags and folders keep dozens of notes findable, with instant search across titles and content.'],
+                    ['title' => 'Works offline', 'desc' => 'After the first visit the app loads without a network — plane, train or dead Wi-Fi.'],
+                    ['title' => 'Seven export formats', 'desc' => 'Word, PDF, Markdown, HTML, RTF, plain text and JSON — your notes are never locked in.'],
+                    ['title' => 'Private by design', 'desc' => 'Notes live in your browser’s storage. The server never sees what you write.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Is NPad really free?', 'a' => 'Yes — every feature, no paid tier, no account.'],
+                    ['q' => 'Where are my notes stored?', 'a' => 'In your browser’s local storage, on this device. They are not uploaded to a server, so they stay where you wrote them.'],
+                    ['q' => 'Can I use it offline?', 'a' => 'Yes. After the first load, NPad works with no connection and syncs nothing — your notes are already local.'],
+                    ['q' => 'How do I move a note to another device?', 'a' => 'Export it as JSON or DOCX from the File menu and import or open it on the other device.'],
+                ],
+            ],
+
+            'markdown-editor' => [
+                'title'       => 'Online Markdown Editor with Live Export — NPad',
+                'description' => 'Write Markdown online and export clean HTML, DOCX, PDF or plain .md. Code blocks, tables and LaTeX math included — free, no sign-up, offline.',
+                'h1'          => 'Online Markdown editor',
+                'lede'        => 'Type Markdown, get a formatted document. NPad converts headings, lists, code blocks, tables and LaTeX math as you type — then exports to Word, PDF, HTML or back to clean .md.',
+                'steps'       => [
+                    ['title' => 'Type Markdown', 'desc' => 'Headings with #, lists with -, code with backticks, math with $…$ — pairs convert as you finish them.'],
+                    ['title' => 'Watch it render', 'desc' => 'Syntax-highlighted code blocks, real tables and typeset formulas appear instantly in the editor.'],
+                    ['title' => 'Export anywhere', 'desc' => 'Download as .md, styled HTML, a Word document, PDF or RTF — formatting and code colours intact.'],
+                ],
+                'features'    => [
+                    ['title' => 'Live conversion', 'desc' => 'Markdown turns into rich text as you type — no separate preview pane to babysit.'],
+                    ['title' => 'Code blocks', 'desc' => 'Fenced blocks with language detection and syntax colours for dozens of languages.'],
+                    ['title' => 'Tables that behave', 'desc' => 'Markdown tables become editable tables — add rows and columns visually afterwards.'],
+                    ['title' => 'LaTeX math', 'desc' => '$x^2$ and $$\frac{a}{b}$$ render as real formulas via KaTeX, no plugin needed.'],
+                    ['title' => 'Round-trip .md', 'desc' => 'Import a .md file, edit it visually, export .md again — or branch out to DOCX and PDF.'],
+                    ['title' => 'Offline and private', 'desc' => 'The editor works with no connection, and the file never leaves your device unless you export it.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Which Markdown flavour is supported?', 'a' => 'The common core: headings, emphasis, lists, links, images, block quotes, fenced code, tables and Math via $ delimiters.'],
+                    ['q' => 'Can I keep writing raw Markdown?', 'a' => 'Yes — code blocks and inline code keep your source untouched, and the .md export reproduces it.'],
+                    ['q' => 'Does math survive the DOCX export?', 'a' => 'Yes — formulas export as native, editable Word equations, not screenshots or LaTeX text.'],
+                    ['q' => 'Do I need an account?', 'a' => 'No. Open the page and start typing; documents are stored in your browser.'],
+                ],
+            ],
+
+            'math-notepad' => [
+                'title'       => 'Write Math Equations Online — Word Export — NPad',
+                'description' => 'Write equations with LaTeX or a symbol keyboard, see a live preview, and export to Word as real editable formulas. Free, private, works offline.',
+                'h1'          => 'Write math equations online',
+                'lede'        => 'Insert a formula, type LaTeX — or tap the built-in symbol keyboard — and watch the live preview. Export to Word and the equations arrive as native, editable math.',
+                'steps'       => [
+                    ['title' => 'Insert a formula', 'desc' => 'From the Insert menu (or by typing $$). Choose inline or block placement.'],
+                    ['title' => 'Write it your way', 'desc' => 'Type LaTeX directly, or build fractions, roots, sums and Greek letters from the symbol keyboard with a live preview.'],
+                    ['title' => 'Export as real math', 'desc' => 'DOCX export converts every formula to native Word equations — editable in Word’s own equation tools.'],
+                ],
+                'features'    => [
+                    ['title' => 'Live KaTeX preview', 'desc' => 'Parse errors show inline while you type, so typos never survive to the export.'],
+                    ['title' => 'Symbol keyboard', 'desc' => 'Fractions, roots, integrals, sums, matrices and Greek letters — one tap, cursor positioned.'],
+                    ['title' => 'Native Word math', 'desc' => 'Exports as OMML: real equations Word can re-edit, not images or plain LaTeX text.'],
+                    ['title' => 'Display and inline', 'desc' => 'Centred display equations for proofs, inline math for sentences — mixed freely in one note.'],
+                    ['title' => 'Full structure support', 'desc' => 'Fractions, radicals, sub/superscripts, big operators with limits, accents and matrices.'],
+                    ['title' => 'Screen-reader friendly', 'desc' => 'Every formula carries hidden MathML alongside the visual render.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Do I need to know LaTeX?', 'a' => 'No. The symbol keyboard builds fractions, roots and sums without typing code, and the live preview shows the result immediately.'],
+                    ['q' => 'What happens to equations in Word?', 'a' => 'They become native Word equations (OMML). You can edit them with Word’s equation editor like any you made there.'],
+                    ['q' => 'Can I go back and edit a formula?', 'a' => 'Yes — double-click any formula to reopen it with its LaTeX source.'],
+                    ['q' => 'Does it work offline?', 'a' => 'Yes, including the formula renderer — it is bundled with the app, not loaded from a CDN.'],
+                ],
+            ],
+
+            'checklist-app' => [
+                'title'       => 'Free Online Checklist and To-Do List — NPad',
+                'description' => 'Make interactive checklists in your browser: tick items off, group them in collapsible sections, export to PDF or Word. Free, private, no sign-up.',
+                'h1'          => 'Online checklist maker',
+                'lede'        => 'Turn a plain list into an interactive checklist. Tick items off, group related tasks in collapsible sections, and take the whole list with you as PDF or Word.',
+                'steps'       => [
+                    ['title' => 'Create a checklist', 'desc' => 'From the Insert menu — an interactive list appears with its first item ready.'],
+                    ['title' => 'Add and tick', 'desc' => 'Enter adds the next item, Tab nests a sub-task, checkboxes tick with a click or the keyboard.'],
+                    ['title' => 'Carry it anywhere', 'desc' => 'Print a clean copy, save as PDF, or export to Word — checked state included.'],
+                ],
+                'features'    => [
+                    ['title' => 'Real checkboxes', 'desc' => 'Click or press Space — no fiddly unicode symbols, and the state survives saves and exports.'],
+                    ['title' => 'Nested tasks', 'desc' => 'Sub-checklists inside items, and collapsible sections to keep a long list calm.'],
+                    ['title' => 'Instant search', 'desc' => 'Search matches item text across every note, not just titles.'],
+                    ['title' => 'Print-perfect output', 'desc' => 'Print or PDF keeps checkbox squares so the paper copy still works.'],
+                    ['title' => 'Word export', 'desc' => 'DOCX export renders checklists as proper lists with ticked items marked.'],
+                    ['title' => 'No lock-in', 'desc' => 'Local and private like everything else — export to JSON to move or back up.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Is my checklist saved between visits?', 'a' => 'Yes — it is stored in your browser on this device and reloads automatically.'],
+                    ['q' => 'Can I share a checklist?', 'a' => 'Export it as DOCX, PDF or JSON and send the file; there is no server-side sharing link.'],
+                    ['q' => 'Can I mix checklists with normal text?', 'a' => 'Yes — checklists, headings, tables and formulas can all live in the same note.'],
+                    ['q' => 'Does it work on my phone?', 'a' => 'Yes — the layout adapts to small screens and checklists work with touch.'],
+                ],
+            ],
+        ],
+    ],
 ];

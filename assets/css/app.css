@@ -3222,6 +3222,60 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 
 .hero__actions { margin-top: var(--space-5); }
 
+.hero__note {
+    margin-inline-start: var(--space-3);
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* Landing pages: home › tool trail and the numbered how-it-works grid. */
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.breadcrumb a { color: var(--text-muted); }
+.breadcrumb a:hover { color: var(--accent); }
+.breadcrumb [aria-current='page'] { color: var(--text-body); }
+
+.steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.steps__item {
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-sm);
+}
+
+.steps__n {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--surface-page, #fff);
+    font-weight: 600;
+}
+
+.steps__title { margin-bottom: var(--space-1); font-size: 16px; }
+.steps__item p { margin: 0; color: var(--text-body); font-size: 15px; }
+
+
 .section__title {
     display: flex;
     align-items: center;

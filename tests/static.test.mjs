@@ -272,4 +272,51 @@ export default function run(check, group) {
         assert.ok(fs.existsSync(path.join(ROOT, 'og-image.png')), 'missing og-image.png');
         assert.ok(fs.existsSync(path.join(ROOT, 'favicon.ico')), 'missing favicon.ico');
     });
+
+    group('static: landing pages');
+
+    const slugs = ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app'];
+
+    check('every landing slug has EN and FA entry files', () => {
+        for (const slug of slugs) {
+            assert.ok(fs.existsSync(path.join(ROOT, `${slug}.php`)), `missing ${slug}.php`);
+            assert.ok(fs.existsSync(path.join(ROOT, 'fa', `${slug}.php`)), `missing fa/${slug}.php`);
+        }
+    });
+
+    check('pretty URLs are rewritten and listed in the sitemap', () => {
+        const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        const sitemap = fs.readFileSync(path.join(ROOT, 'sitemap.php'), 'utf8');
+        for (const slug of slugs) {
+            assert.ok(htaccess.includes(`RewriteRule ^${slug}/?$ `),
+                `.htaccess missing rewrite for /${slug}`);
+            assert.ok(htaccess.includes(`RewriteRule ^fa/${slug}/?$ `),
+                `.htaccess missing rewrite for /fa/${slug}`);
+            assert.ok(sitemap.includes(`'${slug}'`), `sitemap missing /${slug}`);
+        }
+    });
+
+    check('the footer link mesh covers every landing page in both locales', () => {
+        const footer = fs.readFileSync(path.join(ROOT, 'includes/footer.php'), 'utf8');
+        for (const slug of slugs) {
+            assert.ok(footer.includes(`"${slug}"`) || footer.includes("'${slug}'") || footer.includes('$tool'),
+                `footer does not link /${slug}`);
+        }
+        const en = fs.readFileSync(path.join(ROOT, 'lang/en.php'), 'utf8');
+        const fa = fs.readFileSync(path.join(ROOT, 'lang/fa.php'), 'utf8');
+        for (const slug of slugs) {
+            assert.ok(en.includes(`'${slug}' =>`), `lang/en.php missing landing copy for ${slug}`);
+            assert.ok(fa.includes(`'${slug}' =>`), `lang/fa.php missing landing copy for ${slug}`);
+        }
+    });
+
+    check('landing renderer emits self-canonicals, breadcrumbs and FAQ schema', () => {
+        const landing = fs.readFileSync(path.join(ROOT, 'includes/landing.php'), 'utf8');
+        assert.ok(landing.includes('BreadcrumbList'), 'no BreadcrumbList schema');
+        assert.ok(landing.includes('FAQPage'), 'no FAQPage schema');
+        assert.ok(landing.includes('$canonicalPath'), 'canonical path not derived from slug');
+        const head = fs.readFileSync(path.join(ROOT, 'includes/head.php'), 'utf8');
+        assert.ok(head.includes('str_replace(\'/fa/\', \'/\', $canonicalPath)'),
+            'hreflang alternates must mirror the canonical URL, not hardcode the home page');
+    });
 }
