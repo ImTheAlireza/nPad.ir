@@ -25,13 +25,20 @@ $fileItems = [
     ['action' => 'new',       'icon' => 'file',      'label' => t('menu.new')],
     ['action' => 'open',      'icon' => 'folder',    'label' => t('menu.open')],
     ['separator' => true],
-    ['action' => 'save',          'icon' => 'download', 'label' => t('menu.save'), 'shortcut' => 'Ctrl+S'],
-    ['action' => 'save-html',     'icon' => 'save',     'label' => t('menu.save_html')],
-    ['action' => 'save-markdown', 'icon' => 'save',     'label' => t('menu.save_markdown')],
-    ['action' => 'save-json',     'icon' => 'save',     'label' => t('menu.save_json')],
-    ['action' => 'save-docx',     'icon' => 'save',     'label' => t('menu.save_docx')],
-    ['action' => 'save-pdf',      'icon' => 'save',     'label' => t('menu.save_pdf')],
-    ['action' => 'save-rtf',      'icon' => 'save',     'label' => t('menu.save_rtf')],
+    [
+        'icon'      => 'download',
+        'label'     => t('menu.export'),
+        'submenuId' => 'Export',
+        'children'  => [
+            ['action' => 'save',          'icon' => 'file',  'label' => t('menu.save'),          'shortcut' => 'Ctrl+S'],
+            ['action' => 'save-html',     'icon' => 'save',  'label' => t('menu.save_html')],
+            ['action' => 'save-markdown', 'icon' => 'save',  'label' => t('menu.save_markdown')],
+            ['action' => 'save-json',     'icon' => 'save',  'label' => t('menu.save_json')],
+            ['action' => 'save-docx',     'icon' => 'save',  'label' => t('menu.save_docx')],
+            ['action' => 'save-pdf',      'icon' => 'save',  'label' => t('menu.save_pdf')],
+            ['action' => 'save-rtf',      'icon' => 'save',  'label' => t('menu.save_rtf')],
+        ],
+    ],
     ['separator' => true],
     ['action' => 'print',         'icon' => 'printer',  'label' => t('menu.print'), 'shortcut' => 'Ctrl+P'],
     ['separator' => true],
@@ -67,10 +74,48 @@ $insertItems = [
 ];
 
 /**
- * Render one dropdown menu.
+ * Render one dropdown menu, including any nested submenu an item carries
+ * under 'children' (rendered as a flyout panel; ui.js wires the behaviour).
  */
 function npad_render_menu(string $id, string $label, array $items): void
 {
+    $renderItem = static function (array $item, string $parentId, int $index) use (&$renderItem): void {
+        if (!empty($item['separator'])) {
+            echo '<div class="menu__separator" role="separator"></div>';
+            return;
+        }
+        if (!empty($item['children'])) {
+            $subId = $parentId . ($item['submenuId'] ?? 'Sub' . $index);
+            ?>
+            <div class="menu__submenu">
+                <button type="button" class="menu__item" id="<?= e($subId) ?>Trigger"
+                        role="menuitem" aria-haspopup="menu" aria-expanded="false"
+                        aria-controls="<?= e($subId) ?>Panel" data-submenu-trigger>
+                    <?= icon($item['icon']) ?>
+                    <span><?= e($item['label']) ?></span>
+                    <span class="menu__submenu-arrow" aria-hidden="true"></span>
+                </button>
+                <div class="menu__panel menu__panel--submenu" id="<?= e($subId) ?>Panel"
+                     role="menu" aria-labelledby="<?= e($subId) ?>Trigger" data-open="false">
+                    <?php foreach ($item['children'] as $childIndex => $child): ?>
+                        <?php $renderItem($child, $subId, $childIndex); ?>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php
+            return;
+        }
+        ?>
+        <button type="button" class="menu__item" role="menuitem"
+                data-action="<?= e($item['action']) ?>">
+            <?= icon($item['icon']) ?>
+            <span><?= e($item['label']) ?></span>
+            <?php if (!empty($item['shortcut'])): ?>
+                <span class="menu__shortcut"><?= e($item['shortcut']) ?></span>
+            <?php endif; ?>
+        </button>
+        <?php
+    };
     ?>
     <div class="menu">
         <button type="button" class="menu__trigger" id="<?= e($id) ?>Trigger"
@@ -79,19 +124,8 @@ function npad_render_menu(string $id, string $label, array $items): void
         </button>
         <div class="menu__panel" id="<?= e($id) ?>Panel" role="menu"
              aria-labelledby="<?= e($id) ?>Trigger" data-open="false">
-            <?php foreach ($items as $item): ?>
-                <?php if (!empty($item['separator'])): ?>
-                    <div class="menu__separator" role="separator"></div>
-                <?php else: ?>
-                    <button type="button" class="menu__item" role="menuitem"
-                            data-action="<?= e($item['action']) ?>">
-                        <?= icon($item['icon']) ?>
-                        <span><?= e($item['label']) ?></span>
-                        <?php if (!empty($item['shortcut'])): ?>
-                            <span class="menu__shortcut"><?= e($item['shortcut']) ?></span>
-                        <?php endif; ?>
-                    </button>
-                <?php endif; ?>
+            <?php foreach ($items as $index => $item): ?>
+                <?php $renderItem($item, $id, $index); ?>
             <?php endforeach; ?>
         </div>
     </div>

@@ -24,6 +24,7 @@ return [
         'file'        => 'File',
         'edit'        => 'Edit',
         'insert'      => 'Insert',
+        'export'      => 'Export as',
         'table'       => 'Table…',
         'code_block'  => 'Code block',
         'math'        => 'Math…',

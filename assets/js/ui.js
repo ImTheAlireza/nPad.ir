@@ -7,13 +7,40 @@
  */
 
 /* -------------------------------------------------------------------------
-   Menus
+   Menus (with flyout submenus)
    ------------------------------------------------------------------------- */
 
 let openMenu = null;
 
+/** Pointer devices only: hover-switching submenus, like native apps. */
+const hoverCapable = window.matchMedia
+    ? window.matchMedia('(hover: hover) and (pointer: fine)')
+    : null;
+
+const isRtl = () => (document.documentElement.getAttribute('dir') || 'ltr').toLowerCase() === 'rtl';
+
+function closeSub(menu, focusTrigger = false) {
+    if (!menu.sub) return;
+    const { panel, trigger } = menu.sub;
+    panel.dataset.open = 'false';
+    trigger.setAttribute('aria-expanded', 'false');
+    menu.sub = null;
+    if (focusTrigger) trigger.focus();
+}
+
+function openSub(menu, trigger, focusFirst = false) {
+    const panel = document.getElementById(trigger.getAttribute('aria-controls') || '');
+    if (!panel) return;
+    if (menu.sub && menu.sub.trigger !== trigger) closeSub(menu);
+    menu.sub = { panel, trigger };
+    panel.dataset.open = 'true';
+    trigger.setAttribute('aria-expanded', 'true');
+    if (focusFirst) focusItem(panel, 0);
+}
+
 function closeMenu(menu) {
     if (!menu) return;
+    closeSub(menu);
     menu.panel.dataset.open = 'false';
     menu.trigger.setAttribute('aria-expanded', 'false');
     if (openMenu === menu) openMenu = null;
@@ -26,14 +53,16 @@ function openMenuPanel(menu) {
     openMenu = menu;
 }
 
-function menuItems(menu) {
-    return Array.from(menu.panel.querySelectorAll('.menu__item')).filter(
-        (el) => !el.hasAttribute('disabled'),
+/** Focusable items belonging to one panel — nested flyout items are not
+ *  part of their parent panel's keyboard flow. */
+function itemsOf(panel) {
+    return Array.from(panel.querySelectorAll('.menu__item')).filter(
+        (el) => !el.hasAttribute('disabled') && el.closest('.menu__panel') === panel,
     );
 }
 
-function focusItem(menu, index) {
-    const items = menuItems(menu);
+function focusItem(panel, index) {
+    const items = itemsOf(panel);
     if (!items.length) return;
     const wrapped = (index + items.length) % items.length;
     items[wrapped].focus();
@@ -41,13 +70,15 @@ function focusItem(menu, index) {
 
 /**
  * Wire up every .menu in the document.
- * Supports click, Enter/Space, Arrow keys, Home/End, Escape and outside-click.
+ * Supports click, Enter/Space, Arrow keys (RTL-aware for submenus), Home/End,
+ * Escape (flyout first, then the menu) and outside-click.
  */
 export function initMenus(root = document) {
     const menus = Array.from(root.querySelectorAll('.menu')).map((el) => ({
         root: el,
-        trigger: el.querySelector('.menu__trigger'),
-        panel: el.querySelector('.menu__panel'),
+        trigger: el.querySelector(':scope > .menu__trigger'),
+        panel: el.querySelector(':scope > .menu__panel'),
+        sub: null,
     })).filter((m) => m.trigger && m.panel);
 
     menus.forEach((menu) => {
@@ -62,51 +93,111 @@ export function initMenus(root = document) {
             if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 openMenuPanel(menu);
-                focusItem(menu, 0);
+                focusItem(menu.panel, 0);
             } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 openMenuPanel(menu);
-                focusItem(menu, -1);
+                focusItem(menu.panel, -1);
             }
         });
 
-        menu.panel.addEventListener('keydown', (event) => {
-            const items = menuItems(menu);
-            const current = items.indexOf(document.activeElement);
+        // One keydown handler per panel (root and flyout). The innermost
+        // panel handles the event: `closest('.menu__panel') === panel`
+        // filters the copies bubbling out of a nested flyout.
+        for (const panel of menu.root.querySelectorAll('.menu__panel')) {
+            panel.addEventListener('keydown', (event) => {
+                const origin = event.target?.closest ? event.target : null;
+                if (!origin || origin.closest('.menu__panel') !== panel) return;
 
-            switch (event.key) {
-                case 'ArrowDown':
-                    event.preventDefault();
-                    focusItem(menu, current + 1);
-                    break;
-                case 'ArrowUp':
-                    event.preventDefault();
-                    focusItem(menu, current - 1);
-                    break;
-                case 'Home':
-                    event.preventDefault();
-                    focusItem(menu, 0);
-                    break;
-                case 'End':
-                    event.preventDefault();
-                    focusItem(menu, -1);
-                    break;
-                case 'Escape':
-                    event.preventDefault();
-                    closeMenu(menu);
-                    menu.trigger.focus();
-                    break;
-                case 'Tab':
-                    closeMenu(menu);
-                    break;
-                default:
-                    break;
-            }
+                const items = itemsOf(panel);
+                const current = items.indexOf(document.activeElement);
+                const openKey = isRtl() ? 'ArrowLeft' : 'ArrowRight';
+                const closeKey = isRtl() ? 'ArrowRight' : 'ArrowLeft';
+
+                switch (event.key) {
+                    case 'ArrowDown':
+                        event.preventDefault();
+                        focusItem(panel, current + 1);
+                        break;
+                    case 'ArrowUp':
+                        event.preventDefault();
+                        focusItem(panel, current - 1);
+                        break;
+                    case 'Home':
+                        event.preventDefault();
+                        focusItem(panel, 0);
+                        break;
+                    case 'End':
+                        event.preventDefault();
+                        focusItem(panel, -1);
+                        break;
+                    case openKey: {
+                        const trigger = origin.closest('[data-submenu-trigger]');
+                        if (trigger) {
+                            event.preventDefault();
+                            openSub(menu, trigger, true);
+                        }
+                        break;
+                    }
+                    case closeKey:
+                        if (panel.classList.contains('menu__panel--submenu')) {
+                            event.preventDefault();
+                            const parent = document.getElementById(panel.getAttribute('aria-labelledby') || '');
+                            closeSub(menu);
+                            parent?.focus();
+                        }
+                        break;
+                    case 'Escape':
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (menu.sub) {
+                            const { trigger } = menu.sub;
+                            closeSub(menu);
+                            trigger.focus();
+                        } else {
+                            closeMenu(menu);
+                            menu.trigger.focus();
+                        }
+                        break;
+                    case 'Tab':
+                        closeMenu(menu);
+                        break;
+                    default:
+                        break;
+                }
+            });
+        }
+
+        // Flyout triggers: click toggles (touch-friendly — never hover-only),
+        // hover opens on pointer devices while the menu is open.
+        for (const trigger of menu.root.querySelectorAll('[data-submenu-trigger]')) {
+            trigger.addEventListener('click', (event) => {
+                // Not an action item: keep the menu open and stop the
+                // panel's item-click closer below from dismissing everything.
+                event.stopPropagation();
+                if (menu.sub && menu.sub.trigger === trigger) closeSub(menu, true);
+                else openSub(menu, trigger, true);
+            });
+            trigger.addEventListener('mouseenter', () => {
+                if (hoverCapable && hoverCapable.matches && menu.panel.dataset.open === 'true') {
+                    openSub(menu, trigger);
+                }
+            });
+        }
+
+        // Hovering another item of the parent menu closes an open flyout.
+        menu.panel.addEventListener('mouseover', (event) => {
+            if (!menu.sub || !(hoverCapable && hoverCapable.matches)) return;
+            const target = event.target?.closest ? event.target : null;
+            if (!target || menu.sub.panel.contains(target) || menu.sub.trigger.contains(target)) return;
+            if (target.closest('.menu__panel') !== menu.panel) return;
+            if (target.closest('.menu__item')) closeSub(menu);
         });
 
-        // Selecting an item always dismisses the menu.
+        // Selecting an item always dismisses the whole menu.
         menu.panel.addEventListener('click', (event) => {
-            if (event.target.closest('.menu__item')) closeMenu(menu);
+            const item = event.target?.closest ? event.target.closest('.menu__item') : null;
+            if (item && !item.hasAttribute('data-submenu-trigger')) closeMenu(menu);
         });
     });
 
@@ -116,11 +207,18 @@ export function initMenus(root = document) {
     });
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && openMenu) {
-            const trigger = openMenu.trigger;
-            closeMenu(openMenu);
+        if (event.key !== 'Escape' || !openMenu) return;
+        // Panels handle their own Escape (flyout first); this covers the
+        // case where focus sits outside the panels.
+        if (openMenu.sub) {
+            const { trigger } = openMenu.sub;
+            closeSub(openMenu);
             trigger.focus();
+            return;
         }
+        const { trigger } = openMenu;
+        closeMenu(openMenu);
+        trigger.focus();
     });
 }
 

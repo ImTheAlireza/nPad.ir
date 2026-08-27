@@ -152,6 +152,75 @@ export default async function run(check, group) {
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
+    const subTrigger = document.getElementById('fileMenuExportTrigger');
+    const subPanel = document.getElementById('fileMenuExportPanel');
+
+    check('all export formats live in the Export-as flyout, none at top level', () => {
+        assert.ok(subTrigger && subPanel, 'flyout markup missing');
+        const flyoutActions = [...subPanel.querySelectorAll('[data-action]')].map((b) => b.dataset.action);
+        assert.deepEqual(flyoutActions, [
+            'save', 'save-html', 'save-markdown', 'save-json', 'save-docx', 'save-pdf', 'save-rtf',
+        ]);
+        const topActions = [...panel.querySelectorAll(':scope > button[data-action]')].map((b) => b.dataset.action);
+        assert.deepEqual(topActions, ['new', 'open', 'print', 'details', 'backups', 'clear'],
+            'exports still exposed at the top level');
+        assert.equal(subTrigger.getAttribute('aria-haspopup'), 'menu');
+    });
+
+    check('flyout opens on click and keeps the parent menu open', () => {
+        trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        subTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'true', 'flyout did not open');
+        assert.equal(subTrigger.getAttribute('aria-expanded'), 'true');
+        assert.equal(panel.dataset.open, 'true', 'parent menu closed unexpectedly');
+    });
+
+    check('Escape closes the flyout first, then the menu', () => {
+        subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'false', 'flyout did not close');
+        assert.equal(panel.dataset.open, 'true', 'menu should survive the first Escape');
+        assert.equal(document.activeElement, subTrigger, 'focus not returned to the flyout trigger');
+        subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(panel.dataset.open, 'false', 'second Escape did not close the menu');
+    });
+
+    check('ArrowRight opens the flyout; ArrowLeft returns to the trigger', () => {
+        trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        subTrigger.focus();
+        subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'true', 'ArrowRight did not open the flyout');
+        const firstItem = subPanel.querySelector('[data-action]');
+        assert.equal(document.activeElement, firstItem, 'focus not moved into the flyout');
+        firstItem.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        assert.equal(subPanel.dataset.open, 'false', 'ArrowLeft did not close the flyout');
+        assert.equal(document.activeElement, subTrigger, 'focus not returned to the trigger');
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    check('activating a flyout export closes the whole menu and fires the action', () => {
+        window.URL.createObjectURL = () => 'blob:mock';
+        window.URL.revokeObjectURL = () => {};
+        // jsdom tries (and fails loudly) to navigate on anchor clicks.
+        const nativeAnchorClick = window.HTMLAnchorElement.prototype.click;
+        window.HTMLAnchorElement.prototype.click = function () {
+            if (String(this.href || '').startsWith('blob:')) return;
+            nativeAnchorClick.call(this);
+        };
+        try {
+            trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            subTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            subPanel.querySelector('[data-action="save-html"]')
+                .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            assert.equal(panel.dataset.open, 'false', 'menu did not close after export');
+            assert.equal(subPanel.dataset.open, 'false', 'flyout did not close after export');
+            assert.ok(tracked.includes('download_html'), 'export action did not run');
+        } finally {
+            delete window.URL.createObjectURL;
+            delete window.URL.revokeObjectURL;
+            window.HTMLAnchorElement.prototype.click = nativeAnchorClick;
+        }
+    });
+
     let fileAccept = '';
     const nativeInputClick = window.HTMLInputElement.prototype.click;
     window.HTMLInputElement.prototype.click = function () {

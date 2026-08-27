@@ -500,6 +500,46 @@ button, input, select, textarea {
 }
 
 /* --------------------------------------------------------------------------
+   Flyout submenus (File -> Export as)
+   -------------------------------------------------------------------------- */
+
+.menu__submenu {
+    position: relative;
+}
+
+.menu__submenu-arrow {
+    margin-inline-start: auto;
+    width: 0;
+    height: 0;
+    border-block: 4px solid transparent;
+    border-inline-start: 5px solid currentColor;
+    transition: transform var(--transition-fast);
+}
+
+.menu__item[aria-expanded='true'] .menu__submenu-arrow {
+    transform: rotate(90deg);
+}
+
+.menu__panel--submenu {
+    top: calc(0px - var(--space-1));
+    inset-inline-start: calc(100% - var(--space-2));
+    min-width: 220px;
+}
+
+/* Small screens: the flyout becomes an inline expansion of the parent panel
+   instead of overflowing the viewport edge. */
+@media (max-width: 640px) {
+    .menu__panel--submenu {
+        position: static;
+        min-width: 0;
+        margin-block: var(--space-1);
+        margin-inline-start: var(--space-3);
+        box-shadow: none;
+        transform: none;
+    }
+}
+
+/* --------------------------------------------------------------------------
    8. Theme + language controls
    -------------------------------------------------------------------------- */
 
