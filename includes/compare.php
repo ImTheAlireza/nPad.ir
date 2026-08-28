@@ -34,6 +34,10 @@ $appPath       = NPAD_LANGS[$lang]['path'];
 $canonicalPath = $lang === 'fa' ? '/fa/compare' : '/compare';
 $skipTarget    = '#main';
 
+// Marketing page: chrome-only app bar + theme-toggle JS only.
+$appbarChrome   = true;
+$includeThemeJs = true;
+
 $pageTitle = $page['title'];
 $pageDesc  = $page['description'];
 $ogTitle   = $page['h1'];

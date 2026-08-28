@@ -39,6 +39,11 @@ $appPath      = NPAD_LANGS[$lang]['path'];
 $canonicalPath = $lang === 'fa' ? "/fa/{$slug}" : "/{$slug}";
 $skipTarget   = '#main';
 
+// Marketing page: app bar shows brand + language + theme toggle only, and
+// only the theme-toggle JS is loaded (no editor bundle).
+$appbarChrome   = true;
+$includeThemeJs = true;
+
 $pageTitle = $page['title'];
 $pageDesc  = $page['description'];
 

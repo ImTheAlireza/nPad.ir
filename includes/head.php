@@ -18,6 +18,10 @@ $dir            = NPAD_LANGS[$lang]['dir'];
 $locale         = NPAD_LANGS[$lang]['locale'];
 $canonicalPath  = $canonicalPath ?? '/';
 $includeAppJs   = $includeAppJs ?? false;
+// Non-editor pages (landing, compare, privacy) load only the theme toggle
+// logic instead of the full app bundle, so their one interactive control —
+// the dark-mode button — works without shipping the editor.
+$includeThemeJs = $includeThemeJs ?? false;
 $altLang        = $lang === 'en' ? 'fa' : 'en';
 // Pages without an editing surface (privacy, 404) pass their own target so
 // the link never points at an element that does not exist there.
@@ -131,6 +135,9 @@ foreach ([
 ?>
 <link rel="modulepreload" href="/assets/js/<?= e($module) ?>">
 <?php endforeach; ?>
+<?php elseif ($includeThemeJs): ?>
+<script type="module" src="<?= e(asset('assets/js/theme-only.js')) ?>" defer></script>
+<link rel="modulepreload" href="/assets/js/theme.js">
 <?php endif; ?>
 </head>
 <body<?= isset($bodyClass) ? ' class="' . e($bodyClass) . '"' : '' ?>>
