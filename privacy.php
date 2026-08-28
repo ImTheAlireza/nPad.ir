@@ -21,6 +21,10 @@ $pageDesc      = t('privacy.intro');
 $canonicalPath = $lang === 'fa' ? '/fa/privacy.php' : '/privacy.php';
 $skipTarget    = '#main';
 
+// Content page: chrome-only app bar + theme-toggle JS only.
+$appbarChrome   = true;
+$includeThemeJs = true;
+
 require __DIR__ . '/includes/head.php';
 ?>
 <div class="page">

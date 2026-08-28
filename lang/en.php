@@ -10,10 +10,10 @@ declare(strict_types=1);
 
 return [
     'meta' => [
-        'title'       => 'NPad — Free Online Notepad with Auto-Save',
-        'description' => 'A free online notepad that works in your browser. Rich text formatting, automatic saving, dark mode, and full offline support. No sign-up required.',
-        'og_title'    => 'NPad — Free Online Notepad',
-        'og_desc'     => 'Write, format and save notes directly in your browser. Free, private and offline-capable.',
+        'title'       => 'NPad — Private Online Notepad That Works Offline',
+        'description' => 'A private online notepad: your notes never leave your device and it keeps working with no internet. Rich text, LaTeX math that exports to editable Word equations, auto-save. Free, no sign-up.',
+        'og_title'    => 'NPad — Private Notes That Work Offline',
+        'og_desc'     => 'Your notes stay on your device and work with no connection. Rich text, tables, and LaTeX math that exports to editable Word equations. Free, no account.',
     ],
 
     'skip_link'   => 'Skip to editor',
@@ -388,14 +388,14 @@ return [
     ],
 
     'hero' => [
-        'title' => 'A free online notepad that respects your privacy',
-        'lede'  => 'NPad is a rich text editor that runs entirely in your browser. Format text, build lists and insert links — everything saves automatically to this device. No account, no downloads, no tracking of what you write.',
-        'cta'   => 'Start writing',
+        'title' => 'Private notes that work offline — no account, ever',
+        'lede'  => 'NPad is a full rich-text editor that runs entirely in your browser. Your notes are saved on this device and never touch a server, so they stay private and keep working with no internet. Write tables, checklists and LaTeX math — then export it all to editable Word documents.',
+        'cta'   => 'Start writing — free',
     ],
 
     'why' => [
         'title' => 'Why NPad?',
-        'body'  => 'Most online notepads either strip out formatting or ask you to sign up first. NPad does neither. It keeps the formatting tools of a full editor while storing every note locally, so your writing stays on your machine and remains available even without a connection.',
+        'body'  => 'Most online notepads either strip out your formatting, ask you to sign up, or quietly upload everything you type. NPad does none of that. It gives you the tools of a full editor — tables, checklists, code blocks and LaTeX math — while storing every note locally, so your writing stays on your machine, works with no connection, and exports to editable Word, PDF and Markdown when you need it elsewhere. The math even exports as real, editable Word equations, not screenshots.',
     ],
 
     'features' => [
@@ -457,6 +457,7 @@ return [
     'footer' => [
         'tagline' => 'A free, private online notepad.',
         'home'    => 'Home',
+        'compare' => 'Compare',
         'privacy' => 'Privacy',
         'contact' => 'Contact',
         'rights'  => 'All rights reserved.',
@@ -502,6 +503,59 @@ return [
         'markdown-editor'  => 'Markdown editor',
         'math-notepad'     => 'Math & equations',
         'checklist-app'    => 'Checklists',
+        'text-editor'      => 'Text editor',
+        'word-counter'     => 'Word counter',
+        'rich-text-editor' => 'Rich text editor',
+    ],
+
+    'compare' => [
+        'title'       => 'NPad vs Google Keep vs Notion vs Evernote — Private Notes Compared',
+        'description' => 'How NPad compares to Google Keep, Notion and Evernote for private note-taking: no account, notes that stay on your device, real offline support, and export to editable Word. Free.',
+        'h1'          => 'NPad vs Google Keep, Notion & Evernote',
+        'lede'        => 'Most note apps want an account and sync everything you type to their servers. NPad takes the opposite approach: your notes stay on your device, work with no internet, and export to editable Word — with no sign-up. Here is how it stacks up.',
+        'intro_title' => 'The short version',
+        'intro_body'  => 'Google Keep, Notion and Evernote are cloud-first tools built around accounts and team collaboration. That is a real strength when you need multi-device sync or shared workspaces — and a real cost in privacy, speed and lock-in. NPad is the opposite trade: instant, private and local, with genuine offline support and clean exports, but no cloud account. Pick the one that matches what you actually need.',
+        'table_title' => 'Feature comparison',
+        'table_caption' => 'How NPad compares to popular note apps',
+        'col_feature' => 'Feature',
+        'col_npad'    => 'NPad',
+        'col_keep'    => 'Google Keep',
+        'col_notion'  => 'Notion',
+        'col_evernote' => 'Evernote',
+        'yes'         => 'Yes',
+        'no'          => 'No',
+        'partial'     => 'Partial',
+        'rows' => [
+            ['feature' => 'Works with no account',        'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Notes stay on your device',     'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Full offline use',              'npad' => 'Yes', 'keep' => 'Partial', 'notion' => 'Partial', 'evernote' => 'Partial'],
+            ['feature' => 'Free with no paid tier',        'npad' => 'Yes', 'keep' => 'Yes',     'notion' => 'Partial', 'evernote' => 'No'],
+            ['feature' => 'Rich text, tables & code',      'npad' => 'Yes', 'keep' => 'No',      'notion' => 'Yes',     'evernote' => 'Yes'],
+            ['feature' => 'LaTeX math → editable Word',    'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Export to DOCX, PDF, Markdown', 'npad' => 'Yes', 'keep' => 'No',      'notion' => 'Partial', 'evernote' => 'Partial'],
+            ['feature' => 'No tracking of what you write', 'npad' => 'Yes', 'keep' => 'No',      'notion' => 'No',      'evernote' => 'No'],
+            ['feature' => 'Real-time team collaboration',  'npad' => 'No',  'keep' => 'Partial', 'notion' => 'Yes',     'evernote' => 'Partial'],
+            ['feature' => 'Multi-device cloud sync',       'npad' => 'No',  'keep' => 'Yes',     'notion' => 'Yes',     'evernote' => 'Yes'],
+        ],
+        'when_title'  => 'When NPad is the right choice',
+        'when_items'  => [
+            ['title' => 'You want privacy, not a login', 'desc' => 'Your notes never reach a server, so there is no account to hack and nothing to leak. Clear your browser data and it is gone for good.'],
+            ['title' => 'You work offline',              'desc' => 'On a plane, a train, or dead Wi-Fi, NPad keeps working — the app and your notes are already on the device.'],
+            ['title' => 'You need real exports',         'desc' => 'Take a note to Word, PDF or Markdown with formatting intact. Math exports as native, editable Word equations, not images.'],
+            ['title' => 'You want it instant',           'desc' => 'No onboarding, no workspace setup — the page loads and you type. Ideal for quick capture and scratch notes.'],
+        ],
+        'when_not_title' => 'When another tool fits better',
+        'when_not_body'  => 'If your work centres on real-time collaboration with a team, a shared knowledge base across an organisation, or automatic sync across many devices, a cloud tool like Notion or Evernote is the better fit — that is what they are built for. NPad is deliberately single-device and private. It is a scratchpad and writing surface, not a team wiki.',
+        'faq_title'   => 'Questions and answers',
+        'faq' => [
+            ['q' => 'Is NPad a replacement for Notion?', 'a' => 'For private, single-person note-taking and writing, yes. For team wikis, databases and shared workspaces, no — Notion is built for collaboration and NPad is built for privacy and speed.'],
+            ['q' => 'Can I sync NPad across devices?', 'a' => 'There is no cloud sync, by design. To move a note, export it as JSON or DOCX and open it on the other device. Nothing you write is uploaded.'],
+            ['q' => 'Is NPad really free?', 'a' => 'Yes — every feature, with no paid tier and no account. Unlike Evernote and parts of Notion, there is nothing gated behind a subscription.'],
+            ['q' => 'How is NPad more private than Google Keep?', 'a' => 'Google Keep stores your notes on Google’s servers tied to your account. NPad stores them only in your browser on your device; the server never receives your note content.'],
+        ],
+        'cta_title'   => 'Try the private option',
+        'cta_body'    => 'No account, no cloud, no tracking. Open NPad and start writing — your notes stay with you.',
+        'cta_button'  => 'Open NPad',
     ],
 
     'landing' => [
@@ -618,6 +672,84 @@ return [
                     ['q' => 'Can I share a checklist?', 'a' => 'Export it as DOCX, PDF or JSON and send the file; there is no server-side sharing link.'],
                     ['q' => 'Can I mix checklists with normal text?', 'a' => 'Yes — checklists, headings, tables and formulas can all live in the same note.'],
                     ['q' => 'Does it work on my phone?', 'a' => 'Yes — the layout adapts to small screens and checklists work with touch.'],
+                ],
+            ],
+
+            'text-editor' => [
+                'title'       => 'Free Online Text Editor — No Sign-Up, Works Offline — NPad',
+                'description' => 'A fast online text editor in your browser. Write, format and auto-save plain or rich text, then export to TXT, DOCX, PDF or Markdown. Free, private, no account.',
+                'h1'          => 'Online text editor',
+                'lede'        => 'A clean, distraction-free text editor that opens instantly in any browser. Type, format and organise — everything auto-saves to this device, and nothing is uploaded.',
+                'steps'       => [
+                    ['title' => 'Open the editor', 'desc' => 'No download, no login. The writing surface is ready the moment the page loads.'],
+                    ['title' => 'Write and format', 'desc' => 'Plain text when you want it, rich formatting when you need it — headings, lists, tables and links from the toolbar.'],
+                    ['title' => 'Save or export', 'desc' => 'Text auto-saves locally. Export to TXT, DOCX, PDF, Markdown, HTML, RTF or JSON at any time.'],
+                ],
+                'features'    => [
+                    ['title' => 'Instant and lightweight', 'desc' => 'No splash screens or onboarding — the editor is the page, ready to type into immediately.'],
+                    ['title' => 'Plain or rich text', 'desc' => 'Paste as plain text to strip formatting, or use the full rich-text toolbar when structure matters.'],
+                    ['title' => 'Automatic saving', 'desc' => 'Every change is written to local storage as you type and flushed the moment you close the tab.'],
+                    ['title' => 'Multiple documents', 'desc' => 'Keep several texts open in tabs, organise them with folders and colour-coded tags.'],
+                    ['title' => 'Works offline', 'desc' => 'After the first visit the editor loads with no network connection at all.'],
+                    ['title' => 'Private by design', 'desc' => 'Your text lives in your browser. There is no account and no server-side copy.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Is this text editor free?', 'a' => 'Yes — every feature is free, with no account and no paid tier.'],
+                    ['q' => 'Can I edit plain text without formatting?', 'a' => 'Yes. Use “Paste as plain text” and the plain TXT export to keep your text formatting-free end to end.'],
+                    ['q' => 'Are my documents saved automatically?', 'a' => 'Yes — every change is stored locally in your browser and reloads when you return.'],
+                    ['q' => 'Does it work without an internet connection?', 'a' => 'Yes. After the first load the editor works fully offline; your text was already on your device.'],
+                ],
+            ],
+
+            'word-counter' => [
+                'title'       => 'Free Online Word Counter — Live Word & Character Count — NPad',
+                'description' => 'Count words and characters online as you type, with a live count in the status bar. Free word counter with a full editor, auto-save and export. No sign-up.',
+                'h1'          => 'Online word counter',
+                'lede'        => 'See your word and character count update live as you write. NPad is a full editor with a built-in counter — no pasting into a separate tool, and your text never leaves your device.',
+                'steps'       => [
+                    ['title' => 'Start typing', 'desc' => 'Open the page and write, or paste an existing draft straight in.'],
+                    ['title' => 'Watch the count', 'desc' => 'The status bar shows a live word and character count that updates on every keystroke.'],
+                    ['title' => 'Keep writing or export', 'desc' => 'Your text auto-saves on this device; export to DOCX, PDF, Markdown or TXT whenever you are done.'],
+                ],
+                'features'    => [
+                    ['title' => 'Live word count', 'desc' => 'Words and characters update instantly as you type — no button to press, no delay.'],
+                    ['title' => 'Not just a counter', 'desc' => 'A real editor around the count: headings, lists, tables and formatting, so you can write and measure in one place.'],
+                    ['title' => 'Nothing uploaded', 'desc' => 'The text you are counting stays in your browser. It is never sent to a server.'],
+                    ['title' => 'Auto-save', 'desc' => 'Your draft is stored locally as you type, so a closed tab never loses the count or the content.'],
+                    ['title' => 'Works offline', 'desc' => 'Count words with no connection — the whole app runs from your device after the first visit.'],
+                    ['title' => 'Export anywhere', 'desc' => 'Take the finished piece to Word, PDF, Markdown, HTML, RTF or plain text.'],
+                ],
+                'faq'         => [
+                    ['q' => 'Does the word count update as I type?', 'a' => 'Yes — the status bar shows a live word and character count that changes on every keystroke.'],
+                    ['q' => 'Is my text sent anywhere to be counted?', 'a' => 'No. Counting happens in your browser; the text never leaves your device.'],
+                    ['q' => 'Can I count words in a document I already have?', 'a' => 'Yes — paste it in, or open a .txt, .md or .html file, and the count appears immediately.'],
+                    ['q' => 'Is it free?', 'a' => 'Completely free, with no account required.'],
+                ],
+            ],
+
+            'rich-text-editor' => [
+                'title'       => 'Free Online Rich Text Editor — WYSIWYG, Export to Word — NPad',
+                'description' => 'A WYSIWYG rich text editor in your browser: headings, colours, tables, lists and links, with export to DOCX, PDF and HTML. Free, private, auto-saving, no sign-up.',
+                'h1'          => 'Online rich text editor',
+                'lede'        => 'Format as you write — headings, bold and italic, colours, tables, lists and links — in a true WYSIWYG editor. Export clean DOCX, PDF or HTML, all without an account.',
+                'steps'       => [
+                    ['title' => 'Open and write', 'desc' => 'A formatted document surface loads instantly — no setup, no login.'],
+                    ['title' => 'Format visually', 'desc' => 'Apply headings, emphasis, colours, lists, tables and links from the toolbar or with keyboard shortcuts.'],
+                    ['title' => 'Export clean output', 'desc' => 'Download a Word document, PDF or tidy HTML with your formatting fully preserved.'],
+                ],
+                'features'    => [
+                    ['title' => 'True WYSIWYG', 'desc' => 'What you see is what exports — no separate source view or preview pane to reconcile.'],
+                    ['title' => 'Full formatting', 'desc' => 'Bold, italic, underline, strikethrough, sub/superscript, colours, alignment, lists and links.'],
+                    ['title' => 'Tables and structure', 'desc' => 'Insert and edit real tables, collapsible sections, code blocks and checklists inline.'],
+                    ['title' => 'Clean export', 'desc' => 'DOCX, PDF, HTML, Markdown, RTF, TXT and JSON — formatting carried through, no junk markup.'],
+                    ['title' => 'Auto-save and offline', 'desc' => 'Every edit is stored locally and the editor keeps working with no connection.'],
+                    ['title' => 'Private by design', 'desc' => 'Your document stays in your browser; there is no account and no server-side copy.'],
+                ],
+                'faq'         => [
+                    ['q' => 'What is a rich text editor?', 'a' => 'An editor that shows formatting — headings, bold, colours, tables — as you apply it, instead of raw markup or plain text.'],
+                    ['q' => 'Can I export to Microsoft Word?', 'a' => 'Yes — the DOCX export produces a real Word document with your formatting, tables and lists intact.'],
+                    ['q' => 'Does the HTML export stay clean?', 'a' => 'Yes — the HTML export is sanitised and structured, not the tag soup some editors produce.'],
+                    ['q' => 'Do I need an account?', 'a' => 'No. Open the page and start writing; documents are stored in your browser.'],
                 ],
             ],
         ],

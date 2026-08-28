@@ -21,6 +21,12 @@ $otherLang     = $lang === 'fa' ? 'en' : 'fa';
 $otherLangPath = NPAD_LANGS[$otherLang]['path'];
 $homePath      = NPAD_LANGS[$lang]['path'];
 
+// "Chrome only" mode for non-editor pages (landing, compare, privacy): render
+// the brand, language switch and theme toggle, but not the File/Edit/Insert
+// menus or the focus toggle — those act on an editor that isn't on the page,
+// and their JavaScript is never loaded there, so they would be dead controls.
+$appbarChrome  = $appbarChrome ?? false;
+
 $fileItems = [
     ['action' => 'new',       'icon' => 'file',      'label' => t('menu.new')],
     ['action' => 'open',      'icon' => 'folder',    'label' => t('menu.open')],
@@ -139,11 +145,11 @@ function npad_render_menu(string $id, string $label, array $items): void
             <span class="brand__mark"><?= icon('file') ?></span>
             <span class="brand__text">NPad</span>
         </a>
-        <?php
+        <?php if (!$appbarChrome):
         npad_render_menu('fileMenu', t('menu.file'), $fileItems);
         npad_render_menu('editMenu', t('menu.edit'), $editItems);
         npad_render_menu('insertMenu', t('menu.insert'), $insertItems);
-        ?>
+        endif; ?>
     </div>
 
     <div class="appbar__group">
@@ -154,6 +160,7 @@ function npad_render_menu(string $id, string $label, array $items): void
                <?= $lang === 'fa' ? 'aria-current="true"' : '' ?>>فا</a>
         </div>
 
+        <?php if (!$appbarChrome): ?>
         <button type="button" class="iconbtn" data-action="toggle-focus"
                 aria-pressed="false"
                 aria-label="<?= e(t('toolbar.focus')) ?>"
@@ -162,6 +169,7 @@ function npad_render_menu(string $id, string $label, array $items): void
             <?= icon('expand', ['class' => 'icon', 'data-icon' => 'expand']) ?>
             <?= icon('contract', ['class' => 'icon', 'data-icon' => 'contract', 'hidden' => 'hidden']) ?>
         </button>
+        <?php endif; ?>
 
         <button type="button" class="iconbtn" data-theme-toggle
                 aria-pressed="false"

@@ -358,10 +358,18 @@ export default async function run(check, group) {
 
     check('lists only URLs that exist', () => {
         const locs = [...pages.sitemap.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-        // 4 original pages + 8 landing URLs (4 slugs x 2 locales).
-        assert.equal(locs.length, 12, `expected 12 URLs, got ${locs.length}`);
+        // Derive the landing slug list from the single source of truth so the
+        // count stays correct as pages are added.
+        const bootstrapSrc = fs.readFileSync(path.join(ROOT, 'includes/bootstrap.php'), 'utf8');
+        const slugsBlock = bootstrapSrc.match(/NPAD_LANDING_SLUGS\s*=\s*\[([\s\S]*?)\]/)?.[1] ?? '';
+        const slugs = [...slugsBlock.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+        // 4 fixed pages (/, /fa/, /privacy.php, /fa/privacy.php)
+        // + landing URLs (each slug in both locales)
+        // + the comparison page in both locales (/compare, /fa/compare).
+        const expected = 4 + slugs.length * 2 + 2;
+        assert.equal(locs.length, expected, `expected ${expected} URLs, got ${locs.length}`);
         assert.equal(locs.filter((u) => /\/blog\//.test(u)).length, 0, 'phantom blog URLs');
-        for (const slug of ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app']) {
+        for (const slug of slugs) {
             assert.ok(locs.includes(`https://npad.ir/${slug}`), `sitemap missing /${slug}`);
             assert.ok(locs.includes(`https://npad.ir/fa/${slug}`), `sitemap missing /fa/${slug}`);
         }

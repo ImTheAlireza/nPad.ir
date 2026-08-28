@@ -1,23 +1,18 @@
 <?php
 /**
- * Shared renderer for the landing pages (online-notepad, markdown-editor,
- * math-notepad, checklist-app) in either language.
+ * Comparison landing page (NPad vs Google Keep / Notion / Evernote), in either
+ * language. Served at the pretty URLs /compare and /fa/compare.
  *
- * The application page is an app, not a document: it changes per visitor and
- * answers no specific query. These pages give each intent a stable, crawlable
- * URL with real copy, while the app itself stays a click away.
+ * This is deliberately its own template rather than a landing.pages.* entry:
+ * it carries a comparison table and a different section rhythm. Copy lives in
+ * lang/{en,fa}.php under 'compare', so the lang parity test guards it.
  *
- * Copy lives in lang/{en,fa}.php under landing.pages.<slug>, so the lang
- * parity test guarantees no locale ships a half-translated page.
- *
- * Expects $lang and $slug from the entry file. Served at pretty URLs
- * (/online-notepad, /fa/online-notepad) via .htaccess rewrites.
+ * Expects $lang from the entry file.
  */
 
 declare(strict_types=1);
 
-// Not a standalone endpoint: refuse direct requests.
-if (!isset($lang, $slug)) {
+if (!isset($lang)) {
     http_response_code(404);
     exit;
 }
@@ -29,48 +24,39 @@ $lang    = $lang ?? NPAD_DEFAULT_LANG;
 $strings = npad_load_lang($lang);
 t('', $strings);
 
-$page = t("landing.pages.{$slug}");
+$page = t('compare');
 if (!is_array($page) || !isset($page['h1'])) {
     http_response_code(404);
     exit;
 }
 
-$appPath      = NPAD_LANGS[$lang]['path'];
-$canonicalPath = $lang === 'fa' ? "/fa/{$slug}" : "/{$slug}";
-$skipTarget   = '#main';
+$appPath       = NPAD_LANGS[$lang]['path'];
+$canonicalPath = $lang === 'fa' ? '/fa/compare' : '/compare';
+$skipTarget    = '#main';
 
-// Marketing page: app bar shows brand + language + theme toggle only, and
-// only the theme-toggle JS is loaded (no editor bundle).
+// Marketing page: chrome-only app bar + theme-toggle JS only.
 $appbarChrome   = true;
 $includeThemeJs = true;
 
 $pageTitle = $page['title'];
 $pageDesc  = $page['description'];
-
-// Each landing page shares its own card, not the generic homepage one.
-$ogTitle = $page['h1'];
-$ogDesc  = $page['description'];
+$ogTitle   = $page['h1'];
+$ogDesc    = $page['description'];
 
 require __DIR__ . '/head.php';
 
-/** The other landing pages, for the internal-link mesh. */
-$related = NPAD_LANDING_SLUGS;
-
 /**
- * A distinct hero emblem per page. The pages share a template by design, so
- * this gives each one an at-a-glance identity for human visitors and quietly
- * reinforces that each targets a different tool/intent.
+ * Map a cell value to a class so Yes/No/Partial read at a glance. Values are
+ * localised, so compare against the localised tokens from the copy.
  */
-$emblems = [
-    'online-notepad'   => 'file',
-    'markdown-editor'  => 'code',
-    'math-notepad'     => 'sigma',
-    'checklist-app'    => 'check-square',
-    'text-editor'      => 'text',
-    'word-counter'     => 'list-ol',
-    'rich-text-editor' => 'format',
-];
-$emblem = $emblems[$slug] ?? 'file';
+$cellClass = static function (string $value) use ($page): string {
+    return match ($value) {
+        $page['yes']     => 'compare__cell--yes',
+        $page['no']      => 'compare__cell--no',
+        $page['partial'] => 'compare__cell--partial',
+        default          => '',
+    };
+};
 ?>
 
 <div class="page">
@@ -84,7 +70,7 @@ $emblem = $emblems[$slug] ?? 'file';
         </nav>
 
         <section class="hero">
-            <span class="hero__emblem"><?= icon($emblem) ?></span>
+            <span class="hero__emblem"><?= icon('table') ?></span>
             <h1><?= e($page['h1']) ?></h1>
             <p><?= e($page['lede']) ?></p>
             <div class="hero__actions">
@@ -96,34 +82,58 @@ $emblem = $emblems[$slug] ?? 'file';
         </section>
 
         <section>
-            <h2 class="section__title"><?= e(t('landing.steps_title')) ?></h2>
-            <ol class="steps">
-                <?php foreach ($page['steps'] as $index => $step): ?>
-                    <li class="steps__item">
-                        <span class="steps__n"><?= $index + 1 ?></span>
-                        <div>
-                            <h3 class="steps__title"><?= e($step['title']) ?></h3>
-                            <p><?= e($step['desc']) ?></p>
-                        </div>
-                    </li>
-                <?php endforeach; ?>
-            </ol>
+            <h2 class="section__title"><?= e($page['intro_title']) ?></h2>
+            <div class="prose"><p><?= e($page['intro_body']) ?></p></div>
         </section>
 
         <section>
-            <h2 class="section__title"><?= e(t('landing.features_title')) ?></h2>
+            <h2 class="section__title"><?= e($page['table_title']) ?></h2>
+            <div class="compare__scroll">
+                <table class="compare">
+                    <caption class="visually-hidden"><?= e($page['table_caption']) ?></caption>
+                    <thead>
+                        <tr>
+                            <th scope="col"><?= e($page['col_feature']) ?></th>
+                            <th scope="col" class="compare__col--npad"><?= e($page['col_npad']) ?></th>
+                            <th scope="col"><?= e($page['col_keep']) ?></th>
+                            <th scope="col"><?= e($page['col_notion']) ?></th>
+                            <th scope="col"><?= e($page['col_evernote']) ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($page['rows'] as $row): ?>
+                            <tr>
+                                <th scope="row"><?= e($row['feature']) ?></th>
+                                <td class="compare__col--npad <?= e($cellClass($row['npad'])) ?>"><?= e($row['npad']) ?></td>
+                                <td class="<?= e($cellClass($row['keep'])) ?>"><?= e($row['keep']) ?></td>
+                                <td class="<?= e($cellClass($row['notion'])) ?>"><?= e($row['notion']) ?></td>
+                                <td class="<?= e($cellClass($row['evernote'])) ?>"><?= e($row['evernote']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section>
+            <h2 class="section__title"><?= e($page['when_title']) ?></h2>
             <div class="card-grid">
-                <?php foreach ($page['features'] as $feature): ?>
+                <?php foreach ($page['when_items'] as $item): ?>
                     <article class="card">
-                        <h3 class="card__title"><?= e($feature['title']) ?></h3>
-                        <p class="card__desc"><?= e($feature['desc']) ?></p>
+                        <h3 class="card__title"><?= e($item['title']) ?></h3>
+                        <p class="card__desc"><?= e($item['desc']) ?></p>
                     </article>
                 <?php endforeach; ?>
             </div>
         </section>
 
         <section>
-            <h2 class="section__title"><?= e(t('landing.faq_title')) ?></h2>
+            <h2 class="section__title"><?= e($page['when_not_title']) ?></h2>
+            <div class="prose"><p><?= e($page['when_not_body']) ?></p></div>
+        </section>
+
+        <section>
+            <h2 class="section__title"><?= e($page['faq_title']) ?></h2>
             <div class="faq">
                 <?php foreach ($page['faq'] as $item): ?>
                     <details class="faq__item">
@@ -141,14 +151,13 @@ $emblem = $emblems[$slug] ?? 'file';
             <h2 class="section__title"><?= e(t('landing.related_title')) ?></h2>
             <div class="prose">
                 <?php
-                $links = array_filter($related, static fn(string $s): bool => $s !== $slug);
                 $parts = array_map(
                     static function (string $s) use ($lang): string {
                         $href  = $lang === 'fa' ? "/fa/{$s}" : "/{$s}";
                         $label = t("footer_tools.{$s}");
                         return '<a href="' . e($href) . '">' . e($label) . '</a>';
                     },
-                    $links,
+                    array_slice(NPAD_LANDING_SLUGS, 0, 4),
                 );
                 echo implode(' · ', $parts);
                 ?>
@@ -156,10 +165,10 @@ $emblem = $emblems[$slug] ?? 'file';
         </section>
 
         <section class="cta">
-            <h2><?= e(t('landing.cta_title')) ?></h2>
-            <p><?= e(t('landing.cta_body')) ?></p>
+            <h2><?= e($page['cta_title']) ?></h2>
+            <p><?= e($page['cta_body']) ?></p>
             <a class="btn btn--primary" href="<?= e($appPath) ?>#editor">
-                <?= icon('arrow-up') ?> <?= e(t('landing.cta_button')) ?>
+                <?= icon('arrow-up') ?> <?= e($page['cta_button']) ?>
             </a>
         </section>
     </article>
@@ -171,8 +180,8 @@ $emblem = $emblems[$slug] ?? 'file';
 
 <?php
 /**
- * Structured data: the FAQ text below mirrors the visible copy exactly, and
- * the breadcrumb describes this page's real position (home › tool).
+ * Structured data: FAQ mirrors the visible copy, breadcrumb gives the page's
+ * real position. No fabricated ratings.
  */
 $faqEntities = array_map(
     static fn(array $item): array => [
@@ -186,22 +195,6 @@ $faqEntities = array_map(
 $graph = [
     '@context' => 'https://schema.org',
     '@graph'   => [
-        [
-            '@type'               => 'SoftwareApplication',
-            'name'                => $page['h1'],
-            'url'                 => npad_url($canonicalPath),
-            'description'         => $page['description'],
-            'applicationCategory' => 'UtilitiesApplication',
-            'operatingSystem'     => 'Any',
-            'browserRequirements' => 'Requires JavaScript',
-            'inLanguage'          => $lang,
-            'isPartOf'            => ['@type' => 'WebSite', 'name' => 'NPad', 'url' => npad_url('/')],
-            'offers'              => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'USD'],
-            'featureList'         => array_map(
-                static fn(array $f): string => $f['title'],
-                $page['features'],
-            ),
-        ],
         ['@type' => 'FAQPage', 'mainEntity' => $faqEntities],
         [
             '@type'           => 'BreadcrumbList',

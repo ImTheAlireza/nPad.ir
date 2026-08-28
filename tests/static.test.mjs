@@ -275,7 +275,17 @@ export default function run(check, group) {
 
     group('static: landing pages');
 
-    const slugs = ['online-notepad', 'markdown-editor', 'math-notepad', 'checklist-app'];
+    // Single source of truth: the slug list lives in includes/bootstrap.php as
+    // NPAD_LANDING_SLUGS. Deriving it here keeps the tests honest when pages
+    // are added without silently letting a slug ship half-wired.
+    const bootstrapSrc = fs.readFileSync(path.join(ROOT, 'includes/bootstrap.php'), 'utf8');
+    const slugsBlock = bootstrapSrc.match(/NPAD_LANDING_SLUGS\s*=\s*\[([\s\S]*?)\]/)?.[1] ?? '';
+    const slugs = [...slugsBlock.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+
+    check('the landing slug list is non-trivial and unique', () => {
+        assert.ok(slugs.length >= 4, `only ${slugs.length} landing slugs found`);
+        assert.equal(new Set(slugs).size, slugs.length, 'duplicate landing slug');
+    });
 
     check('every landing slug has EN and FA entry files', () => {
         for (const slug of slugs) {
@@ -292,7 +302,10 @@ export default function run(check, group) {
                 `.htaccess missing rewrite for /${slug}`);
             assert.ok(htaccess.includes(`RewriteRule ^fa/${slug}/?$ `),
                 `.htaccess missing rewrite for /fa/${slug}`);
-            assert.ok(sitemap.includes(`'${slug}'`), `sitemap missing /${slug}`);
+            // sitemap.php iterates NPAD_LANDING_SLUGS, so every slug appears in
+            // its priorities map (both locales) rather than as a literal loop.
+            assert.ok(sitemap.includes(`'/${slug}'`), `sitemap missing priority for /${slug}`);
+            assert.ok(sitemap.includes(`'/fa/${slug}'`), `sitemap missing priority for /fa/${slug}`);
         }
     });
 

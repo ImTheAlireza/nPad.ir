@@ -3207,6 +3207,17 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     text-align: center;
 }
 
+.hero__emblem {
+    display: inline-grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin-bottom: var(--space-4);
+    border-radius: var(--radius-lg);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+}
+.hero__emblem .icon { width: 32px; height: 32px; }
 .hero h1 {
     margin-bottom: var(--space-3);
     font-size: clamp(26px, 4vw, 38px);
@@ -3336,6 +3347,60 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     color: var(--text-body);
     font-size: 14px;
 }
+
+/* Comparison table (compare page) */
+.compare__scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+}
+
+.compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    min-width: 560px;
+}
+
+.compare caption { text-align: start; }
+
+.compare th,
+.compare td {
+    padding: var(--space-3) var(--space-4);
+    text-align: start;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: middle;
+}
+
+.compare thead th {
+    font-weight: 600;
+    color: var(--text-strong);
+    background: var(--surface-sunken);
+    white-space: nowrap;
+}
+
+.compare tbody th {
+    font-weight: 500;
+    color: var(--text-body);
+}
+
+.compare tbody tr:last-child th,
+.compare tbody tr:last-child td { border-bottom: 0; }
+
+.compare td { color: var(--text-body); }
+
+/* Highlight the NPad column so the differentiator reads at a glance. */
+.compare__col--npad {
+    background: var(--accent-soft);
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.compare__cell--yes { color: var(--success); font-weight: 600; }
+.compare__cell--no { color: var(--text-muted); }
+.compare__cell--partial { color: var(--text-body); }
 
 /* Shortcuts */
 .shortcut-grid {
