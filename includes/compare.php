@@ -66,6 +66,7 @@ $cellClass = static function (string $value) use ($page): string {
         </nav>
 
         <section class="hero">
+            <span class="hero__emblem"><?= icon('table') ?></span>
             <h1><?= e($page['h1']) ?></h1>
             <p><?= e($page['lede']) ?></p>
             <div class="hero__actions">

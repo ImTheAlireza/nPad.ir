@@ -50,6 +50,22 @@ require __DIR__ . '/head.php';
 
 /** The other landing pages, for the internal-link mesh. */
 $related = NPAD_LANDING_SLUGS;
+
+/**
+ * A distinct hero emblem per page. The pages share a template by design, so
+ * this gives each one an at-a-glance identity for human visitors and quietly
+ * reinforces that each targets a different tool/intent.
+ */
+$emblems = [
+    'online-notepad'   => 'file',
+    'markdown-editor'  => 'code',
+    'math-notepad'     => 'sigma',
+    'checklist-app'    => 'check-square',
+    'text-editor'      => 'text',
+    'word-counter'     => 'list-ol',
+    'rich-text-editor' => 'format',
+];
+$emblem = $emblems[$slug] ?? 'file';
 ?>
 
 <div class="page">
@@ -63,6 +79,7 @@ $related = NPAD_LANDING_SLUGS;
         </nav>
 
         <section class="hero">
+            <span class="hero__emblem"><?= icon($emblem) ?></span>
             <h1><?= e($page['h1']) ?></h1>
             <p><?= e($page['lede']) ?></p>
             <div class="hero__actions">
