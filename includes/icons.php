@@ -78,6 +78,13 @@ function npad_icon_paths(): array
         'spellcheck'  => '<path d="M4 7h12"/><path d="M4 12h12"/><path d="M4 17h8"/><path d="m14 15 3 3 5-5"/>',
         'globe'       => '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
         'plus'        => '<path d="M12 5v14M5 12h14"/>',
+        'ai'          => '<path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v1A2.5 2.5 0 0 0 9.5 8h5A2.5 2.5 0 0 0 17 5.5v-1A2.5 2.5 0 0 0 14.5 2z"/><circle cx="9.5" cy="5" r="1" fill="currentColor"/><circle cx="14.5" cy="5" r="1" fill="currentColor"/><path d="M12 8v2M8 11h8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z"/><circle cx="9" cy="15" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/>',
+        'cloud'       => '<path d="M18 10a6 6 0 0 0-12 0 4 4 0 0 0 0 8h12a4 4 0 0 0 0-8z"/>',
+        'sparkle'     => '<path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/>',
+        'ai-summarize' => '<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>',
+        'ai-tone'      => '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+        'ai-format'    => '<path d="M13 4v16"/><path d="M17 4v16"/><path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/>',
+
         'pin'         => '<path d="M12 17v5"/><path d="m5 17 3-4V6L6 4V2h12v2l-2 2v7l3 4z"/>',
         'sidebar'     => '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
         'tag'         => '<path d="M20 13 13 20l-9-9V4h7z"/><circle cx="8.5" cy="8.5" r="1.5"/>',

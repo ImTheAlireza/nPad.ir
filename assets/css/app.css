@@ -3138,7 +3138,13 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     position: fixed;
     inset-block-end: var(--space-5);
     inset-inline-end: var(--space-5);
-    z-index: 120;
+    /* Must sit above <dialog>::backdrop which is painted in the top layer.
+       Native dialogs (showModal) always paint their backdrop above everything
+       in the regular stacking context, so the toast needs to be in the top
+       layer too — achieved by giving it a very high z-index so browsers that
+       don't support the top layer still show it, while modern browsers honour
+       the top-layer ordering. */
+    z-index: 99999;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -3163,6 +3169,16 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
 
 .toast--error { border-inline-start: 3px solid var(--danger); }
 .toast--success { border-inline-start: 3px solid var(--success); }
+
+/* Toast appended directly inside an open <dialog> — positions itself at the
+   bottom of the dialog viewport, always above the ::backdrop. */
+.toast--in-dialog {
+    position: fixed;
+    inset-block-end: var(--space-5);
+    inset-inline-end: var(--space-5);
+    z-index: 1;
+    pointer-events: none;
+}
 
 .toast--leaving {
     opacity: 0;
@@ -4255,3 +4271,315 @@ body.focus-mode .focus-exit { display: inline-flex; }
     .editor::highlight(npad-find-current) { background: Highlight; color: HighlightText; }
     .card, .faq__item, .appbar, .editor-shell { border: 1px solid ButtonBorder; }
 }
+
+
+/* ==========================================================================
+   AI features — unified design system
+   Accent: var(--accent) / --accent-soft / --accent-text / --accent-ring
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. AI menu — appbar trigger + cloud badge on items
+   -------------------------------------------------------------------------- */
+
+/* "AI" menu trigger: accent-coloured label so it reads as special */
+#aiMenuTrigger {
+    color: var(--accent-text);
+    font-weight: 600;
+}
+#aiMenuTrigger:hover,
+#aiMenuTrigger[aria-expanded='true'] {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+}
+
+/* ☁ badge on every AI menu item — communicates "data leaves device" */
+.menu__cloud-badge {
+    margin-inline-start: auto;
+    padding-inline-start: var(--space-2);
+    font-size: 10px;
+    line-height: 1;
+    color: var(--accent-text);
+    opacity: 0.65;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   2. Toolbar AI button group — filled accent pill, icon-only
+   -------------------------------------------------------------------------- */
+
+/* The group gets a subtle accent border to visually separate it from
+   the regular tool groups */
+.toolbar__group--ai {
+    background: var(--accent-soft);
+    border-color: var(--accent-ring);
+}
+
+/* Each button: filled accent background, white/onaccent icon */
+.toolbar__btn--ai {
+    background: var(--accent);
+    color: var(--text-onaccent);
+    border-radius: var(--radius-sm);
+    transition: background var(--transition), transform var(--transition-fast),
+                box-shadow var(--transition);
+}
+
+.toolbar__btn--ai .icon {
+    width: 16px;
+    height: 16px;
+}
+
+.toolbar__btn--ai:hover {
+    background: var(--accent-hover);
+    color: var(--text-onaccent);
+}
+
+.toolbar__btn--ai:active {
+    transform: scale(0.90);
+}
+
+/* Focus ring uses accent */
+.toolbar__btn--ai:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   3. Title-area AI sparkle button — accent ghost button
+   -------------------------------------------------------------------------- */
+
+.document-title__ai-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin-inline-start: var(--space-1);
+    padding: 0;
+    border: 1.5px solid var(--accent-ring);
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition),
+                transform var(--transition-fast), box-shadow var(--transition);
+}
+
+.document-title__ai-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--text-onaccent);
+    box-shadow: 0 2px 6px var(--accent-ring);
+}
+
+.document-title__ai-btn:active {
+    transform: scale(0.91);
+}
+
+.document-title__ai-btn:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+.document-title__ai-btn .icon {
+    width: 13px;
+    height: 13px;
+}
+
+/* Pulse animation on first reveal */
+@keyframes ai-btn-pulse {
+    0%   { box-shadow: 0 0 0 0 var(--accent-ring); }
+    65%  { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.document-title__ai-btn:not([hidden]).ai-btn--new {
+    animation: ai-btn-pulse 0.65s ease-out;
+}
+
+/* --------------------------------------------------------------------------
+   4. Consent / cloud-send badge inside dialogs
+   -------------------------------------------------------------------------- */
+
+.ai-cloud-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: 12px;
+    font-weight: 600;
+    align-self: flex-start;
+    border: 1px solid var(--accent-ring);
+}
+
+.ai-consent-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.ai-consent-body ul {
+    padding-inline-start: var(--space-4);
+    font-size: 13px;
+    color: var(--text-body);
+}
+
+.ai-consent-body li { margin-block: var(--space-1); }
+
+.ai-consent-body p {
+    font-size: 13px;
+    color: var(--text-body);
+    margin: 0;
+}
+
+.ai-consent-body table td,
+.ai-consent-body table th {
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+/* --------------------------------------------------------------------------
+   5. Loading toast with spinner
+   -------------------------------------------------------------------------- */
+
+.ai-loading-toast {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.ai-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: ai-spin 0.7s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+
+/* --------------------------------------------------------------------------
+   6. Settings dialog — active provider status banner
+   -------------------------------------------------------------------------- */
+
+.ai-settings-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+}
+
+.ai-settings-status--user {
+    background: #d1fae5;
+    color: #065f46;
+    border-color: #a7f3d0;
+}
+
+.ai-settings-status--default {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    border-color: var(--accent-ring);
+}
+
+/* ==========================================================================
+   AI floating selection toolbar
+   ========================================================================== */
+
+.ai-sel-toolbar {
+    position: fixed;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18), 0 1px 4px rgba(0, 0, 0, 0.12);
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    pointer-events: none;
+}
+
+.ai-sel-toolbar--visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.ai-sel-toolbar__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--accent-text);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast),
+                transform var(--transition-fast);
+}
+
+.ai-sel-toolbar__btn .icon {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: var(--accent);
+}
+
+.ai-sel-toolbar__btn:hover {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+}
+
+.ai-sel-toolbar__btn:active { transform: scale(0.94); }
+
+.ai-sel-toolbar__cloud {
+    font-size: 9px;
+    opacity: 0.55;
+    line-height: 1;
+}
+
+/* Word-replacement buttons in the dialog */
+.ai-word-replace-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.ai-word-replace-option {
+    padding: 6px 14px;
+    border: 1.5px solid var(--accent-ring);
+    border-radius: var(--radius-full);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast),
+                transform var(--transition-fast);
+}
+
+.ai-word-replace-option:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--text-onaccent);
+}
+
+.ai-word-replace-option:active { transform: scale(0.95); }

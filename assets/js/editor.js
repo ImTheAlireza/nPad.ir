@@ -75,6 +75,19 @@ import { initMath } from './mathblock.js';
 import { initOutline } from './outline.js';
 import { initChecklist } from './checklist.js';
 import { detectDirection, isolate } from './bidi.js';
+import {
+    runSmartTitle,
+    runSummarize,
+    runToneRewrite,
+    runExtractTodos,
+    runSmartFormat,
+    openAISettings,
+    handleSelectionAI,
+    hasConsent,
+    setConsent,
+    getAIConfig,
+    saveAIConfig,
+} from './ai.js';
 
 /**
  * Import/export codecs (Markdown, JSON, DOCX, PDF, RTF — ~60 KB) are only
@@ -135,8 +148,35 @@ export function initEditor({ strings, onEvent }) {
     const notesSearch = document.getElementById('notesSearch');
     const notesEmpty = document.getElementById('notesEmpty');
     const noteTitleInput = document.getElementById('noteTitle');
+    const aiTitleBtn     = document.getElementById('aiTitleBtn');
     if (noteTitleInput) {
         noteTitleInput.addEventListener('input', () => updateDocumentTitle());
+    }
+
+    /* Show/hide the AI sparkle title button based on whether editor content
+       has grown past ~2 lines (≈ 80 chars of text or scrollHeight > 2.5 lines).
+       A one-shot pulse animation fires the first time it becomes visible per note. */
+    let aiTitleBtnWasHidden = true;
+    function syncAiTitleBtn() {
+        if (!aiTitleBtn) return;
+        const text   = (editor?.innerText || '').trim();
+        const scroll = editor?.scrollHeight ?? 0;
+        const line   = (typeof getComputedStyle === 'function')
+            ? (parseInt(getComputedStyle(editor).lineHeight, 10) || 24)
+            : 24;
+        const show   = text.length >= 80 || scroll > line * 2.5;
+
+        if (show && aiTitleBtnWasHidden) {
+            // First reveal — play pulse animation
+            aiTitleBtn.hidden = false;
+            aiTitleBtn.classList.remove('ai-btn--new');
+            // Force reflow so the animation restarts
+            void aiTitleBtn.offsetWidth;
+            aiTitleBtn.classList.add('ai-btn--new');
+        } else {
+            aiTitleBtn.hidden = !show;
+        }
+        aiTitleBtnWasHidden = !show;
     }
     const documentTabs = document.getElementById('documentTabs');
     const documentTabTemplate = document.getElementById('documentTabTemplate');
@@ -183,7 +223,6 @@ export function initEditor({ strings, onEvent }) {
     let sidebarOpen = false;
     let noteFilter = { type: 'all', id: null };
 
-    /* Custom spell checker (self-contained module). */
     const spell = initSpellcheck({ editor, strings, onEvent: track });
 
     /* Syntax-highlighted code blocks (self-contained module). */
@@ -806,6 +845,8 @@ export function initEditor({ strings, onEvent }) {
         pendingFontSize = null;
         setSaveState('saved');
         updateCounts();
+        aiTitleBtnWasHidden = true; // reset per-note pulse tracking
+        syncAiTitleBtn();
         renderOrganization();
         renderNotes();
         renderTabs();
@@ -2794,6 +2835,35 @@ export function initEditor({ strings, onEvent }) {
        Paste — always sanitise, never trust clipboard HTML
        --------------------------------------------------------------------- */
 
+    // ── AI selection toolbar ─────────────────────────────────────────────
+    // Listen on document so the popup still fires when the pointer is
+    // released outside the editor element (common during a drag-select).
+    // One frame of defer lets the browser commit the final selection range.
+    document.addEventListener('pointerup', (event) => {
+        // Ignore right-click / middle-click — those open context menus
+        if (event.button !== 0) return;
+        const x = event.clientX;
+        const y = event.clientY;
+        requestAnimationFrame(() => {
+            handleSelectionAI(
+                editor,
+                strings,
+                showDialog,
+                toast,
+                (title, content) => {
+                    const note = createNoteRecord({ title: title.slice(0, 120) });
+                    note.content = content.replace(/\n/g, '<br>');
+                    saveNote(note).then(() => {
+                        renderNotes();
+                        toast(strings.aiSaveAsNote, 'success');
+                    });
+                },
+                x,
+                y,
+            );
+        });
+    });
+
     // Paste and drop share one sanitised text/HTML pipeline. Unsupported
     // embedded elements are discarded by the allow-list before insertion.
     editor.addEventListener('paste', (event) => {
@@ -4024,6 +4094,49 @@ ${exportHtml()}
             spell.setEnabled(!spell.isEnabled());
             track('spellcheck_toggled');
         },
+
+        // ── AI actions ────────────────────────────────────────────────────
+        'ai-smart-title': () => {
+            runSmartTitle(editor, strings, showDialog, toast, (title) => {
+                if (noteTitleInput) {
+                    noteTitleInput.value = title;
+                    noteTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            });
+            track('ai_smart_title');
+        },
+
+        'ai-summarize': () => {
+            runSummarize(editor, strings, showDialog, toast, (title, content) => {
+                const note = createNoteRecord({ title: `${title} — ${activeNote()?.title || ''}`.slice(0, 120) });
+                note.content = content.replace(/\n/g, '<br>');
+                saveNote(note).then(() => {
+                    renderNotes();
+                    toast(strings.aiSaveAsNote, 'success');
+                });
+            });
+            track('ai_summarize');
+        },
+
+        'ai-tone-rewrite': () => {
+            runToneRewrite(editor, strings, showDialog, toast);
+            track('ai_tone_rewrite');
+        },
+
+        'ai-extract-todos': () => {
+            runExtractTodos(editor, strings, showDialog, toast);
+            track('ai_extract_todos');
+        },
+
+        'ai-smart-format': () => {
+            runSmartFormat(editor, strings, showDialog, toast);
+            track('ai_smart_format');
+        },
+
+        'ai-settings': () => {
+            openAISettings(strings, showDialog, toast);
+            track('ai_settings_open');
+        },
     };
 
     document.addEventListener('click', (event) => {
@@ -4113,6 +4226,7 @@ ${exportHtml()}
         // temporary size=7 wrapper only after the first character is typed.
         if (pendingFontSize) convertSizeMarkers(pendingFontSize);
         updateCounts();   // immediate, not debounced
+        syncAiTitleBtn();
         scheduleSave();
         if (findBar && !findBar.hidden) {
             Promise.resolve().then(() => {

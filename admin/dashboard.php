@@ -445,6 +445,118 @@ $hasChartJs = is_file(NPAD_ROOT . '/assets/js/vendor/chart.umd.min.js');
         </div>
     <?php endif; ?>
 
+    <!-- ── AI Configuration Panel ───────────────────────────────────────── -->
+    <section class="card" id="aiConfigPanel">
+        <h2 class="card__title" style="display:flex;align-items:center;gap:8px">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+                 style="color:var(--accent)">
+                <path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v1A2.5 2.5 0 0 0 9.5 8h5A2.5 2.5 0 0 0 17 5.5v-1A2.5 2.5 0 0 0 14.5 2z"/>
+                <circle cx="9.5" cy="5" r="1" fill="currentColor"/>
+                <circle cx="14.5" cy="5" r="1" fill="currentColor"/>
+                <path d="M12 8v2M8 11h8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z"/>
+                <circle cx="9" cy="15" r="1" fill="currentColor"/>
+                <circle cx="15" cy="15" r="1" fill="currentColor"/>
+            </svg>
+            Your Custom AI Provider
+        </h2>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:var(--space-4)">
+            Connect any OpenAI-compatible AI — DeepSeek, OpenAI, Gemini, Groq, or your own server.
+            Settings are stored in the browser's <code>localStorage</code>; this panel lets you
+            configure or swap providers instantly without touching any code.
+        </p>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-4)">
+            <label class="field" style="margin-top:0">
+                <span class="field__label">Base URL</span>
+                <input class="field__input" id="dash-ai-base-url" type="url"
+                       placeholder="https://api.deepseek.com/v1"
+                       autocomplete="off" spellcheck="false">
+            </label>
+            <label class="field" style="margin-top:0">
+                <span class="field__label">API Key</span>
+                <input class="field__input" id="dash-ai-api-key" type="password"
+                       placeholder="sk-…"
+                       autocomplete="off" spellcheck="false">
+            </label>
+            <label class="field" style="margin-top:0">
+                <span class="field__label">Model name</span>
+                <input class="field__input" id="dash-ai-model" type="text"
+                       placeholder="deepseek-chat"
+                       autocomplete="off" spellcheck="false">
+            </label>
+        </div>
+
+        <div style="margin-top:var(--space-4);display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center">
+            <button class="btn btn--primary" id="dash-ai-save">Save settings</button>
+            <button class="btn btn--ghost" id="dash-ai-test">Test connection</button>
+            <span id="dash-ai-status" style="font-size:13px;color:var(--text-muted)"></span>
+        </div>
+
+        <details style="margin-top:var(--space-4)">
+            <summary style="cursor:pointer;font-size:13px;color:var(--text-muted);font-weight:500">
+                Provider quick-reference
+            </summary>
+            <div class="table-wrap" style="margin-top:var(--space-2)">
+                <table style="font-size:12px">
+                    <thead>
+                        <tr>
+                            <th scope="col">Provider</th>
+                            <th scope="col">Base URL</th>
+                            <th scope="col">Example model</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>DeepSeek</td>
+                            <td class="mono">https://api.deepseek.com/v1</td>
+                            <td class="mono">deepseek-chat</td>
+                        </tr>
+                        <tr>
+                            <td>OpenAI</td>
+                            <td class="mono">https://api.openai.com/v1</td>
+                            <td class="mono">gpt-4o-mini</td>
+                        </tr>
+                        <tr>
+                            <td>Google Gemini</td>
+                            <td class="mono">https://generativelanguage.googleapis.com/v1beta/openai</td>
+                            <td class="mono">gemini-2.0-flash</td>
+                        </tr>
+                        <tr>
+                            <td>Groq</td>
+                            <td class="mono">https://api.groq.com/openai/v1</td>
+                            <td class="mono">llama-3.3-70b-versatile</td>
+                        </tr>
+                        <tr>
+                            <td>Anthropic (via proxy)</td>
+                            <td class="mono">https://api.anthropic.com/v1</td>
+                            <td class="mono">claude-3-5-haiku-latest</td>
+                        </tr>
+                        <tr>
+                            <td>Ollama (local)</td>
+                            <td class="mono">http://localhost:11434/v1</td>
+                            <td class="mono">llama3.2</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </details>
+
+        <hr style="border:none;border-top:1px solid var(--border-subtle);margin:var(--space-5) 0 var(--space-4)">
+
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:var(--space-2)">
+            Global AI Consent
+        </h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:var(--space-3)">
+            Users must agree that their note content will be sent to the configured AI provider
+            before any feature runs. You can inspect or revoke the consent state below.
+        </p>
+        <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center">
+            <span id="dash-consent-status" style="font-size:13px;padding:4px 10px;border-radius:var(--radius-full);background:var(--surface-2)">—</span>
+            <button class="btn btn--ghost btn--sm" id="dash-grant-consent">Grant consent</button>
+            <button class="btn btn--ghost btn--sm" id="dash-revoke-consent">Revoke consent</button>
+        </div>
+    </section>
+
     <section class="card">
         <h2 class="card__title">Recent activity</h2>
         <div class="table-wrap">
@@ -488,6 +600,8 @@ $hasChartJs = is_file(NPAD_ROOT . '/assets/js/vendor/chart.umd.min.js');
 <script type="application/json" id="chartData"><?= json_encode($chart, JSON_HEX_TAG | JSON_HEX_AMP) ?></script>
 <script src="<?= e(asset('assets/js/dashboard.js')) ?>" defer></script>
 <?php endif; ?>
+
+<script src="<?= e(asset('admin/ai-panel.js')) ?>" defer></script>
 </body>
 </html>
 <?php $conn->close(); ?>

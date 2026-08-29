@@ -342,13 +342,23 @@ export async function confirmDialog({ title, message, confirmLabel, cancelLabel,
  * @param {'info'|'success'|'error'} [variant]
  */
 export function toast(message, variant = 'info') {
-    const region = document.getElementById('toastRegion');
-    if (!region) return;
-
     const el = document.createElement('div');
     el.className = `toast toast--${variant}`;
     el.textContent = message;
-    region.appendChild(el);
+
+    // Native <dialog> with showModal() paints its ::backdrop in the CSS top
+    // layer, which sits above every z-index in the normal stacking context.
+    // Appending the toast to the open dialog keeps it in the same top-layer
+    // context so it's always visible above the backdrop.
+    const openDialog = document.querySelector('dialog[open]');
+    if (openDialog) {
+        el.classList.add('toast--in-dialog');
+        openDialog.appendChild(el);
+    } else {
+        const region = document.getElementById('toastRegion');
+        if (!region) return;
+        region.appendChild(el);
+    }
 
     window.setTimeout(() => {
         el.classList.add('toast--leaving');

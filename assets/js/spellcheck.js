@@ -6,7 +6,7 @@
  *    hand-drawn blue wave that animates in (see app.css)
  *  - tapping, keyboard-activating, or hovering a flagged word opens a
  *    correction dialog with replace suggestions and dictionary actions
- *  - everything is local: the bundled wordlist + a per-browser custom
+ *  - everything is local: the Hunspell engine + a per-browser custom
  *    word list in localStorage. No network, no native spellcheck UI.
  *
  * The module is deliberately self-contained: editor.js only asks for
@@ -14,28 +14,30 @@
  */
 
 /**
- * The dictionary (170 KB) is loaded off the critical path: it is imported
- * dynamically on first use, and until it arrives no word is flagged. The
- * module's API stays synchronous — callers never await anything.
+ * The Hunspell engine + en_US dictionary (~550 KB raw, ~196 KB gzipped)
+ * is loaded off the critical path: imported dynamically on first use, and
+ * until it arrives no word is flagged. The module's API stays synchronous —
+ * callers never await anything.
+ *
+ * nspell-engine.js is a self-contained ESM bundle (nspell + dictionary-en)
+ * built with esbuild. It exports a default object: { check, suggest, addWord }.
  */
 
-let WORD_LIST = null;
-let DICTIONARY = null;
-let dictionaryLoad = null;
+/** @type {{ check: (w:string)=>boolean, suggest: (w:string)=>string[], addWord: (w:string)=>void }|null} */
+let engine = null;
+let engineLoad = null;
 
 function ensureDictionary() {
-    if (DICTIONARY) return dictionaryLoad;
-    dictionaryLoad ??= import('./wordlist.js')
+    if (engine) return engineLoad;
+    engineLoad ??= import('./nspell-engine.js')
         .then((module) => {
-            WORD_LIST = module.WORD_LIST;
-            DICTIONARY = module.DICTIONARY;
+            engine = module.default;
         })
         .catch(() => {
-            // Offline before the first fetch, or storage unavailable: allow a
-            // later pass to retry instead of caching the failure forever.
-            dictionaryLoad = null;
+            // Offline or load error — allow retry on next pass.
+            engineLoad = null;
         });
-    return dictionaryLoad;
+    return engineLoad;
 }
 
 const MAX_SUGGESTIONS = 4;
@@ -44,32 +46,6 @@ const LS_ENABLED = 'npad.spellcheck';
 
 /** 4 === NodeFilter.SHOW_TEXT (named constant missing in jsdom/webviews). */
 const SHOW_TEXT = 4;
-
-/**
- * Damerau–Levenshtein (optimal string alignment). Cheap bail-out at >2 so
- * the tooltip only pays for plausible candidates.
- */
-function editDistance(a, b) {
-    const m = a.length;
-    const n = b.length;
-    if (Math.abs(m - n) > 2) return 3;
-
-    const d = [];
-    for (let i = 0; i <= m; i++) d.push(new Array(n + 1).fill(0));
-    for (let i = 0; i <= m; i++) d[i][0] = i;
-    for (let j = 0; j <= n; j++) d[0][j] = j;
-
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
-            if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
-                d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + cost);
-            }
-        }
-    }
-    return d[m][n];
-}
 
 /** Normalise for lookup: strip ZWNJ, fold Arabic yeh/kaf into Persian. */
 function norm(word) {
@@ -113,8 +89,11 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         if (/^[A-Z]{2,}$/.test(word) && /^[A-Za-z]+$/.test(word)) return false;
 
         const n = norm(word);
-        if (!DICTIONARY || DICTIONARY.has(n) || custom.has(n) || ignored.has(n)) return false;
-        return true;
+        if (custom.has(n) || ignored.has(n)) return false;
+
+        // Hunspell engine (nspell) — handles contractions, affixes, compounds.
+        if (!engine) return false;
+        return !engine.check(word);
     }
 
     function unwrapMarks() {
@@ -258,8 +237,8 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         if (!enabled) return;
         const text = editor.textContent || '';
         if (text === lastText) return;
-        if (!DICTIONARY) {
-            // Dictionary still loading: remember nothing, so the pass that
+        if (!engine) {
+            // Engine still loading: remember nothing, so the pass that
             // runs once it arrives re-marks the current text.
             lastText = null;
             ensureDictionary().then(() => scheduleRemark(0));
@@ -302,21 +281,9 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
        ------------------------------------------------------------------ */
 
     function suggest(word) {
-        const n = norm(word);
-        if (!n || !WORD_LIST) return [];
-        const first = n[0];
-        const results = [];
-
-        for (let i = 0; i < WORD_LIST.length; i++) {
-            const candidate = WORD_LIST[i];
-            if (candidate[0] !== first) continue;
-            if (Math.abs(candidate.length - n.length) > 2) continue;
-            const d = editDistance(n, candidate);
-            if (d <= 2) results.push([d, i, candidate]);
-        }
-
-        results.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-        return results.slice(0, MAX_SUGGESTIONS).map((r) => r[2]);
+        if (!engine) return [];
+        // nspell returns suggestions already ranked by edit distance + frequency.
+        return engine.suggest(word).slice(0, MAX_SUGGESTIONS);
     }
 
     /* ------------------------------------------------------------------
@@ -437,7 +404,10 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
 
     function addToDictionary(wordEl) {
         const word = wordEl.textContent;
-        custom.add(norm(word));
+        const n = norm(word);
+        custom.add(n);
+        // Also teach the live nspell instance so re-marks treat it as correct.
+        if (engine) engine.addWord(word);
         try { localStorage.setItem(LS_CUSTOM, JSON.stringify([...custom])); } catch { /* ignore */ }
         finishWordAction(wordEl, word);
         track('spell_add_word');
@@ -547,9 +517,15 @@ export function initSpellcheck({ editor, strings = {}, onEvent }) {
         if (localStorage.getItem(LS_ENABLED) === '0') enabled = false;
     } catch { /* private mode */ }
 
-    // Start the dictionary download immediately (it does not block the
+    // Start the engine download immediately (it does not block the
     // editor or first paint) and mark any existing content once it lands.
-    ensureDictionary().then(() => scheduleRemark(0));
+    // Once loaded, seed the engine with any words the user has added.
+    ensureDictionary().then(() => {
+        if (engine) {
+            for (const word of custom) engine.addWord(word);
+        }
+        scheduleRemark(0);
+    });
 
     const btn = document.querySelector('[data-action="toggle-spellcheck"]');
     if (btn) btn.setAttribute('aria-pressed', String(enabled));

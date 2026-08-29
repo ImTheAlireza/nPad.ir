@@ -387,6 +387,111 @@ return [
         'light' => 'Switch to light mode',
     ],
 
+    'ai' => [
+        // Menu items
+        'menu_label'        => 'AI',
+        'smart_title'       => 'Smart Title…',
+        'summarize'         => 'Summarize Note…',
+        'tone_rewrite'      => 'Tone Rewriter…',
+        'extract_todos'     => 'Extract To-Dos…',
+        'smart_format'      => 'Smart Formatting…',
+        'ai_settings'       => 'AI Settings…',
+
+        // Config / consent
+        'no_config'         => 'AI not configured',
+        'no_config_body'    => 'To use AI features, add your API provider details in AI Settings.',
+        'open_settings'     => 'Open AI Settings',
+        'consent_title'     => 'This feature sends data to an AI server',
+        'consent_body'      => 'AI features work by sending part of your note to an external API. Before continuing, please confirm you understand:',
+        'consent_point1'    => 'Your note content will leave this device and be sent to your configured AI provider.',
+        'consent_point2'    => 'This is opt-in. You can revoke consent at any time in AI Settings.',
+        'consent_point3'    => 'NPad does not store or log any content sent to AI.',
+        'consent_agree'     => 'I understand — enable AI',
+        'send_title'        => 'Confirm data send',
+        'send_body'         => 'This will send the relevant text to your AI model ({model}). Continue?',
+        'send_confirm'      => 'Send & continue',
+
+        // Settings dialog
+        'settings_title'    => 'Your Custom AI Provider',
+        'settings_body'     => 'Connect any OpenAI-compatible AI — DeepSeek, OpenAI, Gemini, Groq, or your own. Enter the base URL, API key, and model name.',
+        'title_btn'         => 'Suggest a title with AI ☁',
+        'base_url'          => 'Base URL',
+        'api_key'           => 'API Key',
+        'model'             => 'Model name',
+        'examples'          => 'Provider examples',
+        'save_settings'     => 'Save settings',
+        'settings_saved'    => 'AI settings saved',
+        'test_conn'         => 'Test connection',
+        'testing'           => 'Testing…',
+        'test_ok'           => 'Connection successful!',
+        'test_fail'         => 'Connection failed',
+        'consent_toggle'    => 'Global AI consent',
+        'consent_enabled'   => 'Enabled — AI features may send note content to your API',
+        'consent_disabled'  => 'Disabled — AI features are blocked from sending data',
+        'revoke_consent'    => 'Revoke consent & clear acknowledgements',
+
+        // Common actions
+        'working'           => 'AI is working…',
+        'apply'             => 'Apply',
+        'rewrite'           => 'Rewrite',
+        'cancel'            => 'Cancel',
+        'error'             => 'AI error',
+        'empty_response'    => 'The AI returned an empty response.',
+        'empty_note'        => 'The note has no content to process.',
+        'note_too_short'    => 'The note is too short to summarize.',
+
+        // Smart Title
+        'pick_title'        => 'Choose a title to apply:',
+
+        // Summarize
+        'summary_hint'      => 'The summary will be saved as a new note.',
+        'save_as_note'      => 'Save as new note',
+        'summary_note_title' => 'Summary',
+
+        // Tone Rewriter
+        'tone_formal'       => 'Formal',
+        'tone_casual'       => 'Casual',
+        'tone_concise'      => 'Concise',
+        'tone_persuasive'   => 'Persuasive',
+        'tone_friendly'     => 'Friendly',
+        'tone_selection'    => 'Rewriting selected text.',
+        'tone_full_note'    => 'No selection — rewriting the full note.',
+        'rewrite_hint'      => 'The rewritten text will replace your current content.',
+
+        // Extract To-Dos
+        'no_todos'          => 'No tasks or obligations found in this note.',
+        'todos_found'       => '{n} task(s) found. Insert them as a checklist?',
+        'todos_hint'        => 'Tasks will be added as a checklist at the end of your note.',
+        'insert_checklist'  => 'Insert checklist',
+
+        // Smart Formatting
+        'format_hint'       => 'The formatted content will replace your current text.',
+
+        // Short toolbar button labels (visible text next to icon)
+        'btn_summarize'     => 'Summarize',
+        'btn_tone'          => 'Rewrite',
+        'btn_format'        => 'Format',
+
+        // Truncation warning (shown when input exceeds the per-feature limit)
+        'truncated'         => 'Input trimmed to',
+        'truncated_for'     => 'for AI processing',
+
+        // Floating selection toolbar
+        'sel_summarize'      => 'Summarize',
+        'sel_rewrite'        => 'Rewrite',
+        'sel_shorten'        => 'Shorten',
+        'sel_expand'         => 'Expand',
+        'sel_translate'      => 'Translate',
+        'sel_word_replace'   => 'Suggest replacements',
+
+        // Provider status & removal
+        'status_user'        => '✓ Using your own credentials',
+        'status_default'     => 'ℹ Using site default — fill in your own credentials below to override',
+        'remove_creds'       => 'Remove my credentials (use site default)',
+        'creds_removed'      => 'Your credentials removed — falling back to site default',
+        'settings_incomplete' => 'Fill in all three fields to save',
+    ],
+
     'hero' => [
         'title' => 'Private notes that work offline — no account, ever',
         'lede'  => 'NPad is a full rich-text editor that runs entirely in your browser. Your notes are saved on this device and never touch a server, so they stay private and keep working with no internet. Write tables, checklists and LaTeX math — then export it all to editable Word documents.',

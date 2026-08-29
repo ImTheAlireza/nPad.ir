@@ -353,6 +353,80 @@ $jsStrings = [
     'minutes'           => t('details.minutes'),
     'detailSavedAt'     => t('details.saved_at'),
     'never'             => t('details.never'),
+
+    // AI strings
+    'aiNoConfig'        => t('ai.no_config'),
+    'aiNoConfigBody'    => t('ai.no_config_body'),
+    'aiOpenSettings'    => t('ai.open_settings'),
+    'aiConsentTitle'    => t('ai.consent_title'),
+    'aiConsentBody'     => t('ai.consent_body'),
+    'aiConsentPoint1'   => t('ai.consent_point1'),
+    'aiConsentPoint2'   => t('ai.consent_point2'),
+    'aiConsentPoint3'   => t('ai.consent_point3'),
+    'aiConsentAgree'    => t('ai.consent_agree'),
+    'aiSendTitle'       => t('ai.send_title'),
+    'aiSendBody'        => t('ai.send_body'),
+    'aiSendConfirm'     => t('ai.send_confirm'),
+    'aiSettingsTitle'   => t('ai.settings_title'),
+    'aiSettingsBody'    => t('ai.settings_body'),
+    'aiBaseUrl'         => t('ai.base_url'),
+    'aiApiKey'          => t('ai.api_key'),
+    'aiModel'           => t('ai.model'),
+    'aiExamples'        => t('ai.examples'),
+    'aiSaveSettings'    => t('ai.save_settings'),
+    'aiSettingsSaved'   => t('ai.settings_saved'),
+    'aiTestConn'        => t('ai.test_conn'),
+    'aiTesting'         => t('ai.testing'),
+    'aiTestOk'          => t('ai.test_ok'),
+    'aiTestFail'        => t('ai.test_fail'),
+    'aiConsentToggle'   => t('ai.consent_toggle'),
+    'aiConsentEnabled'  => t('ai.consent_enabled'),
+    'aiConsentDisabled' => t('ai.consent_disabled'),
+    'aiRevokeConsent'   => t('ai.revoke_consent'),
+    'aiWorking'         => t('ai.working'),
+    'aiApply'           => t('ai.apply'),
+    'aiRewrite'         => t('ai.rewrite'),
+    'cancel'            => t('ai.cancel'),
+    'aiError'           => t('ai.error'),
+    'aiEmptyResponse'   => t('ai.empty_response'),
+    'aiEmptyNote'       => t('ai.empty_note'),
+    'aiNoteTooShort'    => t('ai.note_too_short'),
+    'aiSmartTitle'      => t('ai.smart_title'),
+    'aiTitleBtn'        => t('ai.title_btn'),
+    'aiPickTitle'       => t('ai.pick_title'),
+    'aiSummarize'       => t('ai.summarize'),
+    'aiSummaryHint'     => t('ai.summary_hint'),
+    'aiSaveAsNote'      => t('ai.save_as_note'),
+    'aiSummaryNoteTitle'=> t('ai.summary_note_title'),
+    'aiToneRewrite'     => t('ai.tone_rewrite'),
+    'aiToneFormal'      => t('ai.tone_formal'),
+    'aiToneCasual'      => t('ai.tone_casual'),
+    'aiToneConcise'     => t('ai.tone_concise'),
+    'aiTonePersuasive'  => t('ai.tone_persuasive'),
+    'aiToneFriendly'    => t('ai.tone_friendly'),
+    'aiToneSelection'   => t('ai.tone_selection'),
+    'aiToneFullNote'    => t('ai.tone_full_note'),
+    'aiRewriteHint'     => t('ai.rewrite_hint'),
+    'aiExtractTodos'    => t('ai.extract_todos'),
+    'aiNoTodos'         => t('ai.no_todos'),
+    'aiTodosFound'      => t('ai.todos_found'),
+    'aiTodosHint'       => t('ai.todos_hint'),
+    'aiInsertChecklist' => t('ai.insert_checklist'),
+    'aiSmartFormat'     => t('ai.smart_format'),
+    'aiTruncated'       => t('ai.truncated'),
+    'aiTruncatedFor'    => t('ai.truncated_for'),
+    'aiFormatHint'      => t('ai.format_hint'),
+    'aiStatusUser'      => t('ai.status_user'),
+    'aiStatusDefault'   => t('ai.status_default'),
+    'aiRemoveCreds'     => t('ai.remove_creds'),
+    'aiCredsRemoved'    => t('ai.creds_removed'),
+    'aiSettingsIncomplete' => t('ai.settings_incomplete'),
+    'aiSelSummarize'   => t('ai.sel_summarize'),
+    'aiSelRewrite'     => t('ai.sel_rewrite'),
+    'aiSelShorten'     => t('ai.sel_shorten'),
+    'aiSelExpand'      => t('ai.sel_expand'),
+    'aiSelTranslate'   => t('ai.sel_translate'),
+    'aiSelWordReplace' => t('ai.sel_word_replace'),
 ];
 ?>
 <div class="notes-workspace" id="notesWorkspace" data-notes-open="false">
@@ -539,6 +613,12 @@ $jsStrings = [
                        aria-label="<?= e(t('notes.title_label')) ?>" autocomplete="off" spellcheck="false"
                        placeholder="<?= e(t('notes.untitled')) ?>">
             </label>
+            <button type="button" class="document-title__ai-btn" id="aiTitleBtn"
+                    data-action="ai-smart-title" hidden
+                    aria-label="<?= e(t('ai.title_btn')) ?>"
+                    title="<?= e(t('ai.title_btn')) ?>">
+                <?= icon('sparkle') ?>
+            </button>
             <div class="document-organization">
                 <div class="document-folder" id="documentFolderPicker">
                     <button type="button" class="document-folder__trigger" id="noteFolder"
@@ -627,6 +707,21 @@ $jsStrings = [
             <button type="button" class="toolbar__btn" data-action="toggle-spellcheck" aria-pressed="true"
                     title="<?= e(t('toolbar.spellcheck')) ?>" aria-label="<?= e(t('toolbar.spellcheck')) ?>">
                 <?= icon('spellcheck') ?>
+            </button>
+        </div>
+
+        <div class="toolbar__group toolbar__group--ai" role="group" aria-label="<?= e(t('ai.menu_label')) ?>">
+            <button type="button" class="toolbar__btn toolbar__btn--ai" data-action="ai-summarize"
+                    title="<?= e(t('ai.summarize')) ?> ☁" aria-label="<?= e(t('ai.summarize')) ?>">
+                <?= icon('ai-summarize') ?>
+            </button>
+            <button type="button" class="toolbar__btn toolbar__btn--ai" data-action="ai-tone-rewrite"
+                    title="<?= e(t('ai.tone_rewrite')) ?> ☁" aria-label="<?= e(t('ai.tone_rewrite')) ?>">
+                <?= icon('ai-tone') ?>
+            </button>
+            <button type="button" class="toolbar__btn toolbar__btn--ai" data-action="ai-smart-format"
+                    title="<?= e(t('ai.smart_format')) ?> ☁" aria-label="<?= e(t('ai.smart_format')) ?>">
+                <?= icon('ai-format') ?>
             </button>
         </div>
         </div><!-- /toolbarPaneBase -->

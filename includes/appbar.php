@@ -79,6 +79,15 @@ $insertItems = [
     ['action' => 'insert-link',   'icon' => 'link',  'label' => t('menu.link')],
 ];
 
+$aiItems = [
+    ['action' => 'ai-summarize',     'icon' => 'sparkle', 'label' => t('ai.summarize'),      'cloud' => true],
+    ['action' => 'ai-tone-rewrite',  'icon' => 'sparkle', 'label' => t('ai.tone_rewrite'),   'cloud' => true],
+    ['action' => 'ai-extract-todos', 'icon' => 'sparkle', 'label' => t('ai.extract_todos'),  'cloud' => true],
+    ['action' => 'ai-smart-format',  'icon' => 'sparkle', 'label' => t('ai.smart_format'),   'cloud' => true],
+    ['separator' => true],
+    ['action' => 'ai-settings',      'icon' => 'ai',      'label' => t('ai.ai_settings')],
+];
+
 /**
  * Render one dropdown menu, including any nested submenu an item carries
  * under 'children' (rendered as a flyout panel; ui.js wires the behaviour).
@@ -90,6 +99,10 @@ function npad_render_menu(string $id, string $label, array $items): void
             echo '<div class="menu__separator" role="separator"></div>';
             return;
         }
+        $cloudBadge = !empty($item['cloud'])
+            ? '<span class="menu__cloud-badge" aria-label="Sends data to AI server" title="This feature sends content to your AI provider">☁</span>'
+            : '';
+
         if (!empty($item['children'])) {
             $subId = $parentId . ($item['submenuId'] ?? 'Sub' . $index);
             ?>
@@ -119,6 +132,7 @@ function npad_render_menu(string $id, string $label, array $items): void
             <?php if (!empty($item['shortcut'])): ?>
                 <span class="menu__shortcut"><?= e($item['shortcut']) ?></span>
             <?php endif; ?>
+            <?= $cloudBadge ?>
         </button>
         <?php
     };
@@ -149,6 +163,7 @@ function npad_render_menu(string $id, string $label, array $items): void
         npad_render_menu('fileMenu', t('menu.file'), $fileItems);
         npad_render_menu('editMenu', t('menu.edit'), $editItems);
         npad_render_menu('insertMenu', t('menu.insert'), $insertItems);
+        npad_render_menu('aiMenu', t('ai.menu_label'), $aiItems);
         endif; ?>
     </div>
 
