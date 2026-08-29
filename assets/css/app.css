@@ -4649,15 +4649,19 @@ body.focus-mode .focus-exit { display: inline-flex; }
    ========================================================================== */
 
 :root {
-    /* Light theme: the same neon choreography, but the light is coloured
-       instead of blown out to white — a white core is invisible on white. */
-    --ai-glow-in: #0e7490;                        /* == --accent */
-    --ai-glow-in-soft: #1a94b0;
-    --ai-glow-in-core: #0a5c73;
-    --ai-glow-in-fade: rgba(14, 116, 144, 0.62);
-    --ai-glow-out: #be185d;
-    --ai-glow-out-soft: #d1407f;
-    --ai-glow-out-fade: rgba(190, 24, 93, 0.55);
+    /* Light theme: the glow *is* the site accent (#0e7490). On white the light
+       is coloured rather than blown out to white — a white core is invisible
+       on a white page — so the accent itself carries the glow. Every shade is
+       derived from --accent, so re-theming the site re-themes the transition. */
+    --ai-glow-in: var(--accent);
+    --ai-glow-in-soft: color-mix(in srgb, var(--accent) 45%, #ffffff);
+    --ai-glow-in-core: color-mix(in srgb, var(--accent) 78%, #000000);
+    --ai-glow-in-fade: color-mix(in srgb, var(--accent) 62%, transparent);
+    /* Outgoing text glows in the same accent: what separates the two phases is
+       the direction of the light, not its colour. */
+    --ai-glow-out: var(--accent);
+    --ai-glow-out-soft: color-mix(in srgb, var(--accent) 55%, #ffffff);
+    --ai-glow-out-fade: color-mix(in srgb, var(--accent) 55%, transparent);
     --ai-ink-rest: var(--text-strong);
 
     --ai-f-out: blur(3px) brightness(1.06) saturate(2.4);
@@ -4672,32 +4676,36 @@ body.focus-mode .focus-exit { display: inline-flex; }
     --ai-shadow-bloom: 0 0 2px currentColor, 0 0 6px currentColor,
                        0 0 15px currentColor;
 
-    --ai-flare-border: rgba(14, 116, 144, 0.75);
-    --ai-flare-shadow: 0 0 2px rgba(14, 116, 144, 0.55),
-                       0 0 5px rgba(14, 116, 144, 0.45),
-                       0 0 10px rgba(14, 116, 144, 0.35),
-                       0 0 15px rgba(190, 24, 93, 0.28),
-                       inset 0 0 8px rgba(14, 116, 144, 0.10);
+    /* The editor card flares in the accent too: a solid accent edge with four
+       outward rings (still capped at 15px) and two inward ones. */
+    --ai-flare-border: var(--accent);
+    --ai-flare-shadow: 0 0 2px color-mix(in srgb, var(--accent) 90%, transparent),
+                       0 0 5px color-mix(in srgb, var(--accent) 75%, transparent),
+                       0 0 10px color-mix(in srgb, var(--accent) 55%, transparent),
+                       0 0 15px color-mix(in srgb, var(--accent) 38%, transparent),
+                       inset 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent),
+                       inset 0 0 8px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 [data-theme='dark'] {
-    /* Dark theme: the prototype's palette, keyed to the dark accent. */
-    --ai-glow-in: #22d3ee;                        /* == --accent */
-    --ai-glow-in-soft: #d7fbff;
+    /* Dark theme: the same accent (#22d3ee), blown out to a white-hot core the
+       way the prototype does — brightness is what turns the accent into neon. */
+    --ai-glow-in: var(--accent);
+    --ai-glow-in-soft: color-mix(in srgb, var(--accent) 30%, #ffffff);
     --ai-glow-in-core: #ffffff;
-    --ai-glow-in-fade: rgba(89, 237, 255, 0.88);
-    --ai-glow-out: #ff54bd;
-    --ai-glow-out-soft: #ffd2ec;
-    --ai-glow-out-fade: rgba(255, 84, 189, 0.96);
+    --ai-glow-in-fade: color-mix(in srgb, var(--accent) 88%, transparent);
+    --ai-glow-out: var(--accent);
+    --ai-glow-out-soft: color-mix(in srgb, var(--accent) 45%, #ffffff);
+    --ai-glow-out-fade: color-mix(in srgb, var(--accent) 96%, transparent);
 
     --ai-f-out: blur(4px) brightness(8) saturate(1.9);
     --ai-f-bloom: blur(6px) brightness(8.4) saturate(1.9);
     --ai-f-in-start: blur(6px) brightness(9) saturate(2);
     --ai-f-in-mid: blur(1.2px) brightness(5.8) saturate(1.7);
 
-    --ai-shadow-in: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px #e9fcff,
+    --ai-shadow-in: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px var(--ai-glow-in-soft),
                     0 0 7px var(--ai-glow-in), 0 0 11px var(--ai-glow-in),
-                    0 0 15px var(--ai-glow-out-fade);
+                    0 0 15px var(--ai-glow-in-fade);
     --ai-shadow-out: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px var(--ai-glow-out-soft),
                      0 0 7px var(--ai-glow-out), 0 0 11px var(--ai-glow-out),
                      0 0 15px var(--ai-glow-out-fade);
@@ -4705,12 +4713,14 @@ body.focus-mode .focus-exit { display: inline-flex; }
                        0 0 7px currentColor, 0 0 11px currentColor,
                        0 0 15px currentColor;
 
-    --ai-flare-border: rgba(255, 255, 255, 0.9);
+    --ai-flare-border: var(--accent);
     --ai-flare-shadow: 0 0 2px rgba(255, 255, 255, 0.95),
-                       0 0 5px rgba(233, 252, 255, 0.9),
-                       0 0 10px rgba(89, 237, 255, 0.85),
-                       0 0 15px rgba(255, 84, 189, 0.7),
-                       inset 0 0 8px rgba(89, 237, 255, 0.22);
+                       0 0 5px color-mix(in srgb, var(--accent) 95%, transparent),
+                       0 0 10px color-mix(in srgb, var(--accent) 80%, transparent),
+                       0 0 15px color-mix(in srgb, var(--accent) 60%, transparent),
+                       inset 0 0 3px rgba(255, 255, 255, 0.85),
+                       inset 0 0 8px color-mix(in srgb, var(--accent) 45%, transparent),
+                       inset 0 0 15px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* --- 1. The swap box ------------------------------------------------------
