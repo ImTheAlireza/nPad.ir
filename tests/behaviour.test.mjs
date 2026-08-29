@@ -88,7 +88,7 @@ export default async function run(check, group) {
 
     group('behaviour: pre-paint theme script');
 
-    check('inline theme script executed without error', () => {
+    await check('inline theme script executed without error', () => {
         assert.equal(consoleErrors.length, 0, consoleErrors[0]);
     });
 
@@ -101,7 +101,7 @@ export default async function run(check, group) {
     const { initEditor } = await import(url('assets/js/editor.js'));
     const { sanitizeHtml } = await import(url('assets/js/sanitize.js'));
 
-    check('modules import cleanly', () => {
+    await check('modules import cleanly', () => {
         assert.equal(typeof initMenus, 'function');
         assert.equal(typeof initTheme, 'function');
         assert.equal(typeof initEditor, 'function');
@@ -110,7 +110,7 @@ export default async function run(check, group) {
     const strings = JSON.parse(document.getElementById('i18n').textContent);
     const tracked = [];
 
-    check('initMenus / initTheme / initEditor run without throwing', () => {
+    await check('initMenus / initTheme / initEditor run without throwing', () => {
         initMenus();
         initTheme({ onChange: (e) => tracked.push(e) });
         initEditor({ strings, onEvent: (e) => tracked.push(e) });
@@ -125,26 +125,26 @@ export default async function run(check, group) {
     const trigger = document.getElementById('fileMenuTrigger');
     const panel = document.getElementById('fileMenuPanel');
 
-    check('menu opens on click', () => {
+    await check('menu opens on click', () => {
         trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.equal(panel.dataset.open, 'true', 'panel did not open');
         assert.equal(trigger.getAttribute('aria-expanded'), 'true');
     });
 
-    check('menu closes on Escape', () => {
+    await check('menu closes on Escape', () => {
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         assert.equal(panel.dataset.open, 'false', 'panel did not close');
         assert.equal(trigger.getAttribute('aria-expanded'), 'false');
     });
 
-    check('menu closes on outside click', () => {
+    await check('menu closes on outside click', () => {
         trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.equal(panel.dataset.open, 'true');
         document.body.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.equal(panel.dataset.open, 'false', 'outside click did not close');
     });
 
-    check('ArrowDown from trigger opens and focuses first item', () => {
+    await check('ArrowDown from trigger opens and focuses first item', () => {
         trigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
         assert.equal(panel.dataset.open, 'true');
         const first = panel.querySelector('.menu__item');
@@ -155,7 +155,7 @@ export default async function run(check, group) {
     const subTrigger = document.getElementById('fileMenuExportTrigger');
     const subPanel = document.getElementById('fileMenuExportPanel');
 
-    check('all export formats live in the Export-as flyout, none at top level', () => {
+    await check('all export formats live in the Export-as flyout, none at top level', () => {
         assert.ok(subTrigger && subPanel, 'flyout markup missing');
         const flyoutActions = [...subPanel.querySelectorAll('[data-action]')].map((b) => b.dataset.action);
         assert.deepEqual(flyoutActions, [
@@ -171,7 +171,7 @@ export default async function run(check, group) {
             'parent panel missing the has-submenu containment class');
     });
 
-    check('flyout opens on click and keeps the parent menu open', () => {
+    await check('flyout opens on click and keeps the parent menu open', () => {
         trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         subTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.equal(subPanel.dataset.open, 'true', 'flyout did not open');
@@ -179,7 +179,7 @@ export default async function run(check, group) {
         assert.equal(panel.dataset.open, 'true', 'parent menu closed unexpectedly');
     });
 
-    check('Escape closes the flyout first, then the menu', () => {
+    await check('Escape closes the flyout first, then the menu', () => {
         subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         assert.equal(subPanel.dataset.open, 'false', 'flyout did not close');
         assert.equal(panel.dataset.open, 'true', 'menu should survive the first Escape');
@@ -188,7 +188,7 @@ export default async function run(check, group) {
         assert.equal(panel.dataset.open, 'false', 'second Escape did not close the menu');
     });
 
-    check('ArrowRight opens the flyout; ArrowLeft returns to the trigger', () => {
+    await check('ArrowRight opens the flyout; ArrowLeft returns to the trigger', () => {
         trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         subTrigger.focus();
         subTrigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -201,7 +201,7 @@ export default async function run(check, group) {
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
-    check('activating a flyout export closes the whole menu and fires the action', () => {
+    await check('activating a flyout export closes the whole menu and fires the action', () => {
         window.URL.createObjectURL = () => 'blob:mock';
         window.URL.revokeObjectURL = () => {};
         // jsdom tries (and fails loudly) to navigate on anchor clicks.
@@ -234,7 +234,7 @@ export default async function run(check, group) {
     document.querySelector('[data-action="open"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     window.HTMLInputElement.prototype.click = nativeInputClick;
-    check('Open accepts every supported local document format', () => {
+    await check('Open accepts every supported local document format', () => {
         ['.txt', '.html', '.md', '.json', '.docx', '.pdf', '.rtf'].forEach((extension) => {
             assert.ok(fileAccept.includes(extension), `${extension} missing from ${fileAccept}`);
         });
@@ -243,7 +243,7 @@ export default async function run(check, group) {
     document.querySelector('[data-action="save-pdf"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    check('PDF export explains the browser Save as PDF flow', () => {
+    await check('PDF export explains the browser Save as PDF flow', () => {
         const dialog = document.getElementById('appDialog');
         assert.equal(dialog.open, true);
         assert.ok(dialog.textContent.includes(strings.pdfExportBody));
@@ -255,7 +255,7 @@ export default async function run(check, group) {
 
     group('behaviour: theme toggle');
 
-    check('toggling flips data-theme and persists', () => {
+    await check('toggling flips data-theme and persists', () => {
         const before = currentTheme();
         document.querySelector('[data-theme-toggle]')
             .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -264,11 +264,11 @@ export default async function run(check, group) {
         assert.equal(window.localStorage.getItem('npad:theme'), after, 'not persisted');
     });
 
-    check('toggle reports the change for analytics', () => {
+    await check('toggle reports the change for analytics', () => {
         assert.ok(tracked.some((e) => e.startsWith('dark_mode_')), `tracked: ${tracked}`);
     });
 
-    check('a saved dark preference wins even when the pre-paint script did not run', () => {
+    await check('a saved dark preference wins even when the pre-paint script did not run', () => {
         const previous = window.localStorage.getItem('npad:theme');
         window.localStorage.setItem('npad:theme', 'dark');
         // Simulate a boot where the inline pre-paint script never set the
@@ -292,7 +292,7 @@ export default async function run(check, group) {
         return true;
     };
 
-    check('font popup opens, filters the bilingual list and applies a font', () => {
+    await check('font popup opens, filters the bilingual list and applies a font', () => {
         const trigger = document.getElementById('fontPickerTrigger');
         const popup = document.getElementById('fontPickerPopup');
         const search = document.getElementById('fontPickerSearch');
@@ -314,7 +314,7 @@ export default async function run(check, group) {
             command === 'fontName' && value.includes('IranNastaliq')));
     });
 
-    check('manual font size accepts an arbitrary pixel value', () => {
+    await check('manual font size accepts an arbitrary pixel value', () => {
         const input = document.querySelector('[data-font-size]');
         input.value = '27';
         input.dispatchEvent(new window.KeyboardEvent('keydown', {
@@ -325,7 +325,7 @@ export default async function run(check, group) {
         assert.equal(input.value, '27');
     });
 
-    check('custom colour modal applies a preset without a native colour input', async () => {
+    await check('custom colour modal applies a preset without a native colour input', async () => {
         const trigger = document.querySelector('[data-color-command="foreColor"]');
         trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
@@ -350,20 +350,20 @@ export default async function run(check, group) {
     const editor = document.getElementById('editor');
     const counts = document.getElementById('statusCounts');
 
-    check('count updates immediately on input', () => {
+    await check('count updates immediately on input', () => {
         editor.textContent = 'hello world foo';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         const text = counts.textContent;
         assert.ok(/3/.test(text), `expected 3 words, got: ${text}`);
     });
 
-    check('count reflects further edits synchronously', () => {
+    await check('count reflects further edits synchronously', () => {
         editor.textContent = 'one two three four five';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         assert.ok(/5/.test(counts.textContent), counts.textContent);
     });
 
-    check('empty editor reports zero', () => {
+    await check('empty editor reports zero', () => {
         editor.textContent = '';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         assert.ok(/\b0\b/.test(counts.textContent), counts.textContent);
@@ -389,7 +389,7 @@ export default async function run(check, group) {
         while (!predicate() && Date.now() < deadline) await settle();
     };
 
-    check('responsive sidebar exposes named create, search and note controls', () => {
+    await check('responsive sidebar exposes named create, search and note controls', () => {
         assert.ok(document.getElementById('notesSidebar'), 'notes sidebar missing');
         assert.ok(notesSearch.getAttribute('placeholder'), 'notes search has no placeholder');
         assert.ok(document.querySelector('[data-action="new"]'), 'new-note control missing');
@@ -404,7 +404,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
 
-    check('New creates and selects a separate note without clearing the first', () => {
+    await check('New creates and selects a separate note without clearing the first', () => {
         assert.equal(noteItems().length, 2);
         assert.equal(noteTitle.value, strings.noteUntitled);
         assert.equal(noteItems().filter((item) => item.classList.contains('note-item--active')).length, 1);
@@ -418,7 +418,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
 
-    check('duplicate copies content and activates the copy', () => {
+    await check('duplicate copies content and activates the copy', () => {
         assert.equal(noteItems().length, 3);
         assert.equal(noteTitle.value, `Project ${strings.noteCopySuffix}`);
         assert.equal(editor.textContent, 'Project draft');
@@ -429,7 +429,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
 
-    check('pin toggles state and sorts the pinned note first', () => {
+    await check('pin toggles state and sorts the pinned note first', () => {
         const first = noteItems()[0];
         assert.equal(first.querySelector('.note-item__title').textContent, copyTitle);
         assert.equal(first.querySelector('[data-note-action="pin"]').getAttribute('aria-pressed'), 'true');
@@ -437,7 +437,7 @@ export default async function run(check, group) {
 
     notesSearch.value = 'Original';
     notesSearch.dispatchEvent(new window.Event('input', { bubbles: true }));
-    check('sidebar search filters by title and note content', () => {
+    await check('sidebar search filters by title and note content', () => {
         assert.equal(noteItems().length, 1);
         assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Original');
     });
@@ -447,7 +447,7 @@ export default async function run(check, group) {
     noteByTitle('Original').querySelector('[data-note-action="open"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('switching notes restores the saved title and content', () => {
+    await check('switching notes restores the saved title and content', () => {
         assert.equal(noteTitle.value, 'Original');
         assert.equal(editor.textContent, 'Original note body');
     });
@@ -460,7 +460,7 @@ export default async function run(check, group) {
     document.querySelector('#appDialog [data-action="rename"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('rename updates both the title field and sidebar', () => {
+    await check('rename updates both the title field and sidebar', () => {
         assert.equal(noteTitle.value, 'Renamed original');
         assert.ok(noteByTitle('Renamed original'));
     });
@@ -472,7 +472,7 @@ export default async function run(check, group) {
     document.querySelector('#appDialog [data-action="confirm"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('delete removes only the chosen note', () => {
+    await check('delete removes only the chosen note', () => {
         assert.equal(noteItems().length, 2);
         assert.ok(!noteByTitle('Project'));
         assert.ok(noteByTitle('Renamed original'));
@@ -481,7 +481,7 @@ export default async function run(check, group) {
 
     group('behaviour: document tabs');
 
-    check('opened notes stay available as document tabs', () => {
+    await check('opened notes stay available as document tabs', () => {
         assert.equal(tabItems().length, 2);
         assert.ok(tabByTitle('Renamed original'));
         assert.ok(tabByTitle(copyTitle));
@@ -491,7 +491,7 @@ export default async function run(check, group) {
     tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('tabs switch documents without opening the notes sidebar', () => {
+    await check('tabs switch documents without opening the notes sidebar', () => {
         assert.equal(noteTitle.value, copyTitle);
         assert.equal(editor.textContent, 'Project draft');
         assert.equal(document.getElementById('notesWorkspace').dataset.notesOpen, 'false');
@@ -501,7 +501,7 @@ export default async function run(check, group) {
     tabByTitle(copyTitle).querySelector('[data-tab-action="open"]')
         .dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     await settle();
-    check('arrow keys move between tabs and preserve tab focus', () => {
+    await check('arrow keys move between tabs and preserve tab focus', () => {
         assert.equal(noteTitle.value, 'Renamed original');
         const activeTab = tabByTitle('Renamed original').querySelector('[role="tab"]');
         assert.equal(activeTab.getAttribute('aria-selected'), 'true');
@@ -514,7 +514,7 @@ export default async function run(check, group) {
     tabByTitle(copyTitle).querySelector('[data-tab-action="close"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('closing the active tab selects its neighbour without deleting the note', () => {
+    await check('closing the active tab selects its neighbour without deleting the note', () => {
         assert.equal(tabItems().length, 1);
         assert.equal(noteTitle.value, 'Renamed original');
         assert.ok(noteByTitle(copyTitle), 'closing a tab deleted its note');
@@ -524,7 +524,7 @@ export default async function run(check, group) {
     noteByTitle(copyTitle).querySelector('[data-note-action="open"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('a closed tab reopens from the note list', () => {
+    await check('a closed tab reopens from the note list', () => {
         assert.equal(tabItems().length, 2);
         assert.equal(noteTitle.value, copyTitle);
         assert.equal(tabByTitle(copyTitle).classList.contains('document-tab--active'), true);
@@ -539,7 +539,7 @@ export default async function run(check, group) {
     document.querySelector('[data-action="manage-note-tags"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('an empty tag manager offers OK instead of an inapplicable Apply action', () => {
+    await check('an empty tag manager offers OK instead of an inapplicable Apply action', () => {
         const buttons = [...document.querySelectorAll('#appDialog .dialog__footer button')];
         assert.equal(buttons.length, 1);
         assert.equal(buttons[0].textContent, strings.ok);
@@ -557,7 +557,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
 
-    check('folders can be created and appear in the note folder picker', () => {
+    await check('folders can be created and appear in the note folder picker', () => {
         const folderRow = document.querySelector('#foldersList .organization-row');
         assert.equal(folderRow.querySelector('.organization-filter__name').textContent, 'Work');
         assert.ok([...document.querySelectorAll('#noteFolderOptions [role="option"]')]
@@ -566,7 +566,7 @@ export default async function run(check, group) {
 
     const folderPicker = document.getElementById('noteFolder');
     folderPicker.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    check('the custom folder picker opens an accessible styled menu', () => {
+    await check('the custom folder picker opens an accessible styled menu', () => {
         assert.equal(folderPicker.getAttribute('aria-expanded'), 'true');
         assert.equal(document.getElementById('noteFolderMenu').hidden, false);
         assert.equal(document.getElementById('noteFolderOptions').getAttribute('role'), 'listbox');
@@ -575,7 +575,7 @@ export default async function run(check, group) {
         .find((option) => option.textContent.includes('Work'))
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await eventually(() => (noteByTitle('Renamed original')?.querySelector('.note-item__folder') || {}).textContent === 'Work');
-    check('the active note can be assigned to a folder', () => {
+    await check('the active note can be assigned to a folder', () => {
         assert.equal(noteByTitle('Renamed original').querySelector('.note-item__folder').textContent, 'Work');
         assert.equal(document.querySelector('#foldersList .organization-filter__count').textContent, '1');
     });
@@ -587,7 +587,7 @@ export default async function run(check, group) {
     document.querySelector('#appDialog [data-action="save-folder"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('folders can be renamed without losing their notes', () => {
+    await check('folders can be renamed without losing their notes', () => {
         assert.equal(document.querySelector('#foldersList .organization-filter__name').textContent, 'Projects');
         assert.equal(document.getElementById('noteFolderValue').textContent, 'Projects');
     });
@@ -602,7 +602,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await eventually(() => document.querySelector('#tagsList [data-filter-type="tag"]'));
 
-    check('color-coded tags can be created', () => {
+    await check('color-coded tags can be created', () => {
         const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
         assert.equal(tagFilter.querySelector('.organization-filter__name').textContent, 'Important');
         assert.equal(tagFilter.style.getPropertyValue('--tag-color'), '#dc2626');
@@ -620,7 +620,7 @@ export default async function run(check, group) {
         const row = document.querySelector('#tagsList [data-filter-type="tag"]');
         return row && row.querySelector('.organization-filter__name').textContent === 'Priority';
     });
-    check('tags can be renamed and recolored', () => {
+    await check('tags can be renamed and recolored', () => {
         const tagFilter = document.querySelector('#tagsList [data-filter-type="tag"]');
         assert.equal(tagFilter.querySelector('.organization-filter__name').textContent, 'Priority');
         assert.equal(tagFilter.style.getPropertyValue('--tag-color'), '#7c3aed');
@@ -635,7 +635,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await eventually(() => document.querySelector('#currentNoteTags .tag-chip'));
 
-    check('tags can be assigned and are shown on the note card and document', () => {
+    await check('tags can be assigned and are shown on the note card and document', () => {
         assert.equal(document.querySelector('#currentNoteTags .tag-chip').textContent, 'Priority');
         assert.equal(noteByTitle('Renamed original').querySelector('.tag-chip').textContent, 'Priority');
         assert.equal(document.querySelector('#tagsList .organization-filter__count').textContent, '1');
@@ -645,7 +645,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await eventually(() => noteItems().length === 1
         && noteItems()[0].querySelector('.note-item__title').textContent === 'Renamed original');
-    check('folder filters show only notes in that folder', () => {
+    await check('folder filters show only notes in that folder', () => {
         assert.equal(noteItems().length, 1);
         assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
     });
@@ -655,7 +655,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await eventually(() => noteItems().length === 1
         && noteItems()[0].querySelector('.note-item__title').textContent === 'Renamed original');
-    check('tag filters show only notes with that tag', () => {
+    await check('tag filters show only notes with that tag', () => {
         assert.equal(noteItems().length, 1);
         assert.equal(noteItems()[0].querySelector('.note-item__title').textContent, 'Renamed original');
     });
@@ -668,7 +668,7 @@ export default async function run(check, group) {
     document.querySelector('#appDialog [data-action="confirm"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('deleting a folder moves its notes to Unfiled', () => {
+    await check('deleting a folder moves its notes to Unfiled', () => {
         assert.equal(document.querySelectorAll('#foldersList .organization-row').length, 0);
         assert.equal(folderPicker.dataset.folderId, '');
         assert.equal(document.getElementById('noteFolderValue').textContent, strings.noFolder);
@@ -681,7 +681,7 @@ export default async function run(check, group) {
     document.querySelector('#appDialog [data-action="confirm"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('deleting a tag removes it from notes without deleting notes', () => {
+    await check('deleting a tag removes it from notes without deleting notes', () => {
         assert.equal(document.querySelectorAll('#tagsList .organization-row').length, 0);
         assert.equal(document.querySelectorAll('#currentNoteTags .tag-chip').length, 0);
         assert.ok(noteByTitle('Renamed original'));
@@ -693,7 +693,7 @@ export default async function run(check, group) {
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
     let deletedProjectBackup;
-    check('the recovery screen lists timestamped automatic and deletion backups', () => {
+    await check('the recovery screen lists timestamped automatic and deletion backups', () => {
         const dialog = document.getElementById('backupDialog');
         const items = [...dialog.querySelectorAll('.backup-item')];
         deletedProjectBackup = items.find((item) =>
@@ -716,7 +716,7 @@ export default async function run(check, group) {
         await settle();
     }
     await new Promise((resolve) => window.setTimeout(resolve, 300));
-    check('restoring a backup creates a separate active note', () => {
+    await check('restoring a backup creates a separate active note', () => {
         assert.equal(document.getElementById('backupDialog').open, false);
         assert.equal(noteTitle.value, restoredTitle, 'restored note did not become active');
         assert.equal(editor.textContent, 'Project draft');
@@ -738,7 +738,7 @@ export default async function run(check, group) {
     document.querySelector('#appDialog [data-action="confirm"]')
         .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await settle();
-    check('recovery snapshots can be permanently removed without deleting notes', () => {
+    await check('recovery snapshots can be permanently removed without deleting notes', () => {
         assert.equal(document.getElementById('backupDialog').open, true);
         assert.equal(document.querySelectorAll('#backupList .backup-item').length, backupsBeforeDelete - 1);
         assert.equal(document.querySelector(`[data-backup-id="${deletedBackupId}"]`), null);
@@ -778,7 +778,7 @@ export default async function run(check, group) {
         selection.addRange(range);
     };
 
-    check('Insert menu opens next to Edit and reveals the table item', () => {
+    await check('Insert menu opens next to Edit and reveals the table item', () => {
         insertMenuTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.equal(insertMenuPanel.dataset.open, 'true', 'Insert menu did not open');
         assert.ok(insertMenuPanel.querySelector('[data-action="insert-table"]'), 'table item missing');
@@ -786,7 +786,7 @@ export default async function run(check, group) {
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
-    check('table dialog opens with presets, steppers and a live preview', () => {
+    await check('table dialog opens with presets, steppers and a live preview', () => {
         editor.innerHTML = '<p>before</p><p><br></p>';
         putCaretInCell(editor.querySelector('p:last-child'));
         clickMenu('insert-table');
@@ -804,7 +804,7 @@ export default async function run(check, group) {
     // is covered by tests/tables-ui.test.mjs, which awaits the asynchronous
     // dialog continuations. Here we place the caret and drive the toolbar,
     // which is fully synchronous once the table exists in the editor.
-    check('caret inside a table swaps the toolbar to table tools', () => {
+    await check('caret inside a table swaps the toolbar to table tools', () => {
         editor.innerHTML = '<p>before</p>'
             + '<table><thead><tr><th scope="col">A</th><th scope="col">B</th></tr></thead>'
             + '<tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table>'
@@ -821,7 +821,7 @@ export default async function run(check, group) {
         assert.equal(headerColBtn.getAttribute('aria-pressed'), 'false');
     });
 
-    check('text selected inside one cell returns to the default toolbar', () => {
+    await check('text selected inside one cell returns to the default toolbar', () => {
         const table = editor.querySelector('table');
         const cell = table.tBodies[0].rows[0].cells[0];
         cell.textContent = 'highlight me';
@@ -857,7 +857,7 @@ export default async function run(check, group) {
         document.dispatchEvent(new window.Event('selectionchange'));
     });
 
-    check('table toolbar exposes the common cell options', () => {
+    await check('table toolbar exposes the common cell options', () => {
         const actions = [
             'merge', 'split', 'clear-cells', 'select-table',
             'v-align-top', 'v-align-middle', 'v-align-bottom',
@@ -872,7 +872,7 @@ export default async function run(check, group) {
         assert.ok(morePanel.querySelector('[data-table-action="sort-desc"]'), 'sort descending missing');
     });
 
-    check('merge and split affordances follow the selection', () => {
+    await check('merge and split affordances follow the selection', () => {
         const table = editor.querySelector('table');
         putCaretInCell(table.tBodies[0].rows[0].cells[0], true);
         document.dispatchEvent(new window.Event('selectionchange'));
@@ -896,7 +896,7 @@ export default async function run(check, group) {
         document.dispatchEvent(new window.Event('selectionchange'));
     });
 
-    check('row and column controls mutate a real table grid', () => {
+    await check('row and column controls mutate a real table grid', () => {
         const table = editor.querySelector('table');
         clickTool('row-above');
         assert.equal(table.rows.length, 4, 'row-above did nothing');
@@ -911,7 +911,7 @@ export default async function run(check, group) {
         assert.ok(tracked.includes('table_tool_used'), 'table_tool_used not tracked');
     });
 
-    check('header, merge and split controls work on the live table', () => {
+    await check('header, merge and split controls work on the live table', () => {
         const table = editor.querySelector('table');
         const body = table.tBodies[0];
         putCaretInCell(body.rows[0].cells[0], true);
@@ -940,7 +940,7 @@ export default async function run(check, group) {
         assert.equal(table.tBodies[0].rows[0].cells[0].getAttribute('colspan'), null, 'cells did not split');
     });
 
-    check('Tab walks cells and appends a row at the end', () => {
+    await check('Tab walks cells and appends a row at the end', () => {
         const table = editor.querySelector('table');
         const cells = [...table.querySelectorAll('td, th')].filter((c) => c.closest('table') === table);
         putCaretInCell(cells[cells.length - 1], true);
@@ -958,7 +958,7 @@ export default async function run(check, group) {
         assert.ok(window.getSelection().anchorNode, 'Shift+Tab left no caret');
     });
 
-    check('right-click opens the table context menu and Escape closes it', () => {
+    await check('right-click opens the table context menu and Escape closes it', () => {
         const table = editor.querySelector('table');
         table.querySelector('td, th').dispatchEvent(new window.MouseEvent('contextmenu', {
             bubbles: true, cancelable: true, clientX: 30, clientY: 30,
@@ -969,7 +969,7 @@ export default async function run(check, group) {
         assert.equal(tableContextMenu.hidden, true, 'Escape did not close the context menu');
     });
 
-    check('properties button opens the table settings dialog', () => {
+    await check('properties button opens the table settings dialog', () => {
         clickTool('properties');
         const dialog = document.getElementById('appDialog');
         assert.equal(dialog.open, true, 'properties dialog did not open');
@@ -978,14 +978,14 @@ export default async function run(check, group) {
         dialog.close();
     });
 
-    check('delete table asks for confirmation', () => {
+    await check('delete table asks for confirmation', () => {
         clickTool('delete-table');
         const dialog = document.getElementById('appDialog');
         assert.equal(dialog.open, true, 'delete confirmation did not open');
         dialog.close();
     });
 
-    check('horizontal rule inserts straight from the menu', () => {
+    await check('horizontal rule inserts straight from the menu', () => {
         const range = document.createRange();
         range.setStart(editor, editor.childNodes.length);
         range.collapse(true);
@@ -1028,13 +1028,13 @@ export default async function run(check, group) {
         }
     };
 
-    check('Ctrl+F opens the find bar and reports the event', () => {
+    await check('Ctrl+F opens the find bar and reports the event', () => {
         pressKey(document, { key: 'f', ctrlKey: true });
         assert.equal(findBar.hidden, false, 'find bar did not open');
         assert.ok(tracked.includes('find_used'), 'find_used not tracked');
     });
 
-    check('find shows no replace row; find & replace shows it', () => {
+    await check('find shows no replace row; find & replace shows it', () => {
         const findBtn = document.querySelector('[data-action="find"]');
         const findReplaceBtn = document.querySelector('[data-action="find-replace"]');
         const row = document.getElementById('findReplaceRow');
@@ -1048,7 +1048,7 @@ export default async function run(check, group) {
         assert.equal(findBar.hidden, false, 'find bar did not open');
     });
 
-    check('matches span text nodes and count is shown', () => {
+    await check('matches span text nodes and count is shown', () => {
         // Three "hello" occurrences, one split across <b> markup.
         editor.innerHTML = '<p>Hello world, hello again.</p><p>H<b>ello</b> there.</p>';
         findInput.value = 'hello';
@@ -1061,7 +1061,7 @@ export default async function run(check, group) {
             'active match is not visually distinct');
     });
 
-    check('typing a query keeps focus and the caret in the Find field', () => {
+    await check('typing a query keeps focus and the caret in the Find field', () => {
         findInput.focus();
         findInput.setSelectionRange(findInput.value.length, findInput.value.length);
 
@@ -1073,7 +1073,7 @@ export default async function run(check, group) {
         assert.equal(findInput.selectionStart, findInput.value.length, 'input caret moved');
     });
 
-    check('case, whole-word and regular-expression options refine results', () => {
+    await check('case, whole-word and regular-expression options refine results', () => {
         const option = (name) => findBar.querySelector(`[data-find-option="${name}"]`);
         const toggle = (name) => option(name)
             .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -1106,7 +1106,7 @@ export default async function run(check, group) {
         findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
     });
 
-    check('Enter and Shift+Enter step through matches', () => {
+    await check('Enter and Shift+Enter step through matches', () => {
         pressKey(findInput, { key: 'Enter' });
         assert.match(findCount.textContent, /2 of 3/, findCount.textContent);
         pressKey(findInput, { key: 'Enter', shiftKey: true });
@@ -1114,7 +1114,7 @@ export default async function run(check, group) {
         assert.equal(window.getSelection().toString().toLowerCase(), 'hello');
     });
 
-    check('replace swaps the current match and triggers autosave', () => {
+    await check('replace swaps the current match and triggers autosave', () => {
         // Caret sits inside the first match, so a fresh query starts one
         // match in; step back onto the very first occurrence.
         findInput.value = 'hello';
@@ -1133,7 +1133,7 @@ export default async function run(check, group) {
         assert.equal(replaceInput.selectionStart, 2, 'replacement caret moved');
     });
 
-    check('replace all replaces every occurrence', () => {
+    await check('replace all replaces every occurrence', () => {
         findInput.value = 'hello';
         findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
         const replaceAllBtn = [...findBar.querySelectorAll('[data-find-action]')]
@@ -1142,7 +1142,7 @@ export default async function run(check, group) {
         assert.ok(!/hello/i.test(editor.textContent), editor.textContent);
     });
 
-    check('regular-expression replacements expand capture groups', () => {
+    await check('regular-expression replacements expand capture groups', () => {
         const regex = findBar.querySelector('[data-find-option="regex"]');
         regex.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         editor.innerHTML = '<p>item-12 item-34</p>';
@@ -1155,7 +1155,7 @@ export default async function run(check, group) {
         regex.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     });
 
-    check('replace in selection never changes matching text outside the selection', () => {
+    await check('replace in selection never changes matching text outside the selection', () => {
         findBar.querySelector('[data-find-action="close"]')
             .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         editor.innerHTML = '<p>one one one</p>';
@@ -1181,7 +1181,7 @@ export default async function run(check, group) {
         assert.equal(editor.textContent, 'X X one');
     });
 
-    check('no-results message and Escape close', () => {
+    await check('no-results message and Escape close', () => {
         findInput.value = 'zzz-not-here';
         findInput.dispatchEvent(new window.Event('input', { bubbles: true }));
         assert.equal(findCount.textContent, strings.findNoResults);
@@ -1191,7 +1191,7 @@ export default async function run(check, group) {
 
     group('behaviour: view toggles');
 
-    check('focus mode toggles, persists and shows the exit button', () => {
+    await check('focus mode toggles, persists and shows the exit button', () => {
         const focusBtn = document.querySelector('[data-action="toggle-focus"]');
         focusBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.ok(document.body.classList.contains('focus-mode'), 'focus class missing');
@@ -1203,7 +1203,7 @@ export default async function run(check, group) {
         assert.ok(!document.body.classList.contains('focus-mode'), 'Escape did not exit focus');
     });
 
-    check('RTL and LTR buttons sit in the toolbar and switch direction', () => {
+    await check('RTL and LTR buttons sit in the toolbar and switch direction', () => {
         const rtlBtn = document.querySelector('[data-action="dir-rtl"]');
         const ltrBtn = document.querySelector('[data-action="dir-ltr"]');
         assert.ok(rtlBtn && ltrBtn, 'direction buttons missing');
@@ -1223,7 +1223,7 @@ export default async function run(check, group) {
 
     group('behaviour: custom spell checker');
 
-    check('misspelled words are flagged with the custom mark', async () => {
+    await check('misspelled words are flagged with the custom mark', async () => {
         // Earlier groups may have switched the checker off; make sure it is on.
         if (spellToggle.getAttribute('aria-pressed') !== 'true') {
             spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -1245,7 +1245,7 @@ export default async function run(check, group) {
         assert.ok(marks[0].getAttribute('aria-label').includes('hellow'));
     });
 
-    check('tap and keyboard activation open navigable spelling corrections', () => {
+    await check('tap and keyboard activation open navigable spelling corrections', () => {
         editor.innerHTML = '<p>hellow world</p>';
         const nativeSetTimeout = global.setTimeout;
         global.setTimeout = (callback) => {
@@ -1285,7 +1285,7 @@ export default async function run(check, group) {
         assert.equal(document.activeElement, mark, 'Escape did not return focus to the word');
     });
 
-    check('toggle disables the checker, clears marks and persists', () => {
+    await check('toggle disables the checker, clears marks and persists', () => {
         spellToggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.equal(editor.querySelectorAll('.spell-err').length, 0, 'marks not cleared');
         assert.equal(spellToggle.getAttribute('aria-pressed'), 'false');
@@ -1297,7 +1297,7 @@ export default async function run(check, group) {
         assert.equal(window.localStorage.getItem('npad.spellcheck'), '1');
     });
 
-    check('a delayed spell pass cannot steal focus from another field', () => {
+    await check('a delayed spell pass cannot steal focus from another field', () => {
         editor.innerHTML = '<p>uniquefocuss misspelingg</p>';
         const text = editor.querySelector('p').firstChild;
         const range = document.createRange();
@@ -1333,7 +1333,7 @@ export default async function run(check, group) {
         field.remove();
     });
 
-    check('hovering a flag opens a correction popup that stays reachable', () => {
+    await check('hovering a flag opens a correction popup that stays reachable', () => {
         editor.dataset.spellDelay = '10';
         editor.innerHTML = '<p>hellow world</p>';
 
@@ -1384,7 +1384,7 @@ export default async function run(check, group) {
         assert.ok(tip.hidden, 'tooltip did not close after replace');
     });
 
-    check('add to dictionary stops the word being flagged and persists', async () => {
+    await check('add to dictionary stops the word being flagged and persists', async () => {
         editor.innerHTML = '<p>npadd note</p>';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         await new Promise((resolve) => window.setTimeout(resolve, 60));
@@ -1411,13 +1411,13 @@ export default async function run(check, group) {
 
     group('behaviour: save state');
 
-    check('status bar advertises a save state', () => {
+    await check('status bar advertises a save state', () => {
         const bar = document.getElementById('statusbar');
         assert.ok(['saved', 'saving', 'unsaved'].includes(bar.dataset.saveState),
             `unexpected: ${bar.dataset.saveState}`);
     });
 
-    check('pagehide flush persists content without transient search highlights', () => {
+    await check('pagehide flush persists content without transient search highlights', () => {
         editor.textContent = 'work in progress';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         pressKey(document, { key: 'f', ctrlKey: true });
@@ -1437,7 +1437,7 @@ export default async function run(check, group) {
         pressKey(findInput, { key: 'Escape' });
     });
 
-    check('autosave timer persists without spell marks', async () => {
+    await check('autosave timer persists without spell marks', async () => {
         editor.textContent = 'autosave works';
         editor.dispatchEvent(new window.Event('input', { bubbles: true }));
         await new Promise((resolve) => window.setTimeout(resolve, 950));
@@ -1451,7 +1451,7 @@ export default async function run(check, group) {
 
     group('behaviour: dialog');
 
-    check('showDialog opens the native dialog and resolves', async () => {
+    await check('showDialog opens the native dialog and resolves', async () => {
         const dialog = document.getElementById('appDialog');
         const promise = showDialog({
             title: 'T', bodyHtml: '<p>b</p>',
@@ -1465,7 +1465,7 @@ export default async function run(check, group) {
         assert.equal(dialog.open, false, 'dialog did not close');
     });
 
-    check('dialog close button is reachable and labelled', () => {
+    await check('dialog close button is reachable and labelled', () => {
         const btn = document.querySelector('.dialog__close');
         assert.ok(btn, 'no close button');
         assert.ok(btn.getAttribute('aria-label'), 'close button unlabelled');
@@ -1473,7 +1473,7 @@ export default async function run(check, group) {
 
     group('behaviour: toast');
 
-    check('toast appends to the live region and is announced', () => {
+    await check('toast appends to the live region and is announced', () => {
         toast('hello', 'error');
         const region = document.getElementById('toastRegion');
         assert.equal(region.getAttribute('aria-live'), 'polite');
@@ -1483,7 +1483,7 @@ export default async function run(check, group) {
 
     group('behaviour: sanitiser is wired into the editor path');
 
-    check('restored malicious HTML is neutralised', () => {
+    await check('restored malicious HTML is neutralised', () => {
         const dirty = '<p>ok</p><script>window.__pwned = true;</script>';
         editor.innerHTML = sanitizeHtml(dirty);
         assert.equal(window.__pwned, undefined, 'script executed');
@@ -1492,7 +1492,7 @@ export default async function run(check, group) {
 
     group('behaviour: delete all notes');
 
-    check('File -> Delete all notes clears storage and starts a fresh note', async () => {
+    await check('File -> Delete all notes clears storage and starts a fresh note', async () => {
         const editor = document.getElementById('editor');
         // Two notes with content.
         editor.innerHTML = '<p>note one</p>';
@@ -1526,7 +1526,7 @@ export default async function run(check, group) {
         assert.ok(tracked.includes('clear_data'), 'clear_data not tracked');
     });
 
-    check('no uncaught errors during the whole run', () => {
+    await check('no uncaught errors during the whole run', () => {
         assert.deepEqual(consoleErrors, [], consoleErrors[0]);
     });
 

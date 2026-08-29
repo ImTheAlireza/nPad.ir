@@ -439,6 +439,7 @@ return [
         'empty_response'    => 'The AI returned an empty response.',
         'empty_note'        => 'The note has no content to process.',
         'note_too_short'    => 'The note is too short to summarize.',
+        'note_too_long'     => 'This note is too long for one pass — select the part to process and try again.',
 
         // Smart Title
         'pick_title'        => 'Choose a title to apply:',

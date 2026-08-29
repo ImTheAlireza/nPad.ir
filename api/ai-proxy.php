@@ -51,7 +51,11 @@ if ($fetchSite === '') {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '';
     if ($origin !== '') {
         $host = parse_url($origin, PHP_URL_HOST);
-        if ($host !== null && $host !== ($_SERVER['HTTP_HOST'] ?? '')) {
+        // HTTP_HOST may carry a port (localhost:8787, preview hosts) while
+        // parse_url strips it — compare host-only, case-insensitively.
+        $hostHeader = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        $requestHost = strtolower((string) preg_replace('/:\d+$/', '', $hostHeader));
+        if ($host !== null && strtolower($host) !== $requestHost) {
             http_response_code(403);
             echo json_encode(['error' => ['message' => 'Forbidden']]);
             exit;

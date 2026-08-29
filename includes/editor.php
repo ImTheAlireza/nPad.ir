@@ -391,6 +391,7 @@ $jsStrings = [
     'aiEmptyResponse'   => t('ai.empty_response'),
     'aiEmptyNote'       => t('ai.empty_note'),
     'aiNoteTooShort'    => t('ai.note_too_short'),
+    'aiNoteTooLong'     => t('ai.note_too_long'),
     'aiSmartTitle'      => t('ai.smart_title'),
     'aiTitleBtn'        => t('ai.title_btn'),
     'aiPickTitle'       => t('ai.pick_title'),
