@@ -212,8 +212,13 @@ scoped to what reuses that. Effort: **S** = days, **M** = 1–2 weeks,
     produce worked solutions (provider-dependent). *(M)*
 
 ### Tables & code (M)
-17. **Text → table** — parse tabular prose into a real table (the table
-    editor already exists). *(M)*
+17. **Text → table** — ✅ **Shipped 2026-08** (AI menu → "Convert to Table"):
+    select a statistical/tabular passage and it becomes a real table.
+    Double-gated rejection: non-tabular prose is refused client-side before
+    any tokens are spent, and non-table / NOT_TABLE model replies are
+    refused after — with one clear message either way. Persian digits and
+    units are handled; the parsed table is rebuilt locally (never trusting
+    model HTML) and applies directly with undo/redo.
 18. **Table → analysis** — summarize/trend-find the selected table. *(S)*
 19. **Code block helpers** — explain / comment / fix / convert / write tests
     for the selected code block via the selection toolbar. *(M)*

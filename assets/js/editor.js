@@ -81,6 +81,7 @@ import {
     runToneRewrite,
     runExtractTodos,
     runSmartFormat,
+    runTextToTable,
     openAISettings,
     handleSelectionAI,
     aiHasUndo,
@@ -4158,6 +4159,11 @@ ${exportHtml()}
         'ai-smart-format': () => {
             runSmartFormat(editor, strings, showDialog, toast);
             track('ai_smart_format');
+        },
+
+        'ai-text-to-table': () => {
+            runTextToTable(editor, strings, showDialog, toast);
+            track('ai_text_to_table');
         },
 
         'ai-settings': () => {

@@ -667,6 +667,124 @@ export default async function run(check, group) {
         AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
     });
 
+    group('ai: text → table');
+
+    await check('statistical selection becomes a real table, applied directly', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = [
+            '| محصول | فروش (میلیون) | رشد |',
+            '|-------|--------------|-----|',
+            '| الف | ۱۲۰ | ٪۱۵ |',
+            '| ب | ۹۵ | ٪۸ |',
+        ].join('\n');
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        // Statistical-looking content must exist BEFORE the selection capture.
+        editor.textContent = 'گزارش فروش:\nالف ۱۲۰ میلیون ٪۱۵\nب ۹۵ میلیون ٪۸\nپایان گزارش.';
+        fakeSelection(window, editor.textContent.split('\n').slice(0, 3).join('\n'));
+        const before = editor.innerHTML;
+        const toasts = [];
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
+        await settle();
+        await done;
+        await settle(10);
+
+        const table = editor.querySelector('table');
+        assert.ok(table, 'a real <table> replaced the selection');
+        assert.equal(table.querySelectorAll('thead th').length, 3, 'header cells built');
+        assert.equal(table.querySelectorAll('tbody tr').length, 2, 'data rows built');
+        assert.match(table.textContent, /۱۲۰/, 'Persian digits preserved');
+        assert.equal(window.document.getElementById('appDialog').open, false, 'applied directly, no dialog');
+        // Undo restores the pre-table content.
+        ai.aiUndo(editor);
+        assert.equal(editor.innerHTML, before, 'undo removed the table');
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
+    await check('prose selection is rejected before spending tokens', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'این یک پاراگراف معمولی درباره‌ی وضعیت هوا است و هیچ داده آماری در آن نیست. دیروز بارانی بود و امروز آفتابی.';
+        fakeSelection(window, editor.textContent);
+        const toasts = [];
+        const fetchCalls = [];
+        window.__aiResponder = null;
+        const realFetch = window.fetch;
+        window.fetch = (...args) => { fetchCalls.push(args[0]); return realFetch(...args); };
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
+        await settle();
+        await done;
+        await settle(10);
+
+        assert.equal(fetchCalls.length, 0, 'no AI call for obvious prose');
+        assert.equal(editor.querySelector('table'), null, 'no table inserted');
+        assert.ok(toasts.some((t) => t.startsWith('error:')), 'user told why it was rejected');
+    });
+
+    await check('a NOT_TABLE reply is rejected with a clear message', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = 'NOT_TABLE';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'فروش الف ۱۲۰ میلیون\nفروش ب ۹۵ میلیون\nفروش پ ۸۸ میلیون';
+        fakeSelection(window, editor.textContent);
+        const toasts = [];
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
+        await settle();
+        await done;
+        await settle(10);
+
+        assert.equal(editor.querySelector('table'), null, 'no table inserted');
+        assert.ok(toasts.some((t) => t.startsWith('error:')), 'rejection message shown');
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
+    await check('a non-table reply (prose back from the model) is rejected', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = 'متاسفم، نمی‌توانم این را به جدول تبدیل کنم چون داده کافی نیست.';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'درآمد ۱۰۰\nهزینه ۶۰\nسود ۴۰';
+        fakeSelection(window, editor.textContent);
+        const toasts = [];
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
+        await settle();
+        await done;
+        await settle(10);
+
+        assert.equal(editor.querySelector('table'), null, 'garbage reply must not insert a table');
+        assert.ok(toasts.some((t) => t.startsWith('error:')));
+    });
+
+    await check('no selection tells the user what to do', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, anchorNode: null, getRangeAt: () => null, toString: () => '' });
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'هرچی';
+        const toasts = [];
+
+        await ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
+        await settle(10);
+
+        assert.ok(toasts.some((t) => t.startsWith('info:')), 'guidance toast shown');
+    });
+
     group('ai: option-based features keep their modals');
 
     await check('smart title still shows its picker and applies the chosen title', async () => {

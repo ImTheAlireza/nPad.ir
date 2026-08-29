@@ -780,6 +780,189 @@ export async function runSmartFormat(editorEl, strings, showDialog, toast) {
     }
 }
 
+/* -------------------------------------------------------------------------
+   Text → table (AI)
+   The model receives the selected text and MUST answer with one Markdown
+   table. The reply is re-parsed here (never trusted directly): rows/cells
+   are extracted, bounded, escaped and re-encrypted into the editor's own
+   createTableHtml shape through a pure DOM build. Non-tabular input or a
+   non-table reply is rejected with a clear message.
+   ------------------------------------------------------------------------- */
+
+/**
+ * Parse a Markdown table from a model reply.
+ * @returns {{ header: string[], rows: string[][] } | null}
+ */
+function parseMarkdownTable(reply) {
+    const lines = String(reply || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const tableLines = lines.filter((line) => line.startsWith('|') && line.endsWith('|') && line.length > 2);
+    if (tableLines.length < 2) return null;
+
+    const splitRow = (line) => line
+        .slice(1, -1)
+        .split('|')
+        .map((cell) => cell.replace(/`/g, '').trim());
+
+    // A separator row is dashes/colons only — a GFM table must carry one.
+    const isSeparator = (cells) => cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell));
+
+    const header = splitRow(tableLines[0]);
+    if (!header.length || header.every((cell) => !cell)) return null;
+    if (isSeparator(header)) return null;
+
+    const bodyLines = tableLines.slice(1);
+    if (!bodyLines.length) return null;
+
+    let start = 0;
+    if (isSeparator(splitRow(bodyLines[0]))) start = 1;
+    if (bodyLines.length <= start) return null; // separator but no data rows
+
+    const rows = bodyLines.slice(start).map(splitRow);
+    if (!rows.length) return null;
+    // Normalise every row to the header width; ragged replies get padded/truncated.
+    const width = header.length;
+    if (width < 2 || width > 20) return null;
+    const fixed = rows.map((row) => {
+        const cells = row.slice(0, width);
+        while (cells.length < width) cells.push('');
+        return cells;
+    });
+    if (fixed.some((row) => row.every((cell) => !cell))) return null;
+    return { header, rows: fixed };
+}
+
+/**
+ * Decide whether the selection looks like tabular/statistical data at all —
+ * a cheap pre-flight so obvious prose is rejected before burning tokens.
+ * Signals: many lines, delimiters (| ; tab), CSV shape, or repeating
+ * number-led patterns (label + number), which is how "statistical" text
+ * usually looks.
+ */
+export function looksTabular(text) {
+    const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return false;
+    const delimited = lines.filter((l) => /\t|\s[|;]\s|^\s*\S+\s*[|;]/.test(l) || l.includes(';')).length;
+    if (delimited >= 2) return true;
+    // \p{Nd} matches digits in every script (Persian ۱۲۳, Arabic ٤٥٦, ASCII 123).
+    const numbered = lines.filter((l) => /\p{Nd}+([.,٫]\p{Nd}+)?\s*(٪|%|درصد|هزار|میلیون|میلیارد|tbn|k|m)?/iu.test(l)).length;
+    const withLabel = lines.filter((l) => /[\p{L}«"'»]/u.test(l.replace(/[\p{Nd}\p{P}\s]/gu, '')) && l.length > 3).length;
+    return numbered >= 2 && withLabel >= 2;
+}
+
+/** Build a table element from parsed rows (header + rows, escaped). */
+function buildTableElement({ header, rows }) {
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const text of header) {
+        const th = document.createElement('th');
+        th.setAttribute('scope', 'col');
+        th.textContent = text;
+        headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const row of rows) {
+        const tr = document.createElement('tr');
+        for (const text of row) {
+            const td = document.createElement('td');
+            td.textContent = text;
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    return table;
+}
+
+/**
+ * 6. Text → table: converts a selected statistical/tabular passage into a
+ * real table. Rejects non-tabular text before the call and non-table
+ * replies after it — the user gets a clear "not tabular" message either way.
+ * The table replaces the selection and is reversible via undo/redo.
+ */
+export async function runTextToTable(editorEl, strings, showDialog, toast) {
+    const ready = await preflight('text-to-table', strings.aiTextToTable, strings, showDialog, toast);
+    if (!ready) return;
+
+    const sel = window.getSelection();
+    const hasSelection = sel && sel.rangeCount && !sel.isCollapsed && editorEl.contains(sel.anchorNode);
+    if (!hasSelection) {
+        toast(strings.aiTextToTableNeedsSelection || 'Select the text to convert into a table first.', 'info');
+        return;
+    }
+    // Capture the exact range now: nothing else here opens a dialog, but a
+    // captured range is what every other tool restores anyway.
+    const savedRange = captureSelectionRange(editorEl);
+
+    const rawText = sel.toString();
+    if (!looksTabular(rawText)) {
+        // Reject obvious prose up front — no tokens spent, no guessing.
+        toast(strings.aiTextToTableNotTabular || 'This selection does not look like data that can become a table. Select rows of figures, comparisons or delimited items (lines with numbers, | or ;).', 'error');
+        return;
+    }
+
+    const inputText = cleanInput(rawText, 15_000,
+        (o, cut) => toast(`${strings.aiTruncated || 'Text trimmed to'} ${fmtWords(cut)} ${strings.aiTruncatedFor || 'for AI'}`, 'info'));
+    if (!inputText) { toast(strings.aiEmptyNote, 'info'); return; }
+
+    const loadingToast = showLoadingIndicator(strings.aiWorking);
+    try {
+        const sys = `Convert the user's text into ONE Markdown table. Rules: answer with the table only, no explanation. First row is the header. Keep the input language. Columns reflect the data's categories; rows reflect the items. If the text contains no tabular/statistical data, reply exactly NOT_TABLE.`;
+        const result = await callAI(sys, inputText, strings, { temperature: 0.0, maxTokens: 1200 });
+        loadingToast();
+
+        const reply = result.trim();
+        if (/^NOT_TABLE\b/i.test(reply)) {
+            toast(strings.aiTextToTableNotTabular || 'This selection does not look like data that can become a table. Select rows of figures, comparisons or delimited items (lines with numbers, | or ;).', 'error');
+            return;
+        }
+        // Strip a possible code fence, then re-parse the table ourselves.
+        const raw = reply.replace(/^```(?:markdown|md)?\n?/i, '').replace(/\n?```$/, '').trim();
+        const parsed = parseMarkdownTable(raw);
+        if (!parsed) {
+            toast(strings.aiTextToTableNotTabular || 'This selection does not look like data that can become a table. Select rows of figures, comparisons or delimited items (lines with numbers, | or ;).', 'error');
+            return;
+        }
+
+        const table = buildTableElement(parsed);
+        recordApply(editorEl);
+        try {
+            // The editor holds focus after the dialog-less flow; make sure of
+            // it, then swap the selection for the table.
+            focusEditorWithRange(editorEl, savedRange);
+            const applied = (() => {
+                try {
+                    document.execCommand('insertHTML', false, table.outerHTML);
+                    return editorEl.querySelector('table') !== null;
+                } catch {
+                    return false;
+                }
+            })();
+            if (!applied) {
+                // Fallback (unsupported engines): range-based DOM insert.
+                const range = savedRange || document.createRange();
+                range.deleteContents();
+                range.insertNode(table);
+            }
+        } catch (err) {
+            _aiUndoStack.pop();
+            throw err;
+        }
+        showAppliedToast(strings.aiApplied || 'Applied to your note', strings, {
+            onUndo: () => aiUndo(editorEl),
+            onRedo: () => aiRedo(editorEl),
+        });
+    } catch (err) {
+        loadingToast();
+        toast(`${strings.aiError}: ${err.message}`, 'error');
+    }
+}
+
 /**
  * Minimal Markdown → HTML for Smart Formatting results that arrive as
  * Markdown instead of HTML. Supports headings, bold/italic, inline code,

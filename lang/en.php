@@ -395,6 +395,9 @@ return [
         'tone_rewrite'      => 'Tone Rewriter…',
         'extract_todos'     => 'Extract To-Dos…',
         'smart_format'      => 'Smart Formatting…',
+        'text_to_table'     => 'Convert to Table…',
+        'text_to_table_needs_selection' => 'Select the text to convert into a table first.',
+        'text_to_table_not_tabular' => 'This selection does not look like data that can become a table. Select rows of figures, comparisons or delimited items (lines with numbers, | or ;).',
         'ai_settings'       => 'AI Settings…',
 
         // Config / consent

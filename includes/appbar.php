@@ -84,6 +84,7 @@ $aiItems = [
     ['action' => 'ai-tone-rewrite',  'icon' => 'sparkle', 'label' => t('ai.tone_rewrite'),   'cloud' => true],
     ['action' => 'ai-extract-todos', 'icon' => 'sparkle', 'label' => t('ai.extract_todos'),  'cloud' => true],
     ['action' => 'ai-smart-format',  'icon' => 'sparkle', 'label' => t('ai.smart_format'),   'cloud' => true],
+    ['action' => 'ai-text-to-table', 'icon' => 'table',   'label' => t('ai.text_to_table'),  'cloud' => true],
     ['separator' => true],
     ['action' => 'ai-settings',      'icon' => 'ai',      'label' => t('ai.ai_settings')],
 ];
