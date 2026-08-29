@@ -2868,23 +2868,6 @@ export function initEditor({ strings, onEvent }) {
                 strings,
                 showDialog,
                 toast,
-                async (title, content) => {
-                    const note = createNoteRecord({ title: title.slice(0, 120) });
-                    note.content = content.replace(/\n/g, '<br>');
-                    await saveNote(note);
-                    renderNotes();
-                    toast(strings.aiSaveAsNote, 'success');
-                    return {
-                        undo: async () => {
-                            await deleteNote(note.id);
-                            renderNotes();
-                        },
-                        redo: async () => {
-                            await saveNote(note);
-                            renderNotes();
-                        },
-                    };
-                },
                 x,
                 y,
             );
@@ -4136,9 +4119,12 @@ ${exportHtml()}
         'ai-summarize': () => {
             runSummarize(editor, strings, showDialog, toast, async (title, content) => {
                 const note = createNoteRecord({ title: `${title} — ${activeNote()?.title || ''}`.slice(0, 120) });
-                note.content = content.replace(/\n/g, '<br>');
+                note.html = content.replace(/\n/g, '<br>');
                 await saveNote(note);
                 renderNotes();
+                // The notes sidebar is usually closed — open it so the new
+                // summary note is actually visible after the toast.
+                setSidebarOpen(true);
                 toast(strings.aiSaveAsNote, 'success');
                 return {
                     undo: async () => {

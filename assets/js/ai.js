@@ -952,7 +952,7 @@ function _showSelToolbar(el, x, y) {
  * editorEl  — the contenteditable div
  * x, y      — clientX/Y of the pointer event
  */
-export function handleSelectionAI(editorEl, strings, showDialog, toast, onCreateNote, x, y) {
+export function handleSelectionAI(editorEl, strings, showDialog, toast, x, y) {
     // If the user just clicked a toolbar button, skip this evaluation
     if (_ignoreNextUp) { _ignoreNextUp = false; return; }
 
@@ -1005,13 +1005,13 @@ export function handleSelectionAI(editorEl, strings, showDialog, toast, onCreate
         const action    = btn.dataset.aiSel;
         const savedText = _savedRange ? _savedRange.toString().trim() : text;
         _hideSelToolbar();
-        await runSelectionAction(action, savedText, editorEl, strings, showDialog, toast, onCreateNote, _savedRange);
+        await runSelectionAction(action, savedText, editorEl, strings, showDialog, toast, _savedRange);
     };
 
     _showSelToolbar(toolbar, x, y);
 }
 
-async function runSelectionAction(action, text, editorEl, strings, showDialog, toast, onCreateNote, savedRange) {
+async function runSelectionAction(action, text, editorEl, strings, showDialog, toast, savedRange) {
     const ready = await preflight(action, action, strings, showDialog, toast);
     if (!ready) return;
 
@@ -1029,15 +1029,11 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 text, strings, { temperature: 0.0, maxTokens: selSumMaxTok },
             );
             finishLoading();
-            // Apply directly: the summary becomes a new note (undoable via
-            // the toast button — deleting the created note restores state).
-            if (typeof onCreateNote === 'function') {
-                const handle = await onCreateNote(strings.aiSummaryNoteTitle || 'Summary', result);
-                showAppliedToast(strings.aiNoteCreated || 'Summary note created', strings, {
-                    onUndo: () => handle?.undo?.(),
-                    onRedo: () => handle?.redo?.(),
-                });
-            }
+            // Apply directly into the selection — a selection summary is an
+            // in-place edit, not a new note (undoable like the other tools).
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'sel-rewrite') {
             const rwText = cleanInput(text, 15_000,

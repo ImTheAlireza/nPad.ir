@@ -632,6 +632,41 @@ export default async function run(check, group) {
         AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
     });
 
+    group('ai: selection summarize replaces the selection (no new note)');
+
+    await check('selection toolbar summarize inserts in place and never creates a note', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = '- bullet one\n- bullet two';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        // Content must exist BEFORE the fake selection captures its node.
+        editor.textContent = 'Before. A long passage the user highlighted for summarization. After.';
+        const range = fakeSelection(window, 'A long passage the user highlighted for summarization.');
+        const before = editor.innerHTML;
+
+        // Move focus like a real click on the floating toolbar would.
+        window.document.getElementById('aiMenuTrigger').focus();
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20);
+
+        const btn = window.document.querySelector('[data-ai-sel="sel-summarize"]');
+        assert.ok(btn, 'selection toolbar rendered with a summarize action');
+        btn.click();
+        await settle(30);
+
+        assert.match(editor.textContent, /bullet one/, 'summary inserted into the note');
+        assert.notEqual(editor.innerHTML, before, 'selection was replaced');
+        assert.equal(window.document.getElementById('appDialog').open, false, 'no dialog, no note creation');
+        assert.ok(window.document.querySelector('.ai-applied-toast'), 'applied toast with undo shown');
+        // Undo returns the exact pre-apply content.
+        window.document.querySelector('.ai-applied-toast__action').click();
+        assert.equal(editor.innerHTML, before, 'undo restored the original content');
+        assert.ok(range, 'saved range existed');
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
     group('ai: option-based features keep their modals');
 
     await check('smart title still shows its picker and applies the chosen title', async () => {
@@ -662,6 +697,19 @@ export default async function run(check, group) {
     });
 
     group('ai: admin dashboard shares the diagnostics');
+
+    await check('menu summarize stores note.html and opens the notes sidebar', () => {
+        const ed = fs.readFileSync(path.join(ROOT, 'assets/js/editor.js'), 'utf8');
+        assert.match(ed, /note\.html = content\.replace\(/, 'summary must be stored in the html field');
+        assert.doesNotMatch(ed, /note\.content\s*=/, 'the legacy note.content write must be gone');
+        const summarizeIdx = ed.indexOf("'ai-summarize':");
+        const sidebarIdx = ed.indexOf('setSidebarOpen(true)', summarizeIdx);
+        assert.ok(sidebarIdx > -1, 'creating a summary must open the notes sidebar so it is visible');
+        assert.ok(ed.slice(summarizeIdx, sidebarIdx).includes('renderNotes()'), 'sidebar opens after the list re-renders');
+        // Selection summarize must not create notes anymore.
+        const selCall = ed.slice(ed.indexOf('handleSelectionAI('), ed.indexOf('x,') + 40);
+        assert.doesNotMatch(selCall, /createNoteRecord/, 'selection summarize must not create notes');
+    });
 
     await check('ai-panel.js imports the shared wrapper and dashboard loads it as a module', () => {
         const panel = fs.readFileSync(path.join(ROOT, 'admin/ai-panel.js'), 'utf8');
