@@ -1,4 +1,5 @@
 import { sanitizeHtml } from './sanitize.js';
+import { parseAIResponse } from './ai-parse.js';
 
 /**
  * NPad AI module.
@@ -159,60 +160,6 @@ export async function preflight(featureId, featureLabel, strings, showDialog, to
    connect-src 'self' CSP is never violated. The proxy forwards the request
    server-side and streams the provider's response back unchanged.
    ------------------------------------------------------------------------- */
-
-/**
- * Parse a provider/proxy response into assistant text, turning every
- * failure mode into a diagnosable message:
- *   - provider error bodies (any status) → provider's own message
- *   - HTML replies (wrong Base URL pointing at a website) → actionable hint
- *   - 200 with an error body → surfaced instead of "empty response"
- *   - empty content with finish_reason "length" → reasoning-model guidance
- *   - reasoning-only answers (deepseek-reasoner & friends) → guidance
- *   - non-OpenAI shapes (Gemini `candidates`, Anthropic `content`) → hint
- */
-async function parseAIResponse(response, strings) {
-    const raw = await response.text();
-    let data = null;
-    try { data = JSON.parse(raw); } catch { data = null; }
-
-    const providerError = (data && data.error && data.error.message)
-        || (typeof data?.message === 'string' ? data.message : null);
-    const htmlReply = /^\s*(<!doctype\s+html|<html[\s>])/i.test(raw);
-
-    const htmlHint = (status) =>
-        (strings.aiHtmlResponse || 'The server returned an HTML page instead of a JSON API response (HTTP {status}). The Base URL probably points at a website, not an API — it should look like https://api.deepseek.com/v1')
-            .replace('{status}', status);
-
-    // Error statuses.
-    if (!response.ok) {
-        if (typeof providerError === 'string' && providerError) throw new Error(providerError);
-        if (htmlReply) throw new Error(htmlHint(response.status));
-        throw new Error(`HTTP ${response.status}${raw ? ` — ${raw.slice(0, 160)}` : ''}`);
-    }
-
-    // 200 but the provider reported an error anyway — surface it.
-    if (typeof providerError === 'string' && providerError) throw new Error(providerError);
-
-    // OpenAI chat shape.
-    const choice = data?.choices?.[0];
-    const content = typeof choice?.message?.content === 'string' ? choice.message.content.trim() : '';
-    if (content) return content;
-    // Legacy completions shape.
-    if (typeof choice?.text === 'string' && choice.text.trim()) return choice.text.trim();
-
-    // 200 without usable text — diagnose the likely cause.
-    if (choice?.finish_reason === 'length') {
-        throw new Error(strings.aiEmptyLength || 'The model hit its token limit before producing any text (finish reason "length"). Try again, select less text, or use a standard chat model instead of a reasoning model.');
-    }
-    if (typeof choice?.message?.reasoning_content === 'string' && choice.message.reasoning_content.trim()) {
-        throw new Error(strings.aiReasoningOnly || 'The model returned only internal reasoning and no answer text. Use a standard chat model (e.g. deepseek-chat, gpt-4o-mini) for these features.');
-    }
-    if (Array.isArray(data?.candidates) || Array.isArray(data?.content)) {
-        throw new Error(strings.aiWrongShape || 'The endpoint answered in a non-OpenAI format. Use the provider\'s OpenAI-compatible Base URL — for Gemini: https://generativelanguage.googleapis.com/v1beta/openai');
-    }
-    if (htmlReply) throw new Error(htmlHint(response.status));
-    throw new Error(strings?.aiEmptyResponse || 'Empty response from AI');
-}
 
 export async function callAI(systemPrompt, userContent, strings, {
     temperature = 1.0,
@@ -383,8 +330,8 @@ async function testConnection(cfg, strings) {
             payload: {
                 model: cfg.model,
                 messages: [{ role: 'user', content: 'Say "ok" in one word.' }],
-                max_tokens: 5,
-                max_completion_tokens: 5,
+                max_tokens: 32,
+                max_completion_tokens: 32,
             },
         }),
     });

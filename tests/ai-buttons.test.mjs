@@ -410,7 +410,7 @@ export default async function run(check, group) {
         });
         await assert.rejects(
             () => ai.callAI('sys', 'user', strings),
-            (err) => err.message === 'Insufficient balance',
+            (err) => err.message === 'AI provider error: Insufficient balance',
         );
     });
 
@@ -478,6 +478,35 @@ export default async function run(check, group) {
         await assert.rejects(
             () => ai.callAI('sys', 'user', strings),
             (err) => /HTTP 502/.test(err.message) && /Bad gateway/.test(err.message),
+        );
+    });
+
+    await check('provider errors carry HTTP status and error code for billing issues', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({
+            status: 402,
+            body: { error: { message: 'Insufficient Balance', type: 'insufficient_balance' } },
+        });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => err.message === 'AI provider error (HTTP 402) [insufficient_balance]: Insufficient Balance',
+        );
+    });
+
+    group('ai: admin dashboard shares the diagnostics');
+
+    await check('ai-panel.js imports the shared parser and dashboard loads it as a module', () => {
+        const panel = fs.readFileSync(path.join(ROOT, 'admin/ai-panel.js'), 'utf8');
+        assert.match(panel, /import \{ parseAIResponse \} from '\.\.\/assets\/js\/ai-parse\.js'/,
+            'admin panel must use the shared parser');
+        assert.doesNotMatch(panel, /\(empty\)/, "the old '(empty)' success path must be gone");
+        const dash = fs.readFileSync(path.join(ROOT, 'admin/dashboard.php'), 'utf8');
+        assert.ok(
+            dash.includes('<script type="module" src="' + "<?= e(asset('admin/ai-panel.js')) ?>"),
+            'dashboard must load ai-panel.js as a module',
         );
     });
 }
