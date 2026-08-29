@@ -115,30 +115,72 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
         return null;
     }
 
-    /** Position the ghost exactly at the caret. Primary anchor is the
-     *  caret's own client rect — exact on wrapped lines, in nested
-     *  elements and in RTL. A mirror-span estimate is only the fallback
-     *  for environments without real layout. */
+    /**
+     * Viewport rect of the rendered character cell just before the caret —
+     * the text the user actually typed. Browsers disagree on whether caret
+     * rects include the line's leading, but this rect comes from the same
+     * layout pass that drew the neighbouring glyph, so giving the ghost the
+     * exact same box (top + height) reproduces the same baseline in every
+     * browser. Returns the last rect: when the character sits at a wrap,
+     * the caret follows its final fragment.
+     */
+    function charRectAt(node, offset) {
+        try {
+            if (offset <= 0) return null;
+            const range = document.createRange();
+            range.setStart(node, offset - 1);
+            range.setEnd(node, offset);
+            const rects = range.getClientRects();
+            if (rects && rects.length > 0) {
+                const rect = rects[rects.length - 1];
+                if (rect && rect.height > 0) return rect;
+            }
+            const rect = range.getBoundingClientRect();
+            if (rect && rect.height > 0) return rect;
+        } catch { /* no layout available */ }
+        return null;
+    }
+
+    /** Position the ghost exactly at the caret. Vertical anchor is the
+     *  rendered cell of the character before the caret (baseline-exact);
+     *  horizontal anchor is the caret's own rect — exact on wrapped lines,
+     *  in nested elements and in RTL. Mirror-span estimates are only the
+     *  fallback for environments without real layout. */
     function positionGhost(node, offset, ghostText) {
         const el = ensureGhost();
-        const style = window.getComputedStyle(editor);
+        // Font comes from the element that actually holds the text, so any
+        // inline formatting the typed word inherits is mirrored too.
+        const source = node.parentElement && editor.contains(node.parentElement)
+            ? node.parentElement
+            : editor;
+        const style = window.getComputedStyle(source);
         const rtl = (editor.getAttribute('dir') || '').toLowerCase() === 'rtl'
             || style.direction === 'rtl';
 
-        el.style.font = style.font;
-        el.style.letterSpacing = style.letterSpacing;
+        // Longhands, not the `font` shorthand: some browsers return an
+        // unusable shorthand serialization, which would silently leave the
+        // ghost on the body's font — smaller and raised like superscript.
+        for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant', 'letterSpacing', 'wordSpacing']) {
+            el.style[prop] = style[prop];
+        }
 
         const caretRect = caretRectAt(node, offset);
-        if (caretRect) {
+        const charRect = charRectAt(node, offset);
+        const box = charRect || caretRect;
+        if (box && box.height > 0) {
             const scrollX = window.scrollX || window.pageXOffset || 0;
             const scrollY = window.scrollY || window.pageYOffset || 0;
-            // Match the caret's line box so the faded text sits on the
-            // same baseline as the typed word.
-            el.style.lineHeight = `${Math.round(caretRect.height)}px`;
+            el.style.lineHeight = `${Math.round(box.height)}px`;
             el.textContent = ghostText;
             const w = el.getBoundingClientRect().width;
-            el.style.top = `${Math.round(caretRect.top + scrollY)}px`;
-            el.style.left = `${Math.round((rtl ? caretRect.left - w : caretRect.left) + scrollX)}px`;
+            let x;
+            if (caretRect) {
+                x = rtl ? caretRect.left - w : caretRect.left;
+            } else {
+                x = rtl ? box.left - w : box.right;
+            }
+            el.style.top = `${Math.round(box.top + scrollY)}px`;
+            el.style.left = `${Math.round(x + scrollX)}px`;
             return;
         }
 
@@ -160,8 +202,8 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
         const range = document.createRange();
         range.setStart(node, Math.max(0, offset - 1));
         range.setEnd(node, offset);
-        let charRect = null;
-        try { charRect = range.getBoundingClientRect(); } catch { charRect = null; }
+        let prevCharRect = null;
+        try { prevCharRect = range.getBoundingClientRect(); } catch { prevCharRect = null; }
 
         const editorRect = editor.getBoundingClientRect();
         const caretCharWidth = mirror.getBoundingClientRect().width - base.getBoundingClientRect().width;
@@ -173,8 +215,8 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
 
         // Vertical: caret line when measurable, else the editor's line box math.
         let top;
-        if (charRect && charRect.height) {
-            top = charRect.top;
+        if (prevCharRect && prevCharRect.height) {
+            top = prevCharRect.top;
         } else {
             const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
             const beforeText = (node.textContent || '').slice(0, offset);
