@@ -497,6 +497,7 @@ return [
         'sel_expand'         => 'گسترش',
         'sel_translate'      => 'ترجمه',
         'sel_word_replace'   => 'پیشنهاد جایگزین',
+        'sel_word_explain'   => 'توضیح کلمه',
 
         // وضعیت سرویس‌دهنده و حذف
         'status_user'        => '✓ از اطلاعات ورودی شما استفاده می‌شود',

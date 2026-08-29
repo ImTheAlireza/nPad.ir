@@ -984,6 +984,119 @@ export default async function run(check, group) {
         assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), true, 're-selecting the same text works after a collapse');
     });
 
+    group('ai: single-word actions are context-aware');
+
+    await check('single word shows both actions; context is sent and displayed', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        // A word whose meaning depends on context: «چشم» (eye / okay / spring).
+        const words = ['متن اولیه درباره چشم و سلامت. ', 'چشم', ' ادامه متن درباره بینایی.'];
+        AI_REPLY = '۱. ممکن\n۲. باشد';
+        const { ui, ai } = await loadModules(window);
+        ai.__resetSelectionToolbarForTests();
+        const editor2 = window.document.getElementById('editor');
+        editor2.textContent = words.join('');
+
+        // Select exactly the single word «چشم» (a 4-char word mid-paragraph).
+        const first = editor2.firstChild;
+        const saved = {
+            collapsed: false,
+            startContainer: first, endContainer: first,
+            startOffset: words[0].length, endOffset: words[0].length + words[1].length,
+            toString: () => 'چشم',
+        };
+        window.getSelection = () => ({
+            rangeCount: 1, isCollapsed: false,
+            anchorNode: first, focusNode: first,
+            anchorOffset: saved.startOffset, focusOffset: saved.endOffset,
+            getRangeAt: () => ({ ...saved, cloneRange: () => ({ ...saved }) }),
+            toString: () => 'چشم',
+            removeAllRanges() {}, addRange() {},
+        });
+
+        ai.setSelectionGestureOrigin(true);
+        ai.handleSelectionAI(editor2, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20);
+
+        const tb = window.document.querySelector('.ai-sel-toolbar');
+        assert.ok(tb, 'popup rendered');
+        const actions = [...tb.querySelectorAll('[data-ai-sel]')].map((b) => b.dataset.aiSel);
+        assert.deepEqual(actions, ['word-replace', 'word-explain'], 'both single-word actions present');
+
+        // Capture the exact outbound prompt for assertions.
+        let sent = null;
+        const realFetch = window.fetch;
+        const spying = async (_url, opts = {}) => {
+            sent = JSON.parse(opts.body);
+            return realFetch(_url, opts);
+        };
+        window.fetch = spying;
+        global.fetch = spying;
+
+        // 1. Explain word: context in, dialog out.
+        tb.querySelector('[data-ai-sel="word-explain"]').click();
+        await settle(30);
+        assert.ok(sent, 'explain call made');
+        const allMsgs = sent.payload.messages.map((m) => m.content).join('\n');
+        assert.match(allMsgs, /متن اولیه درباره چشم و سلامت/, 'before-context sent to the model');
+        assert.match(allMsgs, /ادامه متن درباره بینایی/, 'after-context sent to the model');
+        assert.equal(window.document.getElementById('appDialog').open, true, 'explanation dialog opened');
+
+        // Close the dialog for the next action.
+        window.document.querySelector('#appDialog [data-action="cancel"]').click();
+        await settle(10);
+
+        // 2. Replace: context in, suggestions fit the context.
+        tb.querySelector('[data-ai-sel="word-replace"]').click();
+        await settle(30);
+        assert.ok(sent, 'replace call made');
+        const replaceMsg = sent.payload.messages.map((m) => m.content).join('\n');
+        assert.match(replaceMsg, /Context/, 'context framing sent to the model');
+        const dlg = window.document.getElementById('appDialog');
+        assert.equal(dlg.open, true, 'replacements dialog opened');
+        assert.match(dlg.querySelector('.dialog__body').innerHTML, /ادامه متن درباره بینایی/, 'context shown in the dialog');
+        global.fetch = window.fetch;
+    });
+
+    await check('explain falls back gracefully without context', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = 'A short explanation.';
+        const { ui, ai } = await loadModules(window);
+        ai.__resetSelectionToolbarForTests();
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'کار';
+        // Select the entire (only) word — no before/after context exists.
+        const first = editor.firstChild;
+        const saved = { collapsed: false, startContainer: first, endContainer: first, startOffset: 0, endOffset: 3, toString: () => 'کار' };
+        window.getSelection = () => ({
+            rangeCount: 1, isCollapsed: false,
+            anchorNode: first, focusNode: first,
+            getRangeAt: () => ({ ...saved, cloneRange: () => ({ ...saved }) }),
+            toString: () => 'کار',
+            removeAllRanges() {}, addRange() {},
+        });
+
+        let sent = null;
+        const realFetch = window.fetch;
+        const spying = async (_url, opts = {}) => { sent = JSON.parse(opts.body); return realFetch(_url, opts); };
+        window.fetch = spying; global.fetch = spying;
+
+        ai.setSelectionGestureOrigin(true);
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20);
+        window.document.querySelector('.ai-sel-toolbar [data-ai-sel="word-explain"]').click();
+        await settle(30);
+
+        assert.ok(sent, 'explain call made without context');
+        const allMsgs = sent.payload.messages.map((m) => m.content).join('\n');
+        assert.doesNotMatch(allMsgs, /Context \(/, 'no context block when the word is alone');
+        assert.equal(window.document.getElementById('appDialog').open, true, 'explanation shown');
+        global.fetch = window.fetch;
+    });
+
     group('ai: option-based features keep their modals');
 
     await check('smart title still shows its picker and applies the chosen title', async () => {

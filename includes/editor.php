@@ -441,6 +441,7 @@ $jsStrings = [
     'aiSelExpand'      => t('ai.sel_expand'),
     'aiSelTranslate'   => t('ai.sel_translate'),
     'aiSelWordReplace' => t('ai.sel_word_replace'),
+    'aiSelWordExplain' => t('ai.sel_word_explain'),
 ];
 ?>
 <div class="notes-workspace" id="notesWorkspace" data-notes-open="false">

@@ -497,6 +497,7 @@ return [
         'sel_expand'         => 'Expand',
         'sel_translate'      => 'Translate',
         'sel_word_replace'   => 'Suggest replacements',
+        'sel_word_explain'   => 'Explain word',
 
         // Provider status & removal
         'status_user'        => '✓ Using your own credentials',

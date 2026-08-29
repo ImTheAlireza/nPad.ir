@@ -387,6 +387,45 @@ function cleanInput(raw, limit, onTruncate) {
    that was captured before the first dialog opened.
    ------------------------------------------------------------------------- */
 
+/**
+ * Text surrounding the selection: up to ~300 chars before and after,
+ * clipped at word boundaries so the model sees whole words. The selected
+ * text itself is excluded; `«…»` marks the gap where the word sits.
+ */
+function extractSelectionContext(editorEl, sel) {
+    try {
+        const range = sel.getRangeAt(0);
+        const scope = document.createRange();
+        scope.selectNodeContents(editorEl);
+
+        const beforeR = document.createRange();
+        beforeR.setStart(scope.startContainer, scope.startOffset);
+        beforeR.setEnd(range.startContainer, range.startOffset);
+        let before = beforeR.toString().replace(/\s+/g, ' ').trim();
+        if (before.length > 300) {
+            before = before.slice(-300);
+            // Clip to a word boundary at the START of the snippet.
+            const sp = before.indexOf(' ');
+            if (sp > -1) before = before.slice(sp + 1);
+        }
+
+        const afterR = document.createRange();
+        afterR.setStart(range.endContainer, range.endOffset);
+        afterR.setEnd(scope.endContainer, scope.endOffset);
+        let after = afterR.toString().replace(/\s+/g, ' ').trim();
+        if (after.length > 300) after = after.slice(0, 300);
+        // Clip at a word boundary at the END of the snippet.
+        if (after.length === 300) {
+            const sp = after.lastIndexOf(' ');
+            if (sp > -1) after = after.slice(0, sp);
+        }
+
+        return { before, after };
+    } catch {
+        return { before: '', after: '' };
+    }
+}
+
 /** Clone the live selection range when it is a non-collapsed range inside `editorEl`. */
 function captureSelectionRange(editorEl) {
     const sel = window.getSelection();
@@ -1095,6 +1134,9 @@ let _surfacedKey   = null;
 // Whether the active pointer gesture began inside the editor (see
 // setSelectionGestureOrigin).
 let _gestureInEditor = false;
+// Text around the selected single word (before/after snippets) — captured
+// when the popup is surfaced so word actions can answer in context.
+let _wordContext = null;
 
 /**
  * Record where the current pointer gesture began. editor.js reports every
@@ -1245,11 +1287,17 @@ export function handleSelectionAI(editorEl, strings, showDialog, toast, x, y) {
 
     // Single word = no whitespace
     const isSingleWord = !/\s/.test(text) && text.length > 0 && text.length <= 40;
+    // Capture the surrounding text once, when the popup is surfaced: the
+    // word actions use it so their answers fit how the word is used here.
+    _wordContext = isSingleWord ? extractSelectionContext(editorEl, sel) : null;
 
     const toolbar = getSelToolbar();
 
     const buttons = isSingleWord
-        ? [{ action: 'word-replace',   label: strings.aiSelWordReplace || 'Suggest replacements', icon: true }]
+        ? [
+            { action: 'word-replace', label: strings.aiSelWordReplace || 'Suggest replacements', icon: true },
+            { action: 'word-explain', label: strings.aiSelWordExplain || 'Explain word',          icon: true },
+          ]
         : [
             { action: 'sel-summarize', label: strings.aiSelSummarize  || 'Summarize' },
             { action: 'sel-rewrite',   label: strings.aiSelRewrite    || 'Rewrite'   },
@@ -1274,13 +1322,13 @@ export function handleSelectionAI(editorEl, strings, showDialog, toast, x, y) {
         const action    = btn.dataset.aiSel;
         const savedText = _savedRange ? _savedRange.toString().trim() : text;
         _hideSelToolbar();
-        await runSelectionAction(action, savedText, editorEl, strings, showDialog, toast, _savedRange);
+        await runSelectionAction(action, savedText, editorEl, strings, showDialog, toast, _savedRange, _wordContext);
     };
 
     _showSelToolbar(toolbar, x, y);
 }
 
-async function runSelectionAction(action, text, editorEl, strings, showDialog, toast, savedRange) {
+async function runSelectionAction(action, text, editorEl, strings, showDialog, toast, savedRange, wordContext) {
     const ready = await preflight(action, action, strings, showDialog, toast);
     if (!ready) return;
 
@@ -1353,18 +1401,27 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
             });
 
         } else if (action === 'word-replace') {
+            // Context makes the suggestions fit how the word is used here
+            // (e.g. «مربع» as a shape vs. a neighborhood, "bank" river vs. money).
+            const ctx = wordContext && (wordContext.before || wordContext.after)
+                ? `\n\nContext (the word appears where «…» stands): «${wordContext.before} … ${wordContext.after}»`
+                : '';
             result = await callAI(
-                `5 synonym/replacement words for the given word. Same language (Persian/English). One per line, no numbering, no explanation.`,
-                text, strings, { temperature: 1.5, maxTokens: 40 },
+                `5 synonym/replacement words for the word where «…» stands in the context. Same language as the word. Fit the meaning in this exact context. One per line, no numbering, no explanation.${ctx}`,
+                text, strings, { temperature: 1.5, maxTokens: 120 },
             );
             finishLoading();
             const words = result.split('\n').map(w => w.trim()).filter(Boolean).slice(0, 5);
             const listHtml = words.map(w =>
                 `<button class="ai-word-replace-option" type="button">${escapeHtmlVal(w)}</button>`
             ).join('');
+            const contextLine = wordContext && (wordContext.before || wordContext.after)
+                ? `<p dir="auto" style="font-size:12px;color:var(--text-muted);margin:0 0 var(--space-3)">…${escapeHtmlVal(wordContext.before)} <strong>${escapeHtmlVal(text)}</strong> ${escapeHtmlVal(wordContext.after)}…</p>`
+                : '';
             await showDialog({
                 title: strings.aiSelWordReplace || 'Suggest replacements',
                 bodyHtml: `
+                    ${contextLine}
                     <p style="font-size:12px;color:var(--text-muted);margin-bottom:var(--space-3)">
                         Click a word to replace <strong>${escapeHtmlVal(text)}</strong>:
                     </p>
@@ -1387,6 +1444,29 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                         });
                     });
                 },
+            });
+        } else if (action === 'word-explain') {
+            // Explain the word in its context: meaning, role here, and a
+            // couple of near-synonyms — in the note's language.
+            const ctx = wordContext && (wordContext.before || wordContext.after)
+                ? `\n\nContext (the word appears where «…» stands): «${wordContext.before} … ${wordContext.after}»`
+                : '';
+            result = await callAI(
+                `Explain the word where «…» stands, for someone writing this text. Same language as the word. Answer in 1-3 short lines: what it means here (in this context), and 1-2 close synonyms. No preamble, no numbering.${ctx}`,
+                text, strings, { temperature: 0.4, maxTokens: 160 },
+            );
+            finishLoading();
+            const contextLine = wordContext && (wordContext.before || wordContext.after)
+                ? `<p dir="auto" style="font-size:12px;color:var(--text-muted);margin:0 0 var(--space-3)">…${escapeHtmlVal(wordContext.before)} <strong>${escapeHtmlVal(text)}</strong> ${escapeHtmlVal(wordContext.after)}…</p>`
+                : '';
+            await showDialog({
+                title: strings.aiSelWordExplain || 'Explain word',
+                bodyHtml: `
+                    ${contextLine}
+                    <div dir="auto" style="font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md)">${escapeHtmlVal(result)}</div>`,
+                buttons: [
+                    { label: strings.cancel || 'Cancel', action: 'cancel', variant: 'btn--ghost' },
+                ],
             });
         } else {
             finishLoading();
