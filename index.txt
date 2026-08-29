@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#04050b" />
+  <title>Text Glow Transition</title>
+  <style>
+    :root {
+      --page: #04050b;
+      --panel: #070b16;
+      --cyan: #59edff;
+      --cyan-soft: #d7fbff;
+      --pink: #ff54bd;
+      --pink-soft: #ffd2ec;
+      --text: #effcff;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-height: 100%; }
+
+    body {
+      min-height: 100svh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: var(--page);
+      font-family: Tahoma, "Segoe UI", Arial, sans-serif;
+    }
+
+    main {
+      width: min(820px, 100%);
+    }
+
+    .text-stage {
+      position: relative;
+      isolation: isolate;
+      min-height: 264px;
+      overflow: hidden;
+      padding: clamp(24px, 4.7vw, 48px);
+      border: 1px solid rgba(109, 238, 255, 0.38);
+      border-radius: 20px;
+      background:
+        radial-gradient(ellipse 75% 90% at 50% 50%, rgba(22, 59, 105, 0.26), transparent 67%),
+        var(--panel);
+      box-shadow:
+        inset 0 0 0 1px rgba(224, 254, 255, 0.08),
+        inset 0 0 3px rgba(89, 237, 255, 0.17),
+        inset 0 0 8px rgba(89, 237, 255, 0.14),
+        inset 0 0 14px rgba(156, 108, 255, 0.10),
+        0 0 2px rgba(255, 255, 255, 0.34),
+        0 0 5px rgba(89, 237, 255, 0.28),
+        0 0 10px rgba(89, 237, 255, 0.21),
+        0 0 15px rgba(156, 108, 255, 0.16);
+    }
+
+    .text-stack {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      min-height: 168px;
+      align-items: center;
+    }
+
+    .copy-layer {
+      grid-area: 1 / 1;
+      display: flex;
+      align-content: center;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.12em 0.40em;
+      min-height: 168px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(20px, 3vw, 29px);
+      font-weight: 500;
+      line-height: 1.64;
+      text-align: left;
+      direction: ltr;
+    }
+
+    .word {
+      display: inline-block;
+      white-space: pre;
+    }
+
+    .words {
+      position: relative;
+      z-index: 2;
+      color: var(--text);
+      /* در حالت عادی متن کاملاً ساده و بدون Glow است. */
+      text-shadow: none;
+      will-change: opacity, filter;
+      transition: opacity 360ms ease, filter 360ms ease;
+    }
+
+    /* متن ثابت می‌ماند؛ فقط نور، بلور و شفافیت تغییر می‌کنند. */
+    .words.is-leaving {
+      color: var(--pink-soft);
+      opacity: 0;
+      filter: blur(4px) brightness(8) saturate(1.9);
+      text-shadow:
+        0 0 1px #fff,
+        0 0 2px #fff,
+        0 0 4px var(--pink-soft),
+        0 0 7px var(--pink),
+        0 0 11px var(--pink),
+        0 0 15px rgba(255, 84, 189, 0.96);
+    }
+
+    .words.is-arriving {
+      animation: text-materialize 1.45s cubic-bezier(.17, .9, .25, 1.1) both;
+    }
+
+    .ghost-copy {
+      z-index: 1;
+      color: var(--cyan);
+      opacity: 0;
+      filter: blur(6px) brightness(8.4) saturate(1.9);
+      text-shadow:
+        0 0 1px #fff,
+        0 0 2px #fff,
+        0 0 4px currentColor,
+        0 0 7px currentColor,
+        0 0 11px currentColor,
+        0 0 15px currentColor;
+      pointer-events: none;
+      will-change: opacity;
+    }
+
+    .ghost-copy.old-echo {
+      color: var(--pink);
+      animation: old-echo 360ms ease both;
+    }
+
+    .ghost-copy.new-echo {
+      color: var(--cyan);
+      animation: new-echo 1.45s ease both;
+    }
+
+    /* کادر دقیقاً هم‌زمان با متن پرنور می‌شود؛ پخش نور از 15px بیشتر نمی‌رود. */
+    .text-stage.is-burst {
+      animation: frame-flare 2s cubic-bezier(.14, .72, .24, 1) both;
+    }
+
+    @keyframes frame-flare {
+      0%, 100% {
+        border-color: rgba(109, 238, 255, 0.38);
+        filter: brightness(1) saturate(1);
+        box-shadow:
+          inset 0 0 0 1px rgba(224, 254, 255, 0.08),
+          inset 0 0 3px rgba(89, 237, 255, 0.17),
+          inset 0 0 8px rgba(89, 237, 255, 0.14),
+          inset 0 0 14px rgba(156, 108, 255, 0.10),
+          0 0 2px rgba(255, 255, 255, 0.34),
+          0 0 5px rgba(89, 237, 255, 0.28),
+          0 0 10px rgba(89, 237, 255, 0.21),
+          0 0 15px rgba(156, 108, 255, 0.16);
+      }
+      16%, 55% {
+        border-color: rgba(255, 255, 255, 0.99);
+        filter: brightness(2.25) saturate(1.85);
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, 0.98),
+          inset 0 0 3px rgba(233, 252, 255, 1),
+          inset 0 0 8px rgba(89, 237, 255, 0.98),
+          inset 0 0 14px rgba(156, 108, 255, 0.95),
+          0 0 2px rgba(255, 255, 255, 1),
+          0 0 5px rgba(233, 252, 255, 1),
+          0 0 10px rgba(89, 237, 255, 1),
+          0 0 15px rgba(255, 84, 189, 0.94);
+      }
+    }
+
+    @keyframes text-materialize {
+      0% {
+        color: #fff;
+        opacity: 0;
+        filter: blur(6px) brightness(9) saturate(2);
+        text-shadow:
+          0 0 1px #fff,
+          0 0 2px #fff,
+          0 0 4px rgba(233, 252, 255, 1),
+          0 0 7px var(--cyan),
+          0 0 11px var(--cyan),
+          0 0 15px rgba(255, 84, 189, 0.94);
+      }
+      44% {
+        color: var(--cyan-soft);
+        opacity: 1;
+        filter: blur(1.2px) brightness(5.8) saturate(1.7);
+        text-shadow:
+          0 0 1px #fff,
+          0 0 2px #fff,
+          0 0 4px var(--cyan-soft),
+          0 0 7px var(--cyan),
+          0 0 11px var(--cyan),
+          0 0 15px rgba(89, 237, 255, 0.88);
+      }
+      100% {
+        color: var(--text);
+        opacity: 1;
+        filter: blur(0) brightness(1);
+        text-shadow: none;
+      }
+    }
+
+    @keyframes old-echo {
+      0% { opacity: 0.98; }
+      100% { opacity: 0; }
+    }
+
+    @keyframes new-echo {
+      0% { opacity: 0; }
+      22% { opacity: 0.98; }
+      100% { opacity: 0; }
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 15px;
+    }
+
+    .choice {
+      --accent: var(--cyan);
+      --accent-soft: rgba(89, 237, 255, 0.25);
+      min-height: 58px;
+      cursor: pointer;
+      border: 1px solid rgba(123, 230, 255, 0.36);
+      border-radius: 14px;
+      color: #e9fbff;
+      background: #0a1324;
+      box-shadow: 0 0 5px var(--accent-soft), 0 0 11px rgba(89, 237, 255, 0.13);
+      font: 800 15px var(--sans, Tahoma, "Segoe UI", Arial, sans-serif);
+      transition: border-color 180ms ease, color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    .choice[data-state="two"] {
+      --accent: var(--pink);
+      --accent-soft: rgba(255, 84, 189, 0.25);
+      border-color: rgba(255, 126, 210, 0.34);
+      background: #190d22;
+      box-shadow: 0 0 5px var(--accent-soft), 0 0 11px rgba(255, 84, 189, 0.13);
+    }
+
+    .choice:hover:not(:disabled),
+    .choice.active {
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow:
+        0 0 2px #fff,
+        0 0 5px var(--accent),
+        0 0 11px var(--accent-soft),
+        0 0 15px var(--accent-soft);
+    }
+
+    .choice:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 3px;
+    }
+
+    .choice:disabled { cursor: wait; }
+
+    @media (max-width: 560px) {
+      body { padding: 12px; }
+      .text-stage { min-height: 285px; padding: 27px 22px; border-radius: 16px; }
+      .text-stack, .copy-layer { min-height: 177px; }
+      .copy-layer { font-size: 21px; line-height: 1.61; }
+      .controls { gap: 9px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="text-stage" id="textStage" role="textbox" aria-readonly="true" aria-label="متن لورم ایپسوم">
+      <div class="text-stack">
+        <div class="copy-layer ghost-copy" id="ghostCopy" aria-hidden="true"></div>
+        <div class="copy-layer words" id="words" lang="la" dir="ltr" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div class="controls" aria-label="انتخاب متن">
+      <button class="choice" type="button" data-state="one" aria-pressed="false">متن یک</button>
+      <button class="choice" type="button" data-state="two" aria-pressed="false">متن دو</button>
+    </div>
+  </main>
+
+  <script>
+    const states = {
+      initial: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur libero massa semper pretium. Donec congue justo sed placerat consequat, velit erat volutpat lorem eget posuere risus justo eget arcu.",
+      one: "Phasellus aliquam turpis vel erat malesuada, ac porta metus condimentum. Integer tempus lacus vitae nibh consequat, nec ullamcorper ligula faucibus. Suspendisse potenti. Morbi gravida turpis vitae felis accumsan lobortis.",
+      two: "Integer bibendum magna sed nisl maximus, vitae dignissim augue facilisis. Nam pulvinar luctus magna, quis interdum mauris volutpat eget. Curabitur consequat tellus eget risus posuere, sed volutpat mi ultrices."
+    };
+
+    const wordsEl = document.getElementById("words");
+    const ghostCopy = document.getElementById("ghostCopy");
+    const textStage = document.getElementById("textStage");
+    const buttons = [...document.querySelectorAll(".choice")];
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    let currentKey = "initial";
+    let isAnimating = false;
+    let timers = [];
+
+    function renderText(layer, text) {
+      const fragment = document.createDocumentFragment();
+      text.trim().split(/\s+/).forEach((word) => {
+        const span = document.createElement("span");
+        span.className = "word";
+        span.textContent = word;
+        fragment.append(span);
+      });
+      layer.replaceChildren(fragment);
+    }
+
+    function updateButtons(activeKey) {
+      buttons.forEach((button) => {
+        const active = button.dataset.state === activeKey;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+    }
+
+    function clearTimers() {
+      timers.forEach(window.clearTimeout);
+      timers = [];
+    }
+
+    function later(callback, delay) {
+      timers.push(window.setTimeout(callback, delay));
+    }
+
+    function switchText(nextKey) {
+      if (isAnimating || nextKey === currentKey || !states[nextKey]) return;
+
+      if (reducedMotion.matches) {
+        renderText(wordsEl, states[nextKey]);
+        updateButtons(nextKey);
+        currentKey = nextKey;
+        return;
+      }
+
+      isAnimating = true;
+      clearTimers();
+      buttons.forEach((button) => button.disabled = true);
+
+      renderText(ghostCopy, states[currentKey]);
+      wordsEl.classList.remove("is-arriving");
+      ghostCopy.classList.remove("old-echo", "new-echo");
+      textStage.classList.remove("is-burst");
+      void textStage.offsetWidth;
+
+      textStage.classList.add("is-burst");
+      wordsEl.classList.add("is-leaving");
+      ghostCopy.classList.add("old-echo");
+
+      later(() => {
+        renderText(wordsEl, states[nextKey]);
+        renderText(ghostCopy, states[nextKey]);
+        updateButtons(nextKey);
+        currentKey = nextKey;
+
+        wordsEl.classList.remove("is-leaving", "is-arriving");
+        ghostCopy.classList.remove("old-echo", "new-echo");
+        void wordsEl.offsetWidth;
+        wordsEl.classList.add("is-arriving");
+        ghostCopy.classList.add("new-echo");
+      }, 360);
+
+      later(() => {
+        wordsEl.classList.remove("is-arriving");
+        ghostCopy.classList.remove("old-echo", "new-echo");
+        textStage.classList.remove("is-burst");
+        buttons.forEach((button) => button.disabled = false);
+        isAnimating = false;
+      }, 2000);
+    }
+
+    renderText(wordsEl, states.initial);
+    updateButtons(currentKey);
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => switchText(button.dataset.state));
+    });
+  </script>
+</body>
+</html>
