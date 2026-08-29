@@ -164,9 +164,9 @@ export default async function run(check, group) {
 
         check('menus are keyboard/touch operable buttons', () => {
             const appbarTriggers = [...document.querySelectorAll('.appbar .menu__trigger')];
-            assert.equal(appbarTriggers.length, 3, `expected 3 appbar menus (File, Edit, Insert), got ${appbarTriggers.length}`);
+            assert.equal(appbarTriggers.length, 4, `expected 4 appbar menus (File, Edit, Insert, AI), got ${appbarTriggers.length}`);
             const trigers = [...document.querySelectorAll('.menu__trigger')];
-            assert.equal(trigers.length, 4, `expected 3 appbar menus + 1 table "more" menu, got ${trigers.length}`);
+            assert.equal(trigers.length, 5, `expected 4 appbar menus + 1 table "more" menu, got ${trigers.length}`);
             trigers.forEach((t) => {
                 assert.equal(t.tagName, 'BUTTON', 'trigger is not a button');
                 assert.equal(t.getAttribute('aria-expanded'), 'false');

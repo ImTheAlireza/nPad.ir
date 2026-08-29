@@ -4,8 +4,12 @@
  * Strategy:
  *   - navigations: network-first, falling back to the cached page, then the
  *     locale-matched offline page
- *   - static assets: stale-while-revalidate (this is what makes the app
- *     work offline — every module is cached the first time it loads)
+ *   - CSS / JS assets: network-first with cache fallback — these change on
+ *     every deploy, so stale-while-revalidate would serve old CSS/JS on the
+ *     first load after an update even when online. Network-first ensures
+ *     users always get fresh styles and code when a connection is available.
+ *   - other static assets (fonts, images, manifests): stale-while-revalidate
+ *     — these rarely change and benefit from instant cache hits
  *   - /api/ and /admin/: never cached
  *
  * The install precache intentionally holds only the offline fallbacks: all
@@ -13,7 +17,7 @@
  * precaching them too would duplicate ~1 MB of downloads per visitor.
  */
 
-const VERSION = 'npad-v2.24.0';
+const VERSION = 'npad-v2.25.0';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 
@@ -21,6 +25,13 @@ const PRECACHE = [
     '/offline.html',
     '/fa/offline.html',
 ];
+
+/** Paths whose assets change on every deploy — always fetch fresh when online. */
+function isMutableAsset(pathname) {
+    return pathname.endsWith('.css')
+        || pathname.endsWith('.js')
+        || pathname.endsWith('.php');
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -55,6 +66,7 @@ self.addEventListener('fetch', (event) => {
     if (url.origin !== self.location.origin) return;
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/admin/')) return;
 
+    // Navigations: network-first, cache fallback, then offline page.
     if (request.mode === 'navigate') {
         event.respondWith(
             fetch(request)
@@ -75,9 +87,25 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
+    // CSS / JS / PHP: network-first so deploys are visible immediately.
+    // Falls back to cache only when offline.
+    if (isMutableAsset(url.pathname)) {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    if (response && response.status === 200) {
+                        const copy = response.clone();
+                        caches.open(ASSETS).then((cache) => cache.put(request, copy));
+                    }
+                    return response;
+                })
+                .catch(() => caches.match(request, { ignoreSearch: true })),
+        );
+        return;
+    }
+
+    // Everything else (fonts, images, manifests): stale-while-revalidate.
     event.respondWith(
-        // ignoreSearch lets a precached/query-less entry satisfy the same
-        // asset requested with the cache-busting ?v= parameter.
         caches.match(request, { ignoreSearch: true }).then((cached) => {
             const network = fetch(request)
                 .then((response) => {

@@ -237,15 +237,20 @@ export default function run(check, group) {
         );
     });
 
-    check('the 170 KB dictionary is not on the eager module graph', () => {
+    check('the spell-check engine is not on the eager module graph', () => {
         const jsDir = path.join(ROOT, 'assets/js');
-        for (const file of walk(jsDir, (n) => n.endsWith('.js') && !n.includes('.min.'))) {
+        // nspell-engine.js is a generated bundle — skip it in this walk.
+        const skipFile = (n) => n === 'nspell-engine.js' || n.includes('.min.');
+        for (const file of walk(jsDir, (n) => n.endsWith('.js') && !skipFile(n))) {
             const text = fs.readFileSync(file, 'utf8');
-            const staticImport = text.match(/import\s*(?:\{[^}]*\}|[\w$*]+(?:\s*,\s*\{[^}]*\})?)\s*from\s*['"]\.\/wordlist\.js['"]/);
-            assert.equal(staticImport, null, `${rel(file)} statically imports wordlist.js`);
+            const staticWordlist = text.match(/import\s*(?:\{[^}]*\}|[\w$*]+(?:\s*,\s*\{[^}]*\})?)\s*from\s*['"]\.\/wordlist\.js['"]/);
+            assert.equal(staticWordlist, null, `${rel(file)} statically imports wordlist.js`);
+            const staticEngine = text.match(/import\s*(?:\{[^}]*\}|[\w$*]+(?:\s*,\s*\{[^}]*\})?)\s*from\s*['"]\.\/nspell-engine\.js['"]/);
+            assert.equal(staticEngine, null, `${rel(file)} statically imports nspell-engine.js`);
         }
         const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-        assert.ok(!sw.includes('wordlist'), 'service worker precaches the dictionary');
+        assert.ok(!sw.includes('wordlist'), 'service worker precaches wordlist');
+        assert.ok(!sw.includes('nspell-engine'), 'service worker precaches nspell engine');
     });
 
     check('dev tooling is blocked at the server and not deployed', () => {
