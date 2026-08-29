@@ -822,9 +822,13 @@ function parseMarkdownTable(reply) {
 
     const rows = bodyLines.slice(start).map(splitRow);
     if (!rows.length) return null;
+    // Absurd reply guard: no legitimate answer to a <=15k-char selection
+    // needs anywhere near this many rows; refuse rather than freeze.
+    if (rows.length > 500) return null;
     // Normalise every row to the header width; ragged replies get padded/truncated.
+    // A single-value column (a list of figures/dates) is valid table data.
     const width = header.length;
-    if (width < 2 || width > 20) return null;
+    if (width < 1 || width > 20) return null;
     const fixed = rows.map((row) => {
         const cells = row.slice(0, width);
         while (cells.length < width) cells.push('');
@@ -849,7 +853,11 @@ export function looksTabular(text) {
     // \p{Nd} matches digits in every script (Persian ۱۲۳, Arabic ٤٥٦, ASCII 123).
     const numbered = lines.filter((l) => /\p{Nd}+([.,٫]\p{Nd}+)?\s*(٪|%|درصد|هزار|میلیون|میلیارد|tbn|k|m)?/iu.test(l)).length;
     const withLabel = lines.filter((l) => /[\p{L}«"'»]/u.test(l.replace(/[\p{Nd}\p{P}\s]/gu, '')) && l.length > 3).length;
-    return numbered >= 2 && withLabel >= 2;
+    if (numbered >= 2 && withLabel >= 2) return true;
+    // A mostly-numeric selection (a column of dates/amounts/scores) is
+    // tabular on its own even without text labels; the model gate still
+    // makes the final call.
+    return numbered >= 2 && numbered >= Math.ceil(lines.length * 0.6);
 }
 
 /** Build a table element from parsed rows (header + rows, escaped). */
@@ -877,6 +885,40 @@ function buildTableElement({ header, rows }) {
     }
     table.appendChild(tbody);
     return table;
+}
+
+/**
+ * Post-insert placement, mirroring the editor's own insert-table flow:
+ * browser heuristics can nest the new table in a paragraph, list item or
+ * table cell — lift it to a top-level child of the editor, add a spacer
+ * paragraph after it (so the caret can escape below the table) and place
+ * the caret in the first cell.
+ */
+function placeTableLikeEditor(editorEl, table) {
+    const nestingCell = table.parentElement?.closest?.('td, th');
+    if (nestingCell) {
+        nestingCell.closest('table').after(table);
+    } else if (table.parentElement && table.parentElement !== editorEl && editorEl.contains(table.parentElement)) {
+        const host = table.parentElement.closest('p, div, li, blockquote, h1, h2, h3, h4, h5, h6, summary');
+        if (host && host !== editorEl && editorEl.contains(host)) host.after(table);
+    }
+    const next = table.nextElementSibling;
+    if (!next || !/^(P|DIV|TABLE|HR|UL|OL|BLOCKQUOTE|PRE|DETAILS|H[1-6])$/.test(next.tagName)) {
+        const spacer = document.createElement('p');
+        spacer.appendChild(document.createElement('br'));
+        table.after(spacer);
+    }
+    const firstCell = table.querySelector('td, th');
+    if (firstCell) {
+        try {
+            const range = document.createRange();
+            range.selectNodeContents(firstCell);
+            range.collapse(true);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } catch { /* caret placement is cosmetic */ }
+    }
 }
 
 /**
@@ -932,23 +974,23 @@ export async function runTextToTable(editorEl, strings, showDialog, toast) {
         const table = buildTableElement(parsed);
         recordApply(editorEl);
         try {
-            // The editor holds focus after the dialog-less flow; make sure of
-            // it, then swap the selection for the table.
+            // Swap the selection for the table. execCommand keeps the
+            // browser's native undo path alive; the range insert is the
+            // fallback for engines without it.
             focusEditorWithRange(editorEl, savedRange);
-            const applied = (() => {
-                try {
-                    document.execCommand('insertHTML', false, table.outerHTML);
-                    return editorEl.querySelector('table') !== null;
-                } catch {
-                    return false;
-                }
-            })();
-            if (!applied) {
-                // Fallback (unsupported engines): range-based DOM insert.
+            const existing = new Set(editorEl.querySelectorAll('table'));
+            let inserted = null;
+            try {
+                document.execCommand('insertHTML', false, table.outerHTML);
+            } catch { /* fall through to the range insert */ }
+            inserted = [...editorEl.querySelectorAll('table')].find((t) => !existing.has(t)) || null;
+            if (!inserted) {
                 const range = savedRange || document.createRange();
                 range.deleteContents();
                 range.insertNode(table);
+                inserted = table;
             }
+            placeTableLikeEditor(editorEl, inserted);
         } catch (err) {
             _aiUndoStack.pop();
             throw err;

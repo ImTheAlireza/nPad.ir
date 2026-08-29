@@ -785,6 +785,79 @@ export default async function run(check, group) {
         assert.ok(toasts.some((t) => t.startsWith('info:')), 'guidance toast shown');
     });
 
+    await check('a pure numeric column is accepted and becomes a single-value table', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = '| مقدار |\n|-------|\n| ۱۲۳ |\n| ۴۵۶ |';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = '۱۲۳\n۴۵۶\n۷۸۹';
+        fakeSelection(window, editor.textContent);
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, () => {});
+        await settle();
+        await done;
+        await settle(10);
+
+        const table = editor.querySelector('table');
+        assert.ok(table, 'numeric column became a table');
+        assert.match(table.textContent, /۴۵۶/);
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
+    await check('an absurd 600-row reply is refused instead of freezing the editor', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const row = (i) => `| ردیف ${i} | ۱ |`;
+        AI_REPLY = ['| عنوان | مقدار |', '|-------|-------|', ...Array.from({ length: 600 }, (_, i) => row(i + 1))].join('\n');
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'ردیف ۱ مقدار ۱\nردیف ۲ مقدار ۲\nردیف ۳ مقدار ۳';
+        fakeSelection(window, editor.textContent);
+        const toasts = [];
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
+        await settle();
+        await done;
+        await settle(10);
+
+        assert.equal(editor.querySelector('table'), null, 'garbage 600-row reply must not insert');
+        assert.ok(toasts.some((t) => t.startsWith('error:')), 'rejected with a message');
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
+    await check('a table the browser nests in a paragraph is lifted to a top-level block', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = '| عنوان | مقدار |\n|-------|-------|\n| الف | ۱ |';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'درآمد ۱۰۰\nهزینه ۶۰\nسود ۴۰';
+        fakeSelection(window, editor.textContent);
+        // Simulate a browser heuristic that wraps the inserted table in a <p>.
+        window.document.execCommand = (cmd, ui2, value) => {
+            const active = window.document.activeElement;
+            const inEditor = active === editor || editor.contains(active);
+            if (inEditor && cmd === 'insertHTML') editor.innerHTML = `<p>${value}</p>`;
+            return inEditor;
+        };
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, () => {});
+        await settle();
+        await done;
+        await settle(10);
+
+        const table = editor.querySelector('table');
+        assert.ok(table, 'table inserted');
+        assert.equal(table.parentElement, editor, 'table lifted out of the paragraph to a top-level child');
+        assert.equal(table.nextElementSibling?.tagName, 'P', 'spacer paragraph added below the table');
+        assert.ok(editor.contains(table.querySelector('td')), 'cells intact after the lift');
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
     group('ai: option-based features keep their modals');
 
     await check('smart title still shows its picker and applies the chosen title', async () => {
