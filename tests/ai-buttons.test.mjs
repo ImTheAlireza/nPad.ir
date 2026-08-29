@@ -1041,6 +1041,13 @@ export default async function run(check, group) {
         const allMsgs = sent.payload.messages.map((m) => m.content).join('\n');
         assert.match(allMsgs, /متن اولیه درباره چشم و سلامت/, 'before-context sent to the model');
         assert.match(allMsgs, /ادامه متن درباره بینایی/, 'after-context sent to the model');
+        const explainBody = window.document.getElementById('appDialog').querySelector('.dialog__body').innerHTML;
+        assert.match(explainBody, /چشم/, 'the word itself labels the answer');
+        assert.doesNotMatch(
+            explainBody,
+            /ادامه متن درباره بینایی/,
+            'context must NOT be displayed in the result — only sent to the model',
+        );
         assert.equal(window.document.getElementById('appDialog').open, true, 'explanation dialog opened');
 
         // Close the dialog for the next action.
@@ -1055,7 +1062,11 @@ export default async function run(check, group) {
         assert.match(replaceMsg, /Context/, 'context framing sent to the model');
         const dlg = window.document.getElementById('appDialog');
         assert.equal(dlg.open, true, 'replacements dialog opened');
-        assert.match(dlg.querySelector('.dialog__body').innerHTML, /ادامه متن درباره بینایی/, 'context shown in the dialog');
+        assert.doesNotMatch(
+            dlg.querySelector('.dialog__body').innerHTML,
+            /ادامه متن درباره بینایی/,
+            'context must NOT be displayed in the result — only sent to the model',
+        );
         global.fetch = window.fetch;
     });
 

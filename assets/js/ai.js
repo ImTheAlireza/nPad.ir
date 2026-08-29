@@ -1415,13 +1415,9 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
             const listHtml = words.map(w =>
                 `<button class="ai-word-replace-option" type="button">${escapeHtmlVal(w)}</button>`
             ).join('');
-            const contextLine = wordContext && (wordContext.before || wordContext.after)
-                ? `<p dir="auto" style="font-size:12px;color:var(--text-muted);margin:0 0 var(--space-3)">…${escapeHtmlVal(wordContext.before)} <strong>${escapeHtmlVal(text)}</strong> ${escapeHtmlVal(wordContext.after)}…</p>`
-                : '';
             await showDialog({
                 title: strings.aiSelWordReplace || 'Suggest replacements',
                 bodyHtml: `
-                    ${contextLine}
                     <p style="font-size:12px;color:var(--text-muted);margin-bottom:var(--space-3)">
                         Click a word to replace <strong>${escapeHtmlVal(text)}</strong>:
                     </p>
@@ -1456,13 +1452,10 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 text, strings, { temperature: 0.4, maxTokens: 160 },
             );
             finishLoading();
-            const contextLine = wordContext && (wordContext.before || wordContext.after)
-                ? `<p dir="auto" style="font-size:12px;color:var(--text-muted);margin:0 0 var(--space-3)">…${escapeHtmlVal(wordContext.before)} <strong>${escapeHtmlVal(text)}</strong> ${escapeHtmlVal(wordContext.after)}…</p>`
-                : '';
             await showDialog({
                 title: strings.aiSelWordExplain || 'Explain word',
                 bodyHtml: `
-                    ${contextLine}
+                    <p dir="auto" style="font-size:13px;font-weight:600;margin:0 0 var(--space-3)">${escapeHtmlVal(text)}</p>
                     <div dir="auto" style="font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md)">${escapeHtmlVal(result)}</div>`,
                 buttons: [
                     { label: strings.cancel || 'Cancel', action: 'cancel', variant: 'btn--ghost' },
