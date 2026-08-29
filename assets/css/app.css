@@ -4629,3 +4629,220 @@ body.focus-mode .focus-exit { display: inline-flex; }
 }
 
 .ai-word-replace-option:active { transform: scale(0.95); }
+
+/* ==========================================================================
+   AI glow swap — the neon transition played when AI rewrites text in place
+   --------------------------------------------------------------------------
+   Two stacked copies of the same text: a crisp "ink" copy the user reads and
+   a blurred, blown-out "bloom" copy behind it. Nothing moves when the words
+   change — only light, blur and opacity:
+
+     0–360ms     the old text burns out in place (pink glow, blur, fade)
+     360ms       the new text drops into exactly the same box
+     360–1810ms  the new text materialises out of the light into plain text
+     0–2000ms    the editor card flares in sync
+
+   Every glow radius is capped at 15px, the same rule as the prototype: the
+   light never smears outside the frame. The card flare animates border and
+   box-shadow only — never `filter` — so the text *around* the swap keeps its
+   exact colours while the swap is playing.
+   ========================================================================== */
+
+:root {
+    /* Light theme: the same neon choreography, but the light is coloured
+       instead of blown out to white — a white core is invisible on white. */
+    --ai-glow-in: #0e7490;                        /* == --accent */
+    --ai-glow-in-soft: #1a94b0;
+    --ai-glow-in-core: #0a5c73;
+    --ai-glow-in-fade: rgba(14, 116, 144, 0.62);
+    --ai-glow-out: #be185d;
+    --ai-glow-out-soft: #d1407f;
+    --ai-glow-out-fade: rgba(190, 24, 93, 0.55);
+    --ai-ink-rest: var(--text-strong);
+
+    --ai-f-out: blur(3px) brightness(1.06) saturate(2.4);
+    --ai-f-bloom: blur(6px) brightness(1.02) saturate(2.6);
+    --ai-f-in-start: blur(6px) brightness(1.08) saturate(2.8);
+    --ai-f-in-mid: blur(1.2px) brightness(1.03) saturate(2.2);
+
+    --ai-shadow-in: 0 0 1px var(--ai-glow-in-soft), 0 0 3px var(--ai-glow-in),
+                    0 0 8px var(--ai-glow-in), 0 0 15px var(--ai-glow-in-fade);
+    --ai-shadow-out: 0 0 1px var(--ai-glow-out-soft), 0 0 3px var(--ai-glow-out),
+                     0 0 8px var(--ai-glow-out), 0 0 15px var(--ai-glow-out-fade);
+    --ai-shadow-bloom: 0 0 2px currentColor, 0 0 6px currentColor,
+                       0 0 15px currentColor;
+
+    --ai-flare-border: rgba(14, 116, 144, 0.75);
+    --ai-flare-shadow: 0 0 2px rgba(14, 116, 144, 0.55),
+                       0 0 5px rgba(14, 116, 144, 0.45),
+                       0 0 10px rgba(14, 116, 144, 0.35),
+                       0 0 15px rgba(190, 24, 93, 0.28),
+                       inset 0 0 8px rgba(14, 116, 144, 0.10);
+}
+
+[data-theme='dark'] {
+    /* Dark theme: the prototype's palette, keyed to the dark accent. */
+    --ai-glow-in: #22d3ee;                        /* == --accent */
+    --ai-glow-in-soft: #d7fbff;
+    --ai-glow-in-core: #ffffff;
+    --ai-glow-in-fade: rgba(89, 237, 255, 0.88);
+    --ai-glow-out: #ff54bd;
+    --ai-glow-out-soft: #ffd2ec;
+    --ai-glow-out-fade: rgba(255, 84, 189, 0.96);
+
+    --ai-f-out: blur(4px) brightness(8) saturate(1.9);
+    --ai-f-bloom: blur(6px) brightness(8.4) saturate(1.9);
+    --ai-f-in-start: blur(6px) brightness(9) saturate(2);
+    --ai-f-in-mid: blur(1.2px) brightness(5.8) saturate(1.7);
+
+    --ai-shadow-in: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px #e9fcff,
+                    0 0 7px var(--ai-glow-in), 0 0 11px var(--ai-glow-in),
+                    0 0 15px var(--ai-glow-out-fade);
+    --ai-shadow-out: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px var(--ai-glow-out-soft),
+                     0 0 7px var(--ai-glow-out), 0 0 11px var(--ai-glow-out),
+                     0 0 15px var(--ai-glow-out-fade);
+    --ai-shadow-bloom: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px currentColor,
+                       0 0 7px currentColor, 0 0 11px currentColor,
+                       0 0 15px currentColor;
+
+    --ai-flare-border: rgba(255, 255, 255, 0.9);
+    --ai-flare-shadow: 0 0 2px rgba(255, 255, 255, 0.95),
+                       0 0 5px rgba(233, 252, 255, 0.9),
+                       0 0 10px rgba(89, 237, 255, 0.85),
+                       0 0 15px rgba(255, 84, 189, 0.7),
+                       inset 0 0 8px rgba(89, 237, 255, 0.22);
+}
+
+/* --- 1. The swap box ------------------------------------------------------
+   Inline by default, so a multi-line paragraph keeps wrapping exactly as it
+   did. The bloom copy is only stacked on top when the text sits on a single
+   line (see .ai-swap--stack), where a grid cell cannot change the wrapping. */
+
+.ai-swap {
+    position: relative;
+}
+
+.ai-swap--stack {
+    display: inline-grid;
+    grid-template-areas: 'ai-swap-cell';
+}
+
+.ai-swap--stack > .ai-swap__ink,
+.ai-swap--stack > .ai-swap__bloom {
+    grid-area: ai-swap-cell;
+}
+
+/* --- 2. The ink: the copy the user actually reads ------------------------- */
+
+.ai-swap__ink {
+    z-index: 1;
+    transition: opacity 360ms ease, filter 360ms ease;
+    will-change: opacity, filter;
+}
+
+.ai-swap.is-leaving > .ai-swap__ink {
+    color: var(--ai-glow-out-soft);
+    opacity: 0;
+    filter: var(--ai-f-out);
+    text-shadow: var(--ai-shadow-out);
+}
+
+.ai-swap.is-arriving > .ai-swap__ink {
+    animation: ai-text-materialize 1.45s cubic-bezier(.17, .9, .25, 1.1) both;
+}
+
+/* --- 3. The bloom: the blurred echo burning behind the ink ---------------- */
+
+.ai-swap__bloom {
+    z-index: 0;
+    opacity: 0;
+    color: var(--ai-glow-out);
+    filter: var(--ai-f-bloom);
+    text-shadow: var(--ai-shadow-bloom);
+    pointer-events: none;
+    user-select: none;
+    will-change: opacity;
+}
+
+.ai-swap__bloom.is-echo-old {
+    animation: ai-old-echo 360ms ease both;
+}
+
+.ai-swap__bloom.is-echo-new {
+    color: var(--ai-glow-in);
+    animation: ai-new-echo 1.45s ease both;
+}
+
+/* --- 4. Whole-note swaps: the editor surface plays the same transition ----- */
+
+.editor.ai-swap-host {
+    transition: opacity 360ms ease, filter 360ms ease;
+    will-change: opacity, filter;
+}
+
+.editor.ai-swap-host.is-leaving {
+    color: var(--ai-glow-out-soft);
+    opacity: 0;
+    filter: var(--ai-f-out);
+    text-shadow: var(--ai-shadow-out);
+}
+
+.editor.ai-swap-host.is-arriving {
+    animation: ai-text-materialize 1.45s cubic-bezier(.17, .9, .25, 1.1) both;
+}
+
+/* --- 5. The card flare: border + shadow only, text untouched -------------- */
+
+.editor-shell.is-ai-burst {
+    animation: ai-shell-flare 2s cubic-bezier(.14, .72, .24, 1) both;
+}
+
+@keyframes ai-shell-flare {
+    0%, 100% {
+        border-color: var(--border-subtle);
+        box-shadow: var(--shadow-md);
+    }
+    16%, 55% {
+        border-color: var(--ai-flare-border);
+        box-shadow: var(--ai-flare-shadow);
+    }
+}
+
+/* --- 6. Keyframes: the prototype's curves, unchanged --------------------- */
+
+@keyframes ai-text-materialize {
+    0% {
+        color: var(--ai-glow-in-core);
+        opacity: 0;
+        filter: var(--ai-f-in-start);
+        text-shadow: var(--ai-shadow-in);
+    }
+    44% {
+        color: var(--ai-glow-in-soft);
+        opacity: 1;
+        filter: var(--ai-f-in-mid);
+        text-shadow: var(--ai-shadow-in);
+    }
+    100% {
+        color: var(--ai-ink-rest);
+        opacity: 1;
+        filter: none;
+        text-shadow: none;
+    }
+}
+
+@keyframes ai-old-echo {
+    0%   { opacity: 0.98; }
+    100% { opacity: 0; }
+}
+
+@keyframes ai-new-echo {
+    0%   { opacity: 0; }
+    22%  { opacity: 0.98; }
+    100% { opacity: 0; }
+}
+
+/* The bloom is pure decoration: drop it where colours are forced. */
+@media (forced-colors: active) {
+    .ai-swap__bloom { display: none; }
+}

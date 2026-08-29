@@ -66,6 +66,7 @@ const suites = [
     // (a jsdom quirk), and a timer firing after that close crashes the
     // process if anything keeps the event loop alive afterwards.
     ['tables-ui', './tables-ui.test.mjs'],
+    ['ai-swap', './ai-swap.test.mjs'],
     ['ai-buttons', './ai-buttons.test.mjs'],
     ['autocomplete', './autocomplete.test.mjs'],
     ['behaviour', './behaviour.test.mjs'],
