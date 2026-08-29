@@ -59,7 +59,9 @@ export async function parseAIResponse(response, strings) {
     if (typeof choice?.text === 'string' && choice.text.trim()) return choice.text.trim();
 
     if (choice?.finish_reason === 'length') {
-        throw new Error(strings?.aiEmptyLength || 'The model hit its token limit before producing any text (finish reason "length"). Try again, select less text, or use a standard chat model instead of a reasoning model.');
+        const err = new Error(strings?.aiEmptyLength || 'The model hit its token limit before producing any text (finish reason "length"). Try again, select less text, or use a standard chat model instead of a reasoning model.');
+        err.emptyLength = true; // callers may retry with a larger budget
+        throw err;
     }
     if (typeof choice?.message?.reasoning_content === 'string' && choice.message.reasoning_content.trim()) {
         throw new Error(strings?.aiReasoningOnly || 'The model returned only internal reasoning and no answer text. Use a standard chat model (e.g. deepseek-chat, gpt-4o-mini) for these features.');
@@ -69,4 +71,62 @@ export async function parseAIResponse(response, strings) {
     }
     if (htmlReply) throw new Error(htmlHint(response.status));
     throw new Error(strings?.aiEmptyResponse || 'Empty response from AI');
+}
+
+/* -------------------------------------------------------------------------
+   Reasoning-model aware request wrapper
+   Reasoning/"thinking" models (deepseek-reasoner, R1, QwQ, Gemini thinking,
+   OpenAI o-series/gpt-5…) spend completion tokens on hidden reasoning
+   BEFORE writing any answer. Feature budgets are small (40-4000), so such
+   models end with finish_reason "length" and empty text. Mitigations:
+     1. models that look like reasoning models start with a larger budget
+     2. one automatic retry with a much larger budget on empty-length
+     3. OpenAI reasoning models reject custom temperature — omit it
+   ------------------------------------------------------------------------- */
+
+const REPLY_BUDGET_FLOOR = 2048; // initial budget for reasoning-style models
+const RETRY_BUDGET_CAP   = 16384;
+
+function reasoningInfo(model) {
+    const m = String(model || '');
+    return {
+        thinksLike: /deepseek-reasoner|(^|[-_./])r\d+([-_.]|$)|(^|[-_./])o[134]([-_.]|mini|preview|$)|qwq|think|gpt-5/i.test(m),
+        strictOpenAI: /(^|[-_./])(o[134]([-_.]|mini|preview|$)|gpt-5)/i.test(m),
+    };
+}
+
+/**
+ * POST a chat completion through the proxy with the mitigations above.
+ * @returns {Promise<string>} the assistant message text
+ */
+export async function requestChatCompletion(endpoint, apiKey, payload, strings) {
+    let body = { ...payload };
+
+    const info = reasoningInfo(body.model);
+    if (info.thinksLike && (Number(body.max_tokens) || 0) < REPLY_BUDGET_FLOOR) {
+        body.max_tokens = REPLY_BUDGET_FLOOR;
+        body.max_completion_tokens = REPLY_BUDGET_FLOOR;
+    }
+    if (info.strictOpenAI) delete body.temperature;
+
+    for (let attempt = 1; ; attempt++) {
+        const response = await fetch('/api/ai-proxy.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint, apiKey, payload: body }),
+        });
+        try {
+            return await parseAIResponse(response, strings);
+        } catch (err) {
+            if (err?.emptyLength && attempt === 1) {
+                const current = Number(body.max_tokens) || 0;
+                const retryTo = Math.min(RETRY_BUDGET_CAP, Math.max(4096, current * 8));
+                if (retryTo > current) {
+                    body = { ...body, max_tokens: retryTo, max_completion_tokens: retryTo };
+                    continue; // one retry with real headroom for thinking
+                }
+            }
+            throw err;
+        }
+    }
 }

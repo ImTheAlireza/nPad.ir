@@ -496,12 +496,80 @@ export default async function run(check, group) {
         );
     });
 
+    group('ai: reasoning models work instead of erroring');
+
+    await check('empty-length triggers one automatic retry with a bigger budget and succeeds', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        const budgets = [];
+        let calls = 0;
+        window.__aiResponder = (req) => {
+            calls++;
+            budgets.push(req.payload.max_tokens);
+            if (calls === 1) {
+                return { status: 200, body: { choices: [{ message: { content: '' }, finish_reason: 'length' }] } };
+            }
+            return { status: 200, body: { choices: [{ message: { content: 'Recovered answer' } }] } };
+        };
+        const text = await ai.callAI('sys', 'user', strings, { maxTokens: 80 });
+        assert.equal(text, 'Recovered answer');
+        assert.equal(calls, 2, 'exactly one retry');
+        assert.ok(budgets[1] >= 4096, `retry budget should be >= 4096, got ${budgets[1]}`);
+        assert.equal(budgets[1], window.__lastAiPayload.max_completion_tokens);
+    });
+
+    await check('persistent empty-length still surfaces the guidance error', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        let calls = 0;
+        window.__aiResponder = () => {
+            calls++;
+            return { status: 200, body: { choices: [{ message: { content: '' }, finish_reason: 'length' }] } };
+        };
+        await assert.rejects(() => ai.callAI('sys', 'user', strings, { maxTokens: 80 }), /token limit/);
+        assert.equal(calls, 2, 'only one retry before failing');
+    });
+
+    await check('reasoning-model names start with a larger budget', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        window.localStorage.setItem('npad:ai-user-base-url', 'https://api.example.com/v1');
+        window.localStorage.setItem('npad:ai-user-api-key', 'sk-u');
+        window.localStorage.setItem('npad:ai-user-model', 'deepseek-reasoner');
+        window.localStorage.setItem('npad:ai-consent', '1');
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({ status: 200, body: { choices: [{ message: { content: 'ok' } }] } });
+        await ai.callAI('sys', 'user', strings, { maxTokens: 80 });
+        assert.ok(
+            window.__lastAiPayload.max_tokens >= 2048,
+            `reasoning model budget should be >= 2048, got ${window.__lastAiPayload.max_tokens}`,
+        );
+    });
+
+    await check('strict OpenAI reasoning models drop custom temperature', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        window.localStorage.setItem('npad:ai-user-base-url', 'https://api.openai.com/v1');
+        window.localStorage.setItem('npad:ai-user-api-key', 'sk-u');
+        window.localStorage.setItem('npad:ai-user-model', 'o3-mini');
+        window.localStorage.setItem('npad:ai-consent', '1');
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({ status: 200, body: { choices: [{ message: { content: 'ok' } }] } });
+        await ai.callAI('sys', 'user', strings, { maxTokens: 80, temperature: 0.5 });
+        assert.equal(window.__lastAiPayload.temperature, undefined,
+            'temperature must be omitted for o-series models');
+    });
+
     group('ai: admin dashboard shares the diagnostics');
 
-    await check('ai-panel.js imports the shared parser and dashboard loads it as a module', () => {
+    await check('ai-panel.js imports the shared wrapper and dashboard loads it as a module', () => {
         const panel = fs.readFileSync(path.join(ROOT, 'admin/ai-panel.js'), 'utf8');
-        assert.match(panel, /import \{ parseAIResponse \} from '\.\.\/assets\/js\/ai-parse\.js'/,
-            'admin panel must use the shared parser');
+        assert.match(panel, /import \{ requestChatCompletion \} from '\.\.\/assets\/js\/ai-parse\.js'/,
+            'admin panel must use the shared request wrapper');
         assert.doesNotMatch(panel, /\(empty\)/, "the old '(empty)' success path must be gone");
         const dash = fs.readFileSync(path.join(ROOT, 'admin/dashboard.php'), 'utf8');
         assert.ok(

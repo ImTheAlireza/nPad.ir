@@ -1,5 +1,5 @@
 import { sanitizeHtml } from './sanitize.js';
-import { parseAIResponse } from './ai-parse.js';
+import { requestChatCompletion } from './ai-parse.js';
 
 /**
  * NPad AI module.
@@ -186,13 +186,9 @@ export async function callAI(systemPrompt, userContent, strings, {
         max_completion_tokens: maxTokens,
     };
 
-    const response = await fetch('/api/ai-proxy.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint, apiKey, payload }),
-    });
-
-    return parseAIResponse(response, strings);
+    // requestChatCompletion adds reasoning-model mitigations (larger budget,
+    // temperature handling) and one automatic retry on empty-length.
+    return requestChatCompletion(endpoint, apiKey, payload, strings);
 }
 
 /* -------------------------------------------------------------------------
@@ -321,23 +317,16 @@ async function testConnection(cfg, strings) {
         ? base
         : `${base}/chat/completions`;
 
-    const res = await fetch('/api/ai-proxy.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            endpoint,
-            apiKey: cfg.apiKey,
-            payload: {
-                model: cfg.model,
-                messages: [{ role: 'user', content: 'Say "ok" in one word.' }],
-                max_tokens: 32,
-                max_completion_tokens: 32,
-            },
-        }),
-    });
-    // Same parser as callAI: provider errors, HTML replies, empty and
-    // reasoning-only answers all fail the test with a clear message.
-    await parseAIResponse(res, strings);
+    const payload = {
+        model: cfg.model,
+        messages: [{ role: 'user', content: 'Say "ok" in one word.' }],
+        max_tokens: 32,
+        max_completion_tokens: 32,
+    };
+    // Same diagnostics and reasoning-model mitigations as callAI: provider
+    // errors, HTML replies, empty and reasoning-only answers all fail the
+    // test with a clear message; thinking models get a real token budget.
+    await requestChatCompletion(endpoint, cfg.apiKey, payload, strings);
 }
 
 function escapeVal(str) {
