@@ -442,6 +442,8 @@ $jsStrings = [
     'aiSelTranslate'   => t('ai.sel_translate'),
     'aiSelWordReplace' => t('ai.sel_word_replace'),
     'aiSelWordExplain' => t('ai.sel_word_explain'),
+    'autocompleteOn'   => t('ai.autocomplete_on'),
+    'autocompleteOff'  => t('ai.autocomplete_off'),
 ];
 ?>
 <div class="notes-workspace" id="notesWorkspace" data-notes-open="false">

@@ -499,6 +499,11 @@ return [
         'sel_word_replace'   => 'Suggest replacements',
         'sel_word_explain'   => 'Explain word',
 
+        // Autocomplete
+        'autocomplete'       => 'Word autocomplete',
+        'autocomplete_on'    => 'Word autocomplete on — Tab completes the highlighted suggestion',
+        'autocomplete_off'   => 'Word autocomplete off',
+
         // Provider status & removal
         'status_user'        => '✓ Using your own credentials',
         'status_default'     => 'ℹ Using site default — fill in your own credentials below to override',

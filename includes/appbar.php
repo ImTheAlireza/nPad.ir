@@ -86,6 +86,7 @@ $aiItems = [
     ['action' => 'ai-smart-format',  'icon' => 'sparkle', 'label' => t('ai.smart_format'),   'cloud' => true],
     ['action' => 'ai-text-to-table', 'icon' => 'table',   'label' => t('ai.text_to_table'),  'cloud' => true],
     ['separator' => true],
+    ['action' => 'toggle-autocomplete', 'icon' => 'spellcheck', 'label' => t('ai.autocomplete')],
     ['action' => 'ai-settings',      'icon' => 'ai',      'label' => t('ai.ai_settings')],
 ];
 

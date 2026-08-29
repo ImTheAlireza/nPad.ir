@@ -3185,6 +3185,22 @@ html[lang='fa'] .font-picker__badge { font-family: var(--font-fa); }
     transform: translateY(6px) scale(0.98);
 }
 
+/* Inline autocomplete ghost: absolutely-positioned span in <body>, painted
+   after the caret in the placeholder colour. pointer-events none so clicks
+   fall through; hidden entirely for print/export. */
+.ai-autocomplete-ghost {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    white-space: pre;
+    color: var(--text-placeholder, rgba(148, 163, 184, 0.85));
+    user-select: none;
+}
+
+@media print {
+    .ai-autocomplete-ghost { display: none; }
+}
+
 /* Direct-apply toast with its Undo/Redo control. The button is inline so the
    whole toast still reads as a status message, but it stays keyboard-usable. */
 .ai-applied-toast__text {

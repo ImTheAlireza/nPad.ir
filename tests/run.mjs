@@ -67,6 +67,7 @@ const suites = [
     // process if anything keeps the event loop alive afterwards.
     ['tables-ui', './tables-ui.test.mjs'],
     ['ai-buttons', './ai-buttons.test.mjs'],
+    ['autocomplete', './autocomplete.test.mjs'],
     ['behaviour', './behaviour.test.mjs'],
 ];
 

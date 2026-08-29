@@ -70,6 +70,7 @@ import {
 } from './table.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
+import { initAutocomplete } from './autocomplete.js';
 import { initCodeblocks, detectLanguage } from './codeblock.js';
 import { initMath } from './mathblock.js';
 import { initOutline } from './outline.js';
@@ -230,6 +231,7 @@ export function initEditor({ strings, onEvent }) {
     let noteFilter = { type: 'all', id: null };
 
     const spell = initSpellcheck({ editor, strings, onEvent: track });
+    const autocomplete = initAutocomplete({ editor, strings, onEvent: track });
 
     /* Syntax-highlighted code blocks (self-contained module). */
     const code = initCodeblocks({
@@ -4112,6 +4114,17 @@ ${exportHtml()}
         'toggle-spellcheck': () => {
             spell.setEnabled(!spell.isEnabled());
             track('spellcheck_toggled');
+        },
+
+        'toggle-autocomplete': () => {
+            autocomplete.setEnabled(!autocomplete.isEnabled());
+            toast(
+                autocomplete.isEnabled()
+                    ? (strings.autocompleteOn || 'Autocomplete on')
+                    : (strings.autocompleteOff || 'Autocomplete off'),
+                'success',
+            );
+            track('autocomplete_toggled');
         },
 
         // ── AI actions ────────────────────────────────────────────────────
