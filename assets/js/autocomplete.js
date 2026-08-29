@@ -8,9 +8,10 @@
  * frequency list — no network, no provider call, works with the strict
  * CSP and offline mode.
  *
- * Rendering uses an absolutely-positioned mirror span (never a DOM change
- * inside the contenteditable), so the editor's undo stack, sanitiser,
- * spellchecker and exporters never see the ghost. The suggestion is
+ * Rendering never touches the contenteditable DOM: the ghost is an
+ * absolutely-positioned span in <body>, anchored to the caret's own client
+ * rect (exact on every line, both directions), so the editor's undo stack,
+ * sanitiser, spellchecker and exporters never see it. The suggestion is
  * committed through insertText at the caret, exactly like typing.
  */
 
@@ -100,13 +101,51 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
         return suffix;
     }
 
-    /** Position the ghost after the caret using a mirror span. */
+    /** Viewport rect of the caret itself (collapsed range), when the
+     *  browser can produce real layout. Null in environments without
+     *  layout (jsdom) or for detached nodes. */
+    function caretRectAt(node, offset) {
+        try {
+            const range = document.createRange();
+            range.setStart(node, offset);
+            range.collapse(true);
+            const rect = range.getBoundingClientRect();
+            if (rect && (rect.height > 0 || rect.width > 0)) return rect;
+        } catch { /* no layout available */ }
+        return null;
+    }
+
+    /** Position the ghost exactly at the caret. Primary anchor is the
+     *  caret's own client rect — exact on wrapped lines, in nested
+     *  elements and in RTL. A mirror-span estimate is only the fallback
+     *  for environments without real layout. */
     function positionGhost(node, offset, ghostText) {
         const el = ensureGhost();
+        const style = window.getComputedStyle(editor);
+        const rtl = (editor.getAttribute('dir') || '').toLowerCase() === 'rtl'
+            || style.direction === 'rtl';
+
+        el.style.font = style.font;
+        el.style.letterSpacing = style.letterSpacing;
+
+        const caretRect = caretRectAt(node, offset);
+        if (caretRect) {
+            const scrollX = window.scrollX || window.pageXOffset || 0;
+            const scrollY = window.scrollY || window.pageYOffset || 0;
+            // Match the caret's line box so the faded text sits on the
+            // same baseline as the typed word.
+            el.style.lineHeight = `${Math.round(caretRect.height)}px`;
+            el.textContent = ghostText;
+            const w = el.getBoundingClientRect().width;
+            el.style.top = `${Math.round(caretRect.top + scrollY)}px`;
+            el.style.left = `${Math.round((rtl ? caretRect.left - w : caretRect.left) + scrollX)}px`;
+            return;
+        }
+
+        // ── Fallback: mirror-span estimate (no real layout) ──
         const mirror = document.createElement('span');
         mirror.style.cssText = 'white-space:pre;position:absolute;visibility:hidden;top:0;left:-9999px;';
         // Copy the editor's font so the measurement matches to the pixel.
-        const style = window.getComputedStyle(editor);
         for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'wordSpacing', 'textTransform', 'paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']) {
             mirror.style[prop] = style[prop];
         }
@@ -121,18 +160,21 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
         const range = document.createRange();
         range.setStart(node, Math.max(0, offset - 1));
         range.setEnd(node, offset);
-        let caretRect = null;
-        try { caretRect = range.getBoundingClientRect(); } catch { caretRect = null; }
+        let charRect = null;
+        try { charRect = range.getBoundingClientRect(); } catch { charRect = null; }
 
         const editorRect = editor.getBoundingClientRect();
         const caretCharWidth = mirror.getBoundingClientRect().width - base.getBoundingClientRect().width;
         document.body.removeChild(mirror);
         document.body.removeChild(base);
 
+        const scrollX = window.scrollX || window.pageXOffset || 0;
+        const scrollY = window.scrollY || window.pageYOffset || 0;
+
         // Vertical: caret line when measurable, else the editor's line box math.
         let top;
-        if (caretRect && caretRect.height) {
-            top = caretRect.top;
+        if (charRect && charRect.height) {
+            top = charRect.top;
         } else {
             const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
             const beforeText = (node.textContent || '').slice(0, offset);
@@ -140,8 +182,7 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
             top = editorRect.top + parseFloat(style.paddingTop) + lines * line;
         }
         // Horizontal: mirror width of the full node text before the caret
-        // (single-line paragraphs are the dominant case), clamped to the
-        // editor so the ghost never paints outside it.
+        // (single-line paragraphs are the dominant case).
         const fullMirror = document.createElement('span');
         fullMirror.style.cssText = mirror.style.cssText;
         fullMirror.textContent = node.textContent.slice(0, offset);
@@ -150,14 +191,10 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
         document.body.removeChild(fullMirror);
 
         // RTL: ghost sits to the LEFT of the caret.
-        const rtl = (editor.getAttribute('dir') || '').toLowerCase() === 'rtl'
-            || window.getComputedStyle(editor).direction === 'rtl';
-        if (rtl) left -= caretCharWidth + measureText(ghostText, style) ;
+        if (rtl) left -= caretCharWidth + measureText(ghostText, style);
 
-        el.style.top = `${Math.round(top)}px`;
-        el.style.left = `${Math.round(left)}px`;
-        el.style.font = style.font;
-        el.style.letterSpacing = style.letterSpacing;
+        el.style.top = `${Math.round(top + scrollY)}px`;
+        el.style.left = `${Math.round(left + scrollX)}px`;
         el.textContent = ghostText;
     }
 
@@ -230,9 +267,17 @@ export function initAutocomplete({ editor, strings = {}, onEvent }) {
     editor.addEventListener('keydown', (event) => {
         if (handleKeydown(event)) event.stopPropagation();
     }, true);
-    // Click, blur, scroll: any caret move elsewhere dismisses the ghost.
+    // Click, blur: any caret move elsewhere dismisses the ghost.
     editor.addEventListener('click', hide);
     editor.addEventListener('blur', hide);
+
+    // While a ghost is visible, keep it glued to the caret if the page or
+    // an inner container scrolls/resizes under it.
+    const reposition = () => {
+        if (current) positionGhost(current.node, current.offset, current.ghostText);
+    };
+    document.addEventListener('scroll', reposition, { capture: true, passive: true });
+    window.addEventListener('resize', reposition);
 
     return { isEnabled, setEnabled, accept, hide };
 }
