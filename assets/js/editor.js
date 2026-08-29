@@ -4121,6 +4121,9 @@ ${exportHtml()}
                 const note = createNoteRecord({ title: `${title} — ${activeNote()?.title || ''}`.slice(0, 120) });
                 note.html = content.replace(/\n/g, '<br>');
                 await saveNote(note);
+                // renderNotes renders the in-memory list — register the new
+                // note there too, or it only appears after a full reload.
+                notes.push(note);
                 renderNotes();
                 // The notes sidebar is usually closed — open it so the new
                 // summary note is actually visible after the toast.
@@ -4129,10 +4132,12 @@ ${exportHtml()}
                 return {
                     undo: async () => {
                         await deleteNote(note.id);
+                        notes = notes.filter((item) => item.id !== note.id);
                         renderNotes();
                     },
                     redo: async () => {
                         await saveNote(note);
+                        if (!notes.some((item) => item.id === note.id)) notes.push(note);
                         renderNotes();
                     },
                 };

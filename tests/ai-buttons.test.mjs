@@ -706,6 +706,15 @@ export default async function run(check, group) {
         const sidebarIdx = ed.indexOf('setSidebarOpen(true)', summarizeIdx);
         assert.ok(sidebarIdx > -1, 'creating a summary must open the notes sidebar so it is visible');
         assert.ok(ed.slice(summarizeIdx, sidebarIdx).includes('renderNotes()'), 'sidebar opens after the list re-renders');
+        // renderNotes() draws the in-memory `notes` array: the created note
+        // must be registered there, otherwise it appears only after reload.
+        assert.match(
+            ed.slice(summarizeIdx, sidebarIdx),
+            /notes\.push\(note\)[\s\S]*renderNotes\(\)/,
+            'the created note must be added to the in-memory list before re-render',
+        );
+        assert.match(ed.slice(summarizeIdx), /notes = notes\.filter\(\(item\) => item\.id !== note\.id\)/,
+            'undo must also remove the note from the in-memory list');
         // Selection summarize must not create notes anymore.
         const selCall = ed.slice(ed.indexOf('handleSelectionAI('), ed.indexOf('x,') + 40);
         assert.doesNotMatch(selCall, /createNoteRecord/, 'selection summarize must not create notes');
