@@ -93,11 +93,20 @@ readability/word-difficulty checker.
 
 ## Part 2 — 20 New AI Features
 
-All suggestions follow one rule: **local-first**. NPad's brand is privacy, so
-the default path is on-device models (Transformers.js, WebLLM, Web Speech API)
-downloaded on demand and cached; note content only leaves the device if the
-user explicitly enables an opt-in cloud provider. Effort assumes a local-model
-path unless marked "cloud" (which is much simpler to ship).
+> **Status 2026-08:** the AI pipeline shipped behind the user's own
+> OpenAI-compatible provider (same-origin PHP proxy, per-user keys in
+> localStorage, explicit consent). Shipped from this list: #3 (tone rewrite),
+> #4 (smart titles), #5 (summarize — note & selection), #6 (translate),
+> #7 (extract to-dos), #8 (smart formatting). All non-option actions now
+> apply directly and are reversible via the AI undo/redo history. The next
+> wave of ideas, built on that pipeline, lives in **Part 2b** below.
+
+The remaining original ideas follow one rule: **local-first**. NPad's brand
+is privacy, so the ideal default is on-device models (Transformers.js, WebLLM,
+Web Speech API) downloaded on demand and cached; note content only leaves the
+device if the user explicitly enables an opt-in cloud provider. Effort
+assumes a local-model path unless marked "cloud" (which is much simpler to
+ship — and how the shipped items above were built).
 
 ### Writing help
 1. **AI proofreader** — in-place grammar/style suggestions (red squiggle →
@@ -154,7 +163,85 @@ path unless marked "cloud" (which is much simpler to ship).
 
 ---
 
-## Privacy guardrails for the AI work
+## Part 2b — Next wave, built on the shipped AI pipeline
+
+The current pipeline gives us for free: a hardened proxy, reasoning-model
+handling, direct-apply + undo/redo, the selection toolbar, Markdown→HTML
+conversion, the sanitizer, and diagnosable errors. Every idea below is
+scoped to what reuses that. Effort: **S** = days, **M** = 1–2 weeks,
+**L** = a month+.
+
+### Quick wins (S) — highest value per line of code
+1. **Proofread & punctuation (فارسی‌محور)** — fix grammar, spacing and
+   punctuation for the selection; the Persian half-fix (نیم‌فاصله) and
+   «، ؛» spacing is a market differentiator. Direct apply + undo. *(S)*
+2. **Bullet → prose & prose → bullets** — structural rewrites of the
+   selection; same pipeline as tone rewrite. *(S)*
+3. **Pros/cons & SWOT generator** — turn rough notes into a structured
+   مزایا/معایب or SWOT table (real `<table>`). *(S)*
+4. **Explain this formula** — selected `<math-block>` LaTeX → plain-language
+   explanation inserted below it. *(S)*
+5. **Prioritize my checklist** — reorder/label checklist tasks by priority
+   and natural-language dates («پنجشنبه» → real date). *(S)*
+6. **TL;DR presets** — summarize at three sizes (one-liner / paragraph /
+   detailed) via a small option modal (option-based, stays modal). *(S)*
+7. **Custom user prompts** — the user saves their own prompt templates
+   ("دستورهای من"); they appear in the AI menu and run against the note or
+   selection with direct apply. Turns every niche use case into a feature. *(S–M)*
+
+### Writing & organization (M)
+8. **Continue writing** — caret ghost-text or a "continue" action that
+   drafts the next paragraph from the note's context. *(M)*
+9. **Meeting minutes (text in → structured out)** — rough transcript/notes →
+   decisions / action items / owners / questions. *(M)*
+10. **Email & message drafts** — notes → a ready-to-send email with the tone
+    picker. *(M)*
+11. **Auto folder & tag suggestion** — one call that classifies the note
+    into the user's existing folders/tags; accept via the toast, one tap. *(M)*
+12. **Goal → subtask breakdown** — pick a checklist item, generate its
+    sub-checklist. *(M)*
+13. **FAQ / glossary / definitions** — extract terms and build a mini-glossary
+    section. *(M)*
+
+### Study & knowledge (M)
+14. **Flashcards & quizzes** — generate Q&A pairs from a note, review UI with
+    a simple scheduler, export CSV/Anki — aimed at the student audience. *(M)*
+15. **Ask this note** — sidebar Q&A scoped to the current note only
+    (one call per question; no multi-note index needed). *(M)*
+16. **Step-by-step math solver** — inside `<math-block>`, solver-style models
+    produce worked solutions (provider-dependent). *(M)*
+
+### Tables & code (M)
+17. **Text → table** — ✅ **Shipped 2026-08** (AI menu → "Convert to Table"):
+    select a statistical/tabular passage and it becomes a real table.
+    Double-gated rejection: non-tabular prose is refused client-side before
+    any tokens are spent, and non-table / NOT_TABLE model replies are
+    refused after — with one clear message either way. Persian digits and
+    units are handled; the parsed table is rebuilt locally (never trusting
+    model HTML) and applies directly with undo/redo.
+18. **Table → analysis** — summarize/trend-find the selected table. *(S)*
+19. **Code block helpers** — explain / comment / fix / convert / write tests
+    for the selected code block via the selection toolbar. *(M)*
+
+### Document-level (M–L)
+20. **Changelog from backups** — diff note backups with AI-summarized
+    change descriptions. *(M)*
+21. **Smart templates** — generate starting structures (meeting agenda,
+    weekly plan, contract outline) into a new note. *(M)*
+22. **Streaming responses** — stream the proxy reply so long generations
+    render progressively instead of waiting (server events through the PHP
+    proxy need `flush()` care on shared hosts). *(L)*
+
+### Bigger bets (L)
+23. **Multi-note Q&A (local RAG)** — the original #11, needs on-device
+    embeddings; keep it opt-in and local. *(L)*
+24. **Dictation & TTS** — original #14/#15 via Web Speech API (on-device,
+    no provider needed). *(M–L)*
+25. **OCR / smart paste from web** — original #16/#17; image input would
+    also require multimodal model support in the proxy. *(L)*
+
+---
+
 
 - **Model manager panel**: list downloaded local models, sizes, disk usage,
   one-tap delete; models live in Cache Storage / OPFS and are never bundled in

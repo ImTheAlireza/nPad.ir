@@ -70,6 +70,7 @@ import {
 } from './table.js';
 import { showDialog, confirmDialog, toast, escapeHtml } from './ui.js';
 import { initSpellcheck } from './spellcheck.js';
+import { initAutocomplete } from './autocomplete.js';
 import { initCodeblocks, detectLanguage } from './codeblock.js';
 import { initMath } from './mathblock.js';
 import { initOutline } from './outline.js';
@@ -81,8 +82,14 @@ import {
     runToneRewrite,
     runExtractTodos,
     runSmartFormat,
+    runTextToTable,
     openAISettings,
     handleSelectionAI,
+    setSelectionGestureOrigin,
+    aiHasUndo,
+    aiHasRedo,
+    aiUndo,
+    aiRedo,
     hasConsent,
     setConsent,
     getAIConfig,
@@ -224,6 +231,7 @@ export function initEditor({ strings, onEvent }) {
     let noteFilter = { type: 'all', id: null };
 
     const spell = initSpellcheck({ editor, strings, onEvent: track });
+    const autocomplete = initAutocomplete({ editor, strings, onEvent: track });
 
     /* Syntax-highlighted code blocks (self-contained module). */
     const code = initCodeblocks({
@@ -1432,6 +1440,20 @@ export function initEditor({ strings, onEvent }) {
     // supported way to drive contenteditable formatting without shipping a
     // full editing engine. Calls are centralised here for easy replacement.
     function exec(command, value = null) {
+        // AI direct-apply history takes precedence while it has entries: the
+        // native undo stack cannot reliably span the async AI replacement.
+        if (command === 'undo' && aiHasUndo()) {
+            editor.focus();
+            aiUndo(editor);
+            finishFormatting();
+            return;
+        }
+        if (command === 'redo' && aiHasRedo()) {
+            editor.focus();
+            aiRedo(editor);
+            finishFormatting();
+            return;
+        }
         editor.focus();
         restoreEditorSelection();
         try {
@@ -2839,6 +2861,13 @@ export function initEditor({ strings, onEvent }) {
     // Listen on document so the popup still fires when the pointer is
     // released outside the editor element (common during a drag-select).
     // One frame of defer lets the browser commit the final selection range.
+    // Where did this gesture begin? A drag-select often ENDS outside the
+    // editor, so the pointerup target is not enough — the pointerdown
+    // origin decides whether the AI popup may be re-evaluated.
+    document.addEventListener('pointerdown', (event) => {
+        setSelectionGestureOrigin(editor.contains(event.target));
+    }, true);
+
     document.addEventListener('pointerup', (event) => {
         // Ignore right-click / middle-click — those open context menus
         if (event.button !== 0) return;
@@ -2850,14 +2879,6 @@ export function initEditor({ strings, onEvent }) {
                 strings,
                 showDialog,
                 toast,
-                (title, content) => {
-                    const note = createNoteRecord({ title: title.slice(0, 120) });
-                    note.content = content.replace(/\n/g, '<br>');
-                    saveNote(note).then(() => {
-                        renderNotes();
-                        toast(strings.aiSaveAsNote, 'success');
-                    });
-                },
                 x,
                 y,
             );
@@ -4095,6 +4116,17 @@ ${exportHtml()}
             track('spellcheck_toggled');
         },
 
+        'toggle-autocomplete': () => {
+            autocomplete.setEnabled(!autocomplete.isEnabled());
+            toast(
+                autocomplete.isEnabled()
+                    ? (strings.autocompleteOn || 'Autocomplete on')
+                    : (strings.autocompleteOff || 'Autocomplete off'),
+                'success',
+            );
+            track('autocomplete_toggled');
+        },
+
         // ── AI actions ────────────────────────────────────────────────────
         'ai-smart-title': () => {
             runSmartTitle(editor, strings, showDialog, toast, (title) => {
@@ -4107,13 +4139,30 @@ ${exportHtml()}
         },
 
         'ai-summarize': () => {
-            runSummarize(editor, strings, showDialog, toast, (title, content) => {
+            runSummarize(editor, strings, showDialog, toast, async (title, content) => {
                 const note = createNoteRecord({ title: `${title} — ${activeNote()?.title || ''}`.slice(0, 120) });
-                note.content = content.replace(/\n/g, '<br>');
-                saveNote(note).then(() => {
-                    renderNotes();
-                    toast(strings.aiSaveAsNote, 'success');
-                });
+                note.html = content.replace(/\n/g, '<br>');
+                await saveNote(note);
+                // renderNotes renders the in-memory list — register the new
+                // note there too, or it only appears after a full reload.
+                notes.push(note);
+                renderNotes();
+                // The notes sidebar is usually closed — open it so the new
+                // summary note is actually visible after the toast.
+                setSidebarOpen(true);
+                toast(strings.aiSaveAsNote, 'success');
+                return {
+                    undo: async () => {
+                        await deleteNote(note.id);
+                        notes = notes.filter((item) => item.id !== note.id);
+                        renderNotes();
+                    },
+                    redo: async () => {
+                        await saveNote(note);
+                        if (!notes.some((item) => item.id === note.id)) notes.push(note);
+                        renderNotes();
+                    },
+                };
             });
             track('ai_summarize');
         },
@@ -4131,6 +4180,11 @@ ${exportHtml()}
         'ai-smart-format': () => {
             runSmartFormat(editor, strings, showDialog, toast);
             track('ai_smart_format');
+        },
+
+        'ai-text-to-table': () => {
+            runTextToTable(editor, strings, showDialog, toast);
+            track('ai_text_to_table');
         },
 
         'ai-settings': () => {

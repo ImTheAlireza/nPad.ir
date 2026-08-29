@@ -601,7 +601,7 @@ $hasChartJs = is_file(NPAD_ROOT . '/assets/js/vendor/chart.umd.min.js');
 <script src="<?= e(asset('assets/js/dashboard.js')) ?>" defer></script>
 <?php endif; ?>
 
-<script src="<?= e(asset('admin/ai-panel.js')) ?>" defer></script>
+<script type="module" src="<?= e(asset('admin/ai-panel.js')) ?>"></script>
 </body>
 </html>
 <?php $conn->close(); ?>

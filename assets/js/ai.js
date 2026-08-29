@@ -1,4 +1,5 @@
 import { sanitizeHtml } from './sanitize.js';
+import { requestChatCompletion } from './ai-parse.js';
 
 /**
  * NPad AI module.
@@ -13,8 +14,7 @@ import { sanitizeHtml } from './sanitize.js';
  * All settings (base URL, API key, model) are stored only in localStorage.
  * Note content is never sent anywhere unless the user has:
  *   a) configured a provider (base URL + key + model), AND
- *   b) given global consent (npad:ai-consent = "1"), AND
- *   c) confirmed the per-feature first-use prompt (stored per feature).
+ *   b) given global consent (npad:ai-consent = "1").
  *
  * The cloud-send indicator (☁ icon) appears on every AI menu item via CSS.
  */
@@ -35,7 +35,6 @@ const KEY_USER_BASE_URL = 'npad:ai-user-base-url';  // user's own credentials
 const KEY_USER_API_KEY  = 'npad:ai-user-api-key';
 const KEY_USER_MODEL    = 'npad:ai-user-model';
 const KEY_CONSENT       = 'npad:ai-consent';
-const KEY_FEAT_ACK      = 'npad:ai-feat-ack';
 
 /* -------------------------------------------------------------------------
    Read / write settings
@@ -99,24 +98,9 @@ export function setConsent(value) {
         localStorage.setItem(KEY_CONSENT, '1');
     } else {
         localStorage.removeItem(KEY_CONSENT);
-        // Revoke all per-feature acknowledgements too.
-        localStorage.removeItem(KEY_FEAT_ACK);
+        // Clean up the retired per-feature acknowledgement map, if any.
+        localStorage.removeItem('npad:ai-feat-ack');
     }
-}
-
-function hasFeatureAck(featureId) {
-    try {
-        const map = JSON.parse(localStorage.getItem(KEY_FEAT_ACK) || '{}');
-        return !!map[featureId];
-    } catch { return false; }
-}
-
-function setFeatureAck(featureId) {
-    try {
-        const map = JSON.parse(localStorage.getItem(KEY_FEAT_ACK) || '{}');
-        map[featureId] = true;
-        localStorage.setItem(KEY_FEAT_ACK, JSON.stringify(map));
-    } catch { /* quota */ }
 }
 
 /* -------------------------------------------------------------------------
@@ -176,6 +160,7 @@ export async function preflight(featureId, featureLabel, strings, showDialog, to
    connect-src 'self' CSP is never violated. The proxy forwards the request
    server-side and streams the provider's response back unchanged.
    ------------------------------------------------------------------------- */
+
 export async function callAI(systemPrompt, userContent, strings, {
     temperature = 1.0,
     maxTokens   = 512,
@@ -188,37 +173,22 @@ export async function callAI(systemPrompt, userContent, strings, {
         ? base
         : `${base}/chat/completions`;
 
-    const response = await fetch('/api/ai-proxy.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            endpoint,
-            apiKey,
-            payload: {
-                model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user',   content: userContent },
-                ],
-                temperature,
-                max_tokens: maxTokens,
-            },
-        }),
-    });
+    const payload = {
+        model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userContent },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+        // OpenAI reasoning models (o-series) reject max_tokens and require
+        // this name; other OpenAI-compatible providers ignore the extra key.
+        max_completion_tokens: maxTokens,
+    };
 
-    if (!response.ok) {
-        let msg = `HTTP ${response.status}`;
-        try {
-            const err = await response.json();
-            msg = err?.error?.message || msg;
-        } catch { /* ignore */ }
-        throw new Error(msg);
-    }
-
-    const data = await response.json();
-    const text = data?.choices?.[0]?.message?.content;
-    if (!text) throw new Error(strings?.aiEmptyResponse || 'Empty response from AI');
-    return text.trim();
+    // requestChatCompletion adds reasoning-model mitigations (larger budget,
+    // temperature handling) and one automatic retry on empty-length.
+    return requestChatCompletion(endpoint, apiKey, payload, strings);
 }
 
 /* -------------------------------------------------------------------------
@@ -347,28 +317,33 @@ async function testConnection(cfg, strings) {
         ? base
         : `${base}/chat/completions`;
 
-    const res = await fetch('/api/ai-proxy.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            endpoint,
-            apiKey: cfg.apiKey,
-            payload: {
-                model: cfg.model,
-                messages: [{ role: 'user', content: 'Say "ok" in one word.' }],
-                max_tokens: 5,
-            },
-        }),
-    });
-    if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try { const e = await res.json(); msg = e?.error?.message || msg; } catch {}
-        throw new Error(msg);
-    }
+    const payload = {
+        model: cfg.model,
+        messages: [{ role: 'user', content: 'Say "ok" in one word.' }],
+        max_tokens: 32,
+        max_completion_tokens: 32,
+    };
+    // Same diagnostics and reasoning-model mitigations as callAI: provider
+    // errors, HTML replies, empty and reasoning-only answers all fail the
+    // test with a clear message; thinking models get a real token budget.
+    await requestChatCompletion(endpoint, cfg.apiKey, payload, strings);
 }
 
 function escapeVal(str) {
     return (str || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/**
+ * Human count for a character total: "1,234 words" / "۵۶۷". Falls back to
+ * the raw number when Intl is unavailable.
+ */
+function fmtWords(charCount) {
+    const words = Math.max(1, Math.ceil(charCount / 6)); // ≈6 chars per word
+    try {
+        return new Intl.NumberFormat(document.documentElement.lang || 'en').format(words);
+    } catch {
+        return String(words);
+    }
 }
 
 /**
@@ -377,8 +352,10 @@ function escapeVal(str) {
  *  - replace non-breaking spaces and tabs with regular spaces
  *  - trim leading/trailing whitespace
  * Trims to `limit` chars at the nearest sentence boundary where possible.
+ * When a cut happens, `onTruncate(originalLength, keptLength)` fires — the
+ * caller uses it to warn the user that only part of the text is processed.
  */
-function cleanInput(raw, limit) {
+function cleanInput(raw, limit, onTruncate) {
     const s = (raw || '')
         .replace(/\u00a0/g, ' ')   // nbsp → space
         .replace(/\t/g, ' ')        // tabs → space
@@ -388,11 +365,201 @@ function cleanInput(raw, limit) {
     // Try to cut at a sentence boundary (. ! ?) within the last 200 chars of the limit
     const window = s.slice(limit - 200, limit);
     const m = window.match(/[.!?][\s\n]/g);
+    let cut;
     if (m) {
         const lastIdx = window.lastIndexOf(m[m.length - 1]);
-        return s.slice(0, limit - 200 + lastIdx + 1).trim();
+        cut = s.slice(0, limit - 200 + lastIdx + 1).trim();
+    } else {
+        cut = s.slice(0, limit).trim();
     }
-    return s.slice(0, limit).trim();
+    if (typeof onTruncate === 'function') {
+        try { onTruncate(s.length, cut.length); } catch { /* never let the warning break the run */ }
+    }
+    return cut;
+}
+
+/* -------------------------------------------------------------------------
+   Selection preservation
+   Opening a modal dialog moves focus out of the contenteditable, and after
+   close() browsers hand focus back to whatever triggered the dialog — not
+   the editor. execCommand() silently does nothing unless the editor has
+   focus, so every "Apply" path must re-focus and restore the exact range
+   that was captured before the first dialog opened.
+   ------------------------------------------------------------------------- */
+
+/**
+ * Text surrounding the selection: up to ~300 chars before and after,
+ * clipped at word boundaries so the model sees whole words. The selected
+ * text itself is excluded; `«…»` marks the gap where the word sits.
+ */
+function extractSelectionContext(editorEl, sel) {
+    try {
+        const range = sel.getRangeAt(0);
+        const scope = document.createRange();
+        scope.selectNodeContents(editorEl);
+
+        const beforeR = document.createRange();
+        beforeR.setStart(scope.startContainer, scope.startOffset);
+        beforeR.setEnd(range.startContainer, range.startOffset);
+        let before = beforeR.toString().replace(/\s+/g, ' ').trim();
+        if (before.length > 300) {
+            before = before.slice(-300);
+            // Clip to a word boundary at the START of the snippet.
+            const sp = before.indexOf(' ');
+            if (sp > -1) before = before.slice(sp + 1);
+        }
+
+        const afterR = document.createRange();
+        afterR.setStart(range.endContainer, range.endOffset);
+        afterR.setEnd(scope.endContainer, scope.endOffset);
+        let after = afterR.toString().replace(/\s+/g, ' ').trim();
+        if (after.length > 300) after = after.slice(0, 300);
+        // Clip at a word boundary at the END of the snippet.
+        if (after.length === 300) {
+            const sp = after.lastIndexOf(' ');
+            if (sp > -1) after = after.slice(0, sp);
+        }
+
+        return { before, after };
+    } catch {
+        return { before: '', after: '' };
+    }
+}
+
+/** Clone the live selection range when it is a non-collapsed range inside `editorEl`. */
+function captureSelectionRange(editorEl) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+    if (!editorEl.contains(sel.anchorNode) && !editorEl.contains(sel.focusNode)) return null;
+    try { return sel.getRangeAt(0).cloneRange(); } catch { return null; }
+}
+
+/** Focus the editor and restore `range` (or collapse to the end when absent). */
+function focusEditorWithRange(editorEl, range) {
+    editorEl.focus();
+    if (!range) return;
+    try {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    } catch { /* ignore */ }
+}
+
+/* -------------------------------------------------------------------------
+   Direct-apply history (AI undo / redo)
+   Non-configuration AI actions apply their result straight into the note.
+   Every in-editor mutation first snapshots the full content, so the app's
+   own undo/redo buttons (routed through aiUndo/aiRedo in editor.js) can
+   revert or re-apply it in one step — native undo cannot reliably span the
+   async AI round-trip.
+   ------------------------------------------------------------------------- */
+
+const AI_HISTORY_LIMIT = 25;
+const _aiUndoStack = [];   // { html } — content BEFORE each direct apply
+const _aiRedoStack = [];   // { html } — content a redo would restore
+
+export function aiHasUndo() { return _aiUndoStack.length > 0; }
+export function aiHasRedo() { return _aiRedoStack.length > 0; }
+
+/** Snapshot before a mutation; clears the redo branch (like native undo). */
+function recordApply(editorEl) {
+    if (!editorEl) return;
+    _aiUndoStack.push({ html: editorEl.innerHTML });
+    if (_aiUndoStack.length > AI_HISTORY_LIMIT) _aiUndoStack.shift();
+    _aiRedoStack.length = 0;
+}
+
+/** Restore the previous content. Returns true when an entry was applied. */
+export function aiUndo(editorEl) {
+    const entry = _aiUndoStack.pop();
+    if (!entry || !editorEl) return false;
+    _aiRedoStack.push({ html: editorEl.innerHTML });
+    if (_aiRedoStack.length > AI_HISTORY_LIMIT) _aiRedoStack.shift();
+    editorEl.innerHTML = entry.html;
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+}
+
+/** Re-apply the most recently undone content. Returns true when applied. */
+export function aiRedo(editorEl) {
+    const entry = _aiRedoStack.pop();
+    if (!entry || !editorEl) return false;
+    _aiUndoStack.push({ html: editorEl.innerHTML });
+    editorEl.innerHTML = entry.html;
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+}
+
+/**
+ * Success toast for direct applies with an Undo control that flips to Redo.
+ * `onUndo`/`onRedo` come from the feature: content restores use aiUndo/
+ * aiRedo; note-creation flows return { undo, redo } handles instead.
+ */
+function showAppliedToast(message, strings, { onUndo, onRedo } = {}) {
+    const region = document.getElementById('toastRegion');
+    if (!region) return;
+    const el = document.createElement('div');
+    el.className = 'toast toast--success ai-applied-toast';
+    const text = document.createElement('span');
+    text.className = 'ai-applied-toast__text';
+    text.textContent = message;
+    el.appendChild(text);
+
+    let dismissed = false;
+    const dismiss = () => {
+        if (dismissed) return;
+        dismissed = true;
+        el.classList.add('toast--leaving');
+        setTimeout(() => el.remove(), 200);
+    };
+    const timer = setTimeout(dismiss, 8000);
+
+    if (typeof onUndo === 'function') {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ai-applied-toast__action';
+        btn.textContent = strings?.aiUndo || 'Undo';
+        let undone = false;
+        btn.addEventListener('click', () => {
+            clearTimeout(timer);
+            if (!undone) {
+                onUndo();
+                undone = true;
+                text.textContent = strings?.aiUndone || 'Undone';
+                if (typeof onRedo === 'function') {
+                    btn.textContent = strings?.aiRedo || 'Redo';
+                } else {
+                    dismiss();
+                }
+            } else {
+                onRedo();
+                dismiss();
+            }
+        });
+        el.appendChild(btn);
+    }
+    region.appendChild(el);
+}
+
+/** Apply a text/HTML replacement directly, with history + toast. */
+function applyDirectToEditor(editorEl, strings, label, hasSelection, savedRange, runInsert) {
+    recordApply(editorEl);
+    try {
+        if (hasSelection) {
+            focusEditorWithRange(editorEl, savedRange);
+        } else {
+            editorEl.focus();
+            document.execCommand('selectAll');
+        }
+        runInsert();
+    } catch (err) {
+        _aiUndoStack.pop(); // nothing changed — do not keep a bogus entry
+        throw err;
+    }
+    showAppliedToast(label, strings, {
+        onUndo: () => aiUndo(editorEl),
+        onRedo: () => aiRedo(editorEl),
+    });
 }
 
 /* -------------------------------------------------------------------------
@@ -434,7 +601,11 @@ export async function runSmartTitle(editorEl, strings, showDialog, toast, onAppl
             ],
         });
         if (action === 'apply') {
-            const chosen = document.querySelector('input[name="ai-title"]:checked')?.value;
+            // The dialog body stays in the DOM after close(); query inside it
+            // rather than the whole document so a concurrent dialog can never
+            // shadow the radio group.
+            const chosen = document.getElementById('appDialog')
+                ?.querySelector('input[name="ai-title"]:checked')?.value;
             if (chosen && typeof onApplyTitle === 'function') onApplyTitle(chosen);
         }
     } catch (err) {
@@ -465,18 +636,15 @@ export async function runSummarize(editorEl, strings, showDialog, toast, onCreat
         const result = await callAI(sys, text, strings, { temperature: 0.0, maxTokens: sumMaxTok });
         loadingToast();
 
-        const action = await showDialog({
-            title: strings.aiSummarize,
-            bodyHtml: `
-                <div style="max-height:260px;overflow-y:auto;font-size:13px;white-space:pre-wrap;font-family:var(--font-mono);background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md)">${escapeHtmlVal(result)}</div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiSummaryHint}</p>`,
-            buttons: [
-                { label: strings.aiSaveAsNote, action: 'save',   variant: 'btn--primary' },
-                { label: strings.cancel,        action: 'cancel', variant: 'btn--ghost' },
-            ],
-        });
-        if (action === 'save' && typeof onCreateNote === 'function') {
-            onCreateNote(strings.aiSummaryNoteTitle, result);
+        // Apply directly: create the summary note without a confirmation
+        // round. onCreateNote returns { undo, redo } so the toast button can
+        // remove/re-create it.
+        if (typeof onCreateNote === 'function') {
+            const handle = await onCreateNote(strings.aiSummaryNoteTitle, result);
+            showAppliedToast(strings.aiNoteCreated || 'Summary note created', strings, {
+                onUndo: () => handle?.undo?.(),
+                onRedo: () => handle?.redo?.(),
+            });
         }
     } catch (err) {
         loadingToast();
@@ -491,11 +659,22 @@ export async function runToneRewrite(editorEl, strings, showDialog, toast) {
 
     const sel = window.getSelection();
     const hasSelection = sel && sel.rangeCount && !sel.isCollapsed && editorEl.contains(sel.anchorNode);
+    // Capture the exact range now: the picker and result dialogs will take
+    // focus and collapse the live selection.
+    const savedRange = captureSelectionRange(editorEl);
+    const FULL_LIMIT = 30_000;
+
+    const rawText = hasSelection ? sel.toString() : (editorEl.innerText || '');
+    // Full-note mode must never silently drop content: if the note exceeds
+    // the processing budget, abort with guidance instead of rewriting only
+    // the first chunk and wiping the rest.
+    if (!hasSelection && rawText.length > FULL_LIMIT + 2000) {
+        toast(`${strings.aiNoteTooLong || 'This note is too long for one pass — select the part to rewrite and try again'} (${fmtWords(rawText.length)})`, 'info');
+        return;
+    }
     const _toneWarn = (orig, cut) =>
         toast(`${strings.aiTruncated || 'Text trimmed to'} ${fmtWords(cut)} ${strings.aiTruncatedFor || 'for AI'}`, 'info');
-    const inputText = hasSelection
-        ? cleanInput(sel.toString(), 30_000, _toneWarn)
-        : cleanInput(editorEl.innerText || '', 30_000, _toneWarn);
+    const inputText = cleanInput(rawText, FULL_LIMIT, _toneWarn);
 
     if (!inputText) { toast(strings.aiEmptyNote, 'info'); return; }
 
@@ -525,7 +704,8 @@ export async function runToneRewrite(editorEl, strings, showDialog, toast) {
     });
     if (pick !== 'rewrite') return;
 
-    const tone = document.querySelector('input[name="ai-tone"]:checked')?.value || 'formal';
+    const tone = document.getElementById('appDialog')
+        ?.querySelector('input[name="ai-tone"]:checked')?.value || 'formal';
     const toneLabel = tones.find(t => t.id === tone)?.label || tone;
 
     const loadingToast = showLoadingIndicator(strings.aiWorking);
@@ -535,25 +715,11 @@ export async function runToneRewrite(editorEl, strings, showDialog, toast) {
         const result = await callAI(sys, inputText, strings, { temperature: 1.0, maxTokens: maxTok });
         loadingToast();
 
-        const action = await showDialog({
-            title: `${strings.aiToneRewrite} — ${toneLabel}`,
-            bodyHtml: `
-                <div style="max-height:240px;overflow-y:auto;font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md)">${escapeHtmlVal(result)}</div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiRewriteHint}</p>`,
-            buttons: [
-                { label: strings.aiApply, action: 'apply', variant: 'btn--primary' },
-                { label: strings.cancel,   action: 'cancel', variant: 'btn--ghost' },
-            ],
+        // Apply directly (reversible via undo/redo) — the tone picker above
+        // stays because it is a genuine option choice.
+        applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, () => {
+            document.execCommand('insertText', false, result);
         });
-        if (action === 'apply') {
-            if (hasSelection) {
-                document.execCommand('insertText', false, result);
-            } else {
-                editorEl.focus();
-                document.execCommand('selectAll');
-                document.execCommand('insertText', false, result);
-            }
-        }
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
@@ -584,22 +750,18 @@ export async function runExtractTodos(editorEl, strings, showDialog, toast) {
         }
 
         const tasks = result.split('\n').map(t => t.replace(/^[-•*]\s*/, '').trim()).filter(Boolean);
-        const preview = tasks.map(t => `<li style="font-size:13px;margin:4px 0">${escapeHtmlVal(t)}</li>`).join('');
-
-        const action = await showDialog({
-            title: strings.aiExtractTodos,
-            bodyHtml: `
-                <p style="font-size:13px;color:var(--text-muted);margin-bottom:var(--space-2)">${strings.aiTodosFound.replace('{n}', tasks.length)}</p>
-                <ul style="max-height:200px;overflow-y:auto;padding-inline-start:var(--space-4)">${preview}</ul>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiTodosHint}</p>`,
-            buttons: [
-                { label: strings.aiInsertChecklist, action: 'insert', variant: 'btn--primary' },
-                { label: strings.cancel,             action: 'cancel', variant: 'btn--ghost' },
-            ],
-        });
-        if (action === 'insert') {
+        // Apply directly: the checklist is appended and can be undone.
+        recordApply(editorEl);
+        try {
             insertChecklistItems(editorEl, tasks);
+        } catch (err) {
+            _aiUndoStack.pop();
+            throw err;
         }
+        showAppliedToast(strings.aiTodosInserted || 'Checklist inserted', strings, {
+            onUndo: () => aiUndo(editorEl),
+            onRedo: () => aiRedo(editorEl),
+        });
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
@@ -613,11 +775,21 @@ export async function runSmartFormat(editorEl, strings, showDialog, toast) {
 
     const sel = window.getSelection();
     const hasSelection = sel && sel.rangeCount && !sel.isCollapsed && editorEl.contains(sel.anchorNode);
+    // Capture the exact range now: the result dialog will take focus and
+    // collapse the live selection.
+    const savedRange = captureSelectionRange(editorEl);
+    const FULL_LIMIT = 30_000;
+
+    const rawText = hasSelection ? sel.toString() : (editorEl.innerText || '');
+    // Full-note mode must never silently drop content: applying would
+    // replace the WHOLE note with a rewrite of the first chunk only.
+    if (!hasSelection && rawText.length > FULL_LIMIT + 2000) {
+        toast(`${strings.aiNoteTooLong || 'This note is too long for one pass — select the part to format and try again'} (${fmtWords(rawText.length)})`, 'info');
+        return;
+    }
     const _fmtWarn = (orig, cut) =>
         toast(`${strings.aiTruncated || 'Text trimmed to'} ${fmtWords(cut)} ${strings.aiTruncatedFor || 'for AI'}`, 'info');
-    const inputText = hasSelection
-        ? cleanInput(sel.toString(), 30_000, _fmtWarn)
-        : cleanInput(editorEl.innerText || '', 30_000, _fmtWarn);
+    const inputText = cleanInput(rawText, FULL_LIMIT, _fmtWarn);
 
     if (!inputText) { toast(strings.aiEmptyNote, 'info'); return; }
 
@@ -631,31 +803,278 @@ export async function runSmartFormat(editorEl, strings, showDialog, toast) {
         // Strip any markdown code fences the model may wrap around HTML,
         // then sanitize through the same allow-list used for paste/import.
         const raw = result.replace(/^```html?\n?/i, '').replace(/\n?```$/, '').trim();
-        const cleaned = sanitizeHtml(raw);
+        // Some models answer in Markdown despite the HTML-only instruction.
+        // When no HTML tag is present, convert the markdown structure first
+        // so the preview shows real formatting instead of raw "##" text.
+        const asHtml = /<[a-z][\s\S]*>/i.test(raw) ? raw : markdownToHtml(raw);
+        const cleaned = sanitizeHtml(asHtml);
 
-        const action = await showDialog({
-            title: strings.aiSmartFormat,
-            bodyHtml: `
-                <div style="max-height:240px;overflow-y:auto;font-size:13px;border:1px solid var(--border-subtle);padding:var(--space-3);border-radius:var(--radius-md)">${cleaned}</div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiFormatHint}</p>`,
-            buttons: [
-                { label: strings.aiApply, action: 'apply', variant: 'btn--primary' },
-                { label: strings.cancel,   action: 'cancel', variant: 'btn--ghost' },
-            ],
+        // Apply directly (reversible via undo/redo) — no confirmation round.
+        applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, () => {
+            document.execCommand('insertHTML', false, cleaned);
         });
-        if (action === 'apply') {
-            if (hasSelection) {
-                document.execCommand('insertHTML', false, cleaned);
-            } else {
-                editorEl.focus();
-                document.execCommand('selectAll');
-                document.execCommand('insertHTML', false, cleaned);
-            }
-        }
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
     }
+}
+
+/* -------------------------------------------------------------------------
+   Text → table (AI)
+   The model receives the selected text and MUST answer with one Markdown
+   table. The reply is re-parsed here (never trusted directly): rows/cells
+   are extracted, bounded, escaped and re-encrypted into the editor's own
+   createTableHtml shape through a pure DOM build. Non-tabular input or a
+   non-table reply is rejected with a clear message.
+   ------------------------------------------------------------------------- */
+
+/**
+ * Parse a Markdown table from a model reply.
+ * @returns {{ header: string[], rows: string[][] } | null}
+ */
+function parseMarkdownTable(reply) {
+    const lines = String(reply || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const tableLines = lines.filter((line) => line.startsWith('|') && line.endsWith('|') && line.length > 2);
+    if (tableLines.length < 2) return null;
+
+    const splitRow = (line) => line
+        .slice(1, -1)
+        .split('|')
+        .map((cell) => cell.replace(/`/g, '').trim());
+
+    // A separator row is dashes/colons only — a GFM table must carry one.
+    const isSeparator = (cells) => cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell));
+
+    const header = splitRow(tableLines[0]);
+    if (!header.length || header.every((cell) => !cell)) return null;
+    if (isSeparator(header)) return null;
+
+    const bodyLines = tableLines.slice(1);
+    if (!bodyLines.length) return null;
+
+    let start = 0;
+    if (isSeparator(splitRow(bodyLines[0]))) start = 1;
+    if (bodyLines.length <= start) return null; // separator but no data rows
+
+    const rows = bodyLines.slice(start).map(splitRow);
+    if (!rows.length) return null;
+    // Absurd reply guard: no legitimate answer to a <=15k-char selection
+    // needs anywhere near this many rows; refuse rather than freeze.
+    if (rows.length > 500) return null;
+    // Normalise every row to the header width; ragged replies get padded/truncated.
+    // A single-value column (a list of figures/dates) is valid table data.
+    const width = header.length;
+    if (width < 1 || width > 20) return null;
+    const fixed = rows.map((row) => {
+        const cells = row.slice(0, width);
+        while (cells.length < width) cells.push('');
+        return cells;
+    });
+    if (fixed.some((row) => row.every((cell) => !cell))) return null;
+    return { header, rows: fixed };
+}
+
+/** Build a table element from parsed rows (header + rows, escaped). */
+function buildTableElement({ header, rows }) {
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const text of header) {
+        const th = document.createElement('th');
+        th.setAttribute('scope', 'col');
+        th.textContent = text;
+        headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const row of rows) {
+        const tr = document.createElement('tr');
+        for (const text of row) {
+            const td = document.createElement('td');
+            td.textContent = text;
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    return table;
+}
+
+/**
+ * Post-insert placement, mirroring the editor's own insert-table flow:
+ * browser heuristics can nest the new table in a paragraph, list item or
+ * table cell — lift it to a top-level child of the editor, add a spacer
+ * paragraph after it (so the caret can escape below the table) and place
+ * the caret in the first cell.
+ */
+function placeTableLikeEditor(editorEl, table) {
+    const nestingCell = table.parentElement?.closest?.('td, th');
+    if (nestingCell) {
+        nestingCell.closest('table').after(table);
+    } else if (table.parentElement && table.parentElement !== editorEl && editorEl.contains(table.parentElement)) {
+        const host = table.parentElement.closest('p, div, li, blockquote, h1, h2, h3, h4, h5, h6, summary');
+        if (host && host !== editorEl && editorEl.contains(host)) host.after(table);
+    }
+    const next = table.nextElementSibling;
+    if (!next || !/^(P|DIV|TABLE|HR|UL|OL|BLOCKQUOTE|PRE|DETAILS|H[1-6])$/.test(next.tagName)) {
+        const spacer = document.createElement('p');
+        spacer.appendChild(document.createElement('br'));
+        table.after(spacer);
+    }
+    const firstCell = table.querySelector('td, th');
+    if (firstCell) {
+        try {
+            const range = document.createRange();
+            range.selectNodeContents(firstCell);
+            range.collapse(true);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } catch { /* caret placement is cosmetic */ }
+    }
+}
+
+/**
+ * 6. Text → table: converts a selected statistical/tabular passage into a
+ * real table. Rejects non-tabular text before the call and non-table
+ * replies after it — the user gets a clear "not tabular" message either way.
+ * The table replaces the selection and is reversible via undo/redo.
+ */
+export async function runTextToTable(editorEl, strings, showDialog, toast) {
+    const ready = await preflight('text-to-table', strings.aiTextToTable, strings, showDialog, toast);
+    if (!ready) return;
+
+    const sel = window.getSelection();
+    const hasSelection = sel && sel.rangeCount && !sel.isCollapsed && editorEl.contains(sel.anchorNode);
+    if (!hasSelection) {
+        toast(strings.aiTextToTableNeedsSelection || 'Select the text to convert into a table first.', 'info');
+        return;
+    }
+    // Capture the exact range now: nothing else here opens a dialog, but a
+    // captured range is what every other tool restores anyway.
+    const savedRange = captureSelectionRange(editorEl);
+
+    const inputText = cleanInput(sel.toString(), 15_000,
+        (o, cut) => toast(`${strings.aiTruncated || 'Text trimmed to'} ${fmtWords(cut)} ${strings.aiTruncatedFor || 'for AI'}`, 'info'));
+    if (!inputText) { toast(strings.aiEmptyNote, 'info'); return; }
+
+    const notTabular = () => toast(
+        strings.aiTextToTableNotTabular
+            || 'The AI could not turn this selection into a table — it probably does not contain table-shaped data.',
+        'error',
+    );
+
+    const loadingToast = showLoadingIndicator(strings.aiWorking);
+    try {
+        // The MODEL decides whether the text is table-shaped — prose with
+        // embedded statistics must convert (the old local heuristic wrongly
+        // rejected it). The parser below stays as the hard quality gate.
+        const sys = `Turn the user's text into ONE Markdown table. First decide whether the text contains table-shaped information: figures with labels, percentages, comparisons, categories, ranked or delimited rows — even inside flowing prose. If it does, answer with the table only, no explanation: first row is the header, keep the input language, columns are the categories, rows are the items. If the text truly has no table-shaped data, reply exactly NOT_TABLE.`;
+        const result = await callAI(sys, inputText, strings, { temperature: 0.0, maxTokens: 1200 });
+        loadingToast();
+
+        const reply = result.trim();
+        if (/^NOT_TABLE\b/i.test(reply)) {
+            notTabular();
+            return;
+        }
+        // Strip a possible code fence, then re-parse the table ourselves.
+        const raw = reply.replace(/^```(?:markdown|md)?\n?/i, '').replace(/\n?```$/, '').trim();
+        const parsed = parseMarkdownTable(raw);
+        if (!parsed) {
+            notTabular();
+            return;
+        }
+
+        const table = buildTableElement(parsed);
+        recordApply(editorEl);
+        try {
+            // Swap the selection for the table. execCommand keeps the
+            // browser's native undo path alive; the range insert is the
+            // fallback for engines without it.
+            focusEditorWithRange(editorEl, savedRange);
+            const existing = new Set(editorEl.querySelectorAll('table'));
+            let inserted = null;
+            try {
+                document.execCommand('insertHTML', false, table.outerHTML);
+            } catch { /* fall through to the range insert */ }
+            inserted = [...editorEl.querySelectorAll('table')].find((t) => !existing.has(t)) || null;
+            if (!inserted) {
+                const range = savedRange || document.createRange();
+                range.deleteContents();
+                range.insertNode(table);
+                inserted = table;
+            }
+            placeTableLikeEditor(editorEl, inserted);
+        } catch (err) {
+            _aiUndoStack.pop();
+            throw err;
+        }
+        showAppliedToast(strings.aiApplied || 'Applied to your note', strings, {
+            onUndo: () => aiUndo(editorEl),
+            onRedo: () => aiRedo(editorEl),
+        });
+    } catch (err) {
+        loadingToast();
+        toast(`${strings.aiError}: ${err.message}`, 'error');
+    }
+}
+
+/**
+ * Minimal Markdown → HTML for Smart Formatting results that arrive as
+ * Markdown instead of HTML. Supports headings, bold/italic, inline code,
+ * bullet and numbered lists; everything else becomes a paragraph.
+ * The output is still passed through the allow-list sanitizer afterwards.
+ */
+function markdownToHtml(md) {
+    const escapeIn = (s) => s
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const inline = (s) => escapeIn(s)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+
+    const lines = String(md || '').split(/\r?\n/);
+    const out = [];
+    let list = null; // 'ul' | 'ol'
+
+    const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) { closeList(); continue; }
+
+        const heading = trimmed.match(/^(#{1,4})\s+(.*)$/);
+        if (heading) {
+            closeList();
+            const level = Math.min(heading[1].length + 1, 4); // # → h2 … #### → h4
+            out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+            continue;
+        }
+
+        const bullet = trimmed.match(/^[-*•]\s+(.*)$/);
+        if (bullet) {
+            if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+            out.push(`<li>${inline(bullet[1])}</li>`);
+            continue;
+        }
+
+        const numbered = trimmed.match(/^\d+[.)]\s+(.*)$/);
+        if (numbered) {
+            if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+            out.push(`<li>${inline(numbered[1])}</li>`);
+            continue;
+        }
+
+        closeList();
+        out.push(`<p>${inline(trimmed)}</p>`);
+    }
+    closeList();
+    return out.join('\n');
 }
 
 /* -------------------------------------------------------------------------
@@ -708,6 +1127,55 @@ let _selToolbar    = null;
 let _selVisible    = false;
 let _savedRange    = null; // preserved before dialog steals focus
 let _ignoreNextUp  = false; // suppress re-evaluation when clicking toolbar itself
+// The selection the popup was already surfaced for. While the selection
+// stays live (no collapse), re-evaluations must not pop the popup back up
+// after the user clicked some other UI (formatting buttons, menus...).
+let _surfacedKey   = null;
+// Whether the active pointer gesture began inside the editor (see
+// setSelectionGestureOrigin).
+let _gestureInEditor = false;
+// Text around the selected single word (before/after snippets) — captured
+// when the popup is surfaced so word actions can answer in context.
+let _wordContext = null;
+
+/**
+ * Record where the current pointer gesture began. editor.js reports every
+ * document-level pointerdown (capture phase). The popup may only be
+ * (re-)evaluated when the gesture started INSIDE the editor: a drag-select
+ * that ends outside still qualifies, but clicking any toolbar button, menu
+ * or panel does not — formatting commands keep the selection alive (they
+ * preventDefault mousedown) and even mutate the DOM, so without this gate
+ * the popup popped right back up over the clicked button.
+ */
+export function setSelectionGestureOrigin(inEditor) {
+    _gestureInEditor = !!inEditor;
+}
+
+/** Drop the selection-toolbar singleton (test seam — one document per page in real use). */
+export function __resetSelectionToolbarForTests() {
+    _selToolbar = null;
+    _selVisible = false;
+    _savedRange = null;
+    _ignoreNextUp = false;
+    _surfacedKey = null;
+    _gestureInEditor = false;
+}
+
+/** Stable-enough identity for the live selection: endpoints + its text.
+ *  Collisions are harmless — the key is cleared whenever the selection
+ *  collapses, so an equal key always means the same uninterrupted selection. */
+function selectionKey(sel) {
+    try {
+        const text = sel.toString();
+        return [
+            sel.anchorNode?.nodeType, sel.anchorNode?.nodeName, sel.anchorOffset,
+            sel.focusNode?.nodeType, sel.focusNode?.nodeName, sel.focusOffset,
+            text.length, text.slice(0, 24),
+        ].join('|');
+    } catch {
+        return null;
+    }
+}
 
 function getSelToolbar() {
     if (_selToolbar) return _selToolbar;
@@ -777,20 +1245,38 @@ function _showSelToolbar(el, x, y) {
  * editorEl  — the contenteditable div
  * x, y      — clientX/Y of the pointer event
  */
-export function handleSelectionAI(editorEl, strings, showDialog, toast, onCreateNote, x, y) {
+export function handleSelectionAI(editorEl, strings, showDialog, toast, x, y) {
     // If the user just clicked a toolbar button, skip this evaluation
     if (_ignoreNextUp) { _ignoreNextUp = false; return; }
+    // Only selection gestures that STARTED in the editor may surface the
+    // popup — clicking any other UI (formatting buttons keep the selection
+    // alive and mutate the DOM) must never bring it back.
+    if (!_gestureInEditor) return;
 
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        _surfacedKey = null;
         _hideSelToolbar();
         return;
     }
     // Selection must be inside the editor
     if (!editorEl.contains(sel.anchorNode) && !editorEl.contains(sel.focusNode)) {
+        _surfacedKey = null;
         _hideSelToolbar();
         return;
     }
+    // The editor's formatting buttons keep the selection alive (they
+    // preventDefault mousedown so focus stays in the editor), so every
+    // button click re-runs this handler with the selection intact. Surface
+    // the popup for a given selection exactly once: if this is still the
+    // selection the user already saw the popup for, keep it hidden — a NEW
+    // selection (different endpoints/text) brings it back.
+    const key = selectionKey(sel);
+    if (key !== null && key === _surfacedKey) {
+        _hideSelToolbar();
+        return;
+    }
+    _surfacedKey = key;
 
     const _rawSel = sel.toString().trim();
     const text = _rawSel.length > 40_000 ? _rawSel.slice(0, 40_000).trim() : _rawSel;
@@ -801,11 +1287,17 @@ export function handleSelectionAI(editorEl, strings, showDialog, toast, onCreate
 
     // Single word = no whitespace
     const isSingleWord = !/\s/.test(text) && text.length > 0 && text.length <= 40;
+    // Capture the surrounding text once, when the popup is surfaced: the
+    // word actions use it so their answers fit how the word is used here.
+    _wordContext = isSingleWord ? extractSelectionContext(editorEl, sel) : null;
 
     const toolbar = getSelToolbar();
 
     const buttons = isSingleWord
-        ? [{ action: 'word-replace',   label: strings.aiSelWordReplace || 'Suggest replacements', icon: true }]
+        ? [
+            { action: 'word-replace', label: strings.aiSelWordReplace || 'Suggest replacements', icon: true },
+            { action: 'word-explain', label: strings.aiSelWordExplain || 'Explain word',          icon: true },
+          ]
         : [
             { action: 'sel-summarize', label: strings.aiSelSummarize  || 'Summarize' },
             { action: 'sel-rewrite',   label: strings.aiSelRewrite    || 'Rewrite'   },
@@ -830,26 +1322,19 @@ export function handleSelectionAI(editorEl, strings, showDialog, toast, onCreate
         const action    = btn.dataset.aiSel;
         const savedText = _savedRange ? _savedRange.toString().trim() : text;
         _hideSelToolbar();
-        await runSelectionAction(action, savedText, editorEl, strings, showDialog, toast, onCreateNote);
+        await runSelectionAction(action, savedText, editorEl, strings, showDialog, toast, _savedRange, _wordContext);
     };
 
     _showSelToolbar(toolbar, x, y);
 }
 
-function restoreSavedRange() {
-    if (!_savedRange) return;
-    try {
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(_savedRange);
-    } catch { /* ignore */ }
-}
-
-async function runSelectionAction(action, text, editorEl, strings, showDialog, toast, onCreateNote) {
+async function runSelectionAction(action, text, editorEl, strings, showDialog, toast, savedRange, wordContext) {
     const ready = await preflight(action, action, strings, showDialog, toast);
     if (!ready) return;
 
     const loading = showLoadingIndicator(strings.aiWorking || 'AI is working…');
+    // Safety net: no code path may leave the spinner toast behind.
+    const finishLoading = () => { try { loading(); } catch { /* ignore */ } };
 
     try {
         let result;
@@ -860,23 +1345,12 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 'Summarize in input language (Persian/English), 2-4 bullets. Bullets only.',
                 text, strings, { temperature: 0.0, maxTokens: selSumMaxTok },
             );
-            loading();
-            const act = await showDialog({
-                title: strings.aiSelSummarize || 'Summarize',
-                bodyHtml: `<div style="font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md);max-height:200px;overflow-y:auto">${escapeHtmlVal(result)}</div>`,
-                buttons: [
-                    { label: strings.aiSaveAsNote || 'Save as note',       action: 'save',    variant: 'btn--primary' },
-                    { label: strings.aiApply      || 'Replace selection',   action: 'replace', variant: 'btn--ghost'   },
-                    { label: strings.cancel       || 'Cancel',              action: 'cancel',  variant: 'btn--ghost'   },
-                ],
-            });
-            if (act === 'save' && typeof onCreateNote === 'function') {
-                onCreateNote(strings.aiSummaryNoteTitle || 'Summary', result);
-            } else if (act === 'replace') {
-                await new Promise(r => setTimeout(r, 0));
-                restoreSavedRange();
+            finishLoading();
+            // Apply directly into the selection — a selection summary is an
+            // in-place edit, not a new note (undoable like the other tools).
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
                 document.execCommand('insertText', false, result);
-            }
+            });
 
         } else if (action === 'sel-rewrite') {
             const rwText = cleanInput(text, 15_000,
@@ -885,8 +1359,10 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 'Rewrite in same language and meaning. Return only the rewritten text.',
                 rwText, strings, { temperature: 1.0, maxTokens: Math.min(1200, Math.ceil(rwText.length / 3.5 * 1.2) + 30) },
             );
-            loading();
-            await _applyOrDiscard(result, strings, showDialog);
+            finishLoading();
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'sel-shorten') {
             const shText = cleanInput(text, 15_000,
@@ -895,8 +1371,10 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 'Shorten and condense. Same language. Return only the shortened text.',
                 shText, strings, { temperature: 1.0, maxTokens: Math.min(600, Math.ceil(shText.length / 3.5 * 0.7) + 20) },
             );
-            loading();
-            await _applyOrDiscard(result, strings, showDialog);
+            finishLoading();
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'sel-expand') {
             const exText = cleanInput(text, 8_000,
@@ -905,8 +1383,10 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 'Expand with more detail and richness. Same language. Return only the expanded text.',
                 exText, strings, { temperature: 1.0, maxTokens: 500 },
             );
-            loading();
-            await _applyOrDiscard(result, strings, showDialog);
+            finishLoading();
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'sel-translate') {
             const trText = cleanInput(text, 25_000,
@@ -915,15 +1395,22 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 'Translate: if Persian→English, if English→Persian. Return only the translation.',
                 trText, strings, { temperature: 1.3, maxTokens: Math.min(2000, Math.ceil(trText.length / 3.5 * 1.3) + 30) },
             );
-            loading();
-            await _applyOrDiscard(result, strings, showDialog);
+            finishLoading();
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'word-replace') {
+            // Context makes the suggestions fit how the word is used here
+            // (e.g. «مربع» as a shape vs. a neighborhood, "bank" river vs. money).
+            const ctx = wordContext && (wordContext.before || wordContext.after)
+                ? `\n\nContext (the word appears where «…» stands): «${wordContext.before} … ${wordContext.after}»`
+                : '';
             result = await callAI(
-                `5 synonym/replacement words for the given word. Same language (Persian/English). One per line, no numbering, no explanation.`,
-                text, strings, { temperature: 1.5, maxTokens: 40 },
+                `5 synonym/replacement words for the word where «…» stands in the context. Same language as the word. Fit the meaning in this exact context. One per line, no numbering, no explanation.${ctx}`,
+                text, strings, { temperature: 1.5, maxTokens: 120 },
             );
-            loading();
+            finishLoading();
             const words = result.split('\n').map(w => w.trim()).filter(Boolean).slice(0, 5);
             const listHtml = words.map(w =>
                 `<button class="ai-word-replace-option" type="button">${escapeHtmlVal(w)}</button>`
@@ -947,34 +1434,39 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                             // then restore the saved range and insert.
                             if (dlg) dlg.close();
                             setTimeout(() => {
-                                restoreSavedRange();
+                                focusEditorWithRange(editorEl, savedRange);
                                 document.execCommand('insertText', false, word);
                             }, 0);
                         });
                     });
                 },
             });
+        } else if (action === 'word-explain') {
+            // Explain the word in its context: meaning, role here, and a
+            // couple of near-synonyms — in the note's language.
+            const ctx = wordContext && (wordContext.before || wordContext.after)
+                ? `\n\nContext (the word appears where «…» stands): «${wordContext.before} … ${wordContext.after}»`
+                : '';
+            result = await callAI(
+                `Explain the word where «…» stands, for someone writing this text. Same language as the word. Answer in 1-3 short lines: what it means here (in this context), and 1-2 close synonyms. No preamble, no numbering.${ctx}`,
+                text, strings, { temperature: 0.4, maxTokens: 160 },
+            );
+            finishLoading();
+            await showDialog({
+                title: strings.aiSelWordExplain || 'Explain word',
+                bodyHtml: `
+                    <p dir="auto" style="font-size:13px;font-weight:600;margin:0 0 var(--space-3)">${escapeHtmlVal(text)}</p>
+                    <div dir="auto" style="font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md)">${escapeHtmlVal(result)}</div>`,
+                buttons: [
+                    { label: strings.cancel || 'Cancel', action: 'cancel', variant: 'btn--ghost' },
+                ],
+            });
+        } else {
+            finishLoading();
         }
     } catch (err) {
-        loading();
+        finishLoading();
         toast(`${strings.aiError || 'AI error'}: ${err.message}`, 'error');
     }
 }
 
-async function _applyOrDiscard(result, strings, showDialog) {
-    const act = await showDialog({
-        title: strings.aiApply || 'Result',
-        bodyHtml: `<div style="font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md);max-height:220px;overflow-y:auto">${escapeHtmlVal(result)}</div>`,
-        buttons: [
-            { label: strings.aiApply || 'Replace selection', action: 'apply',  variant: 'btn--primary' },
-            { label: strings.cancel  || 'Cancel',            action: 'cancel', variant: 'btn--ghost'   },
-        ],
-    });
-    if (act === 'apply') {
-        // Dialog has already closed by the time the promise resolves,
-        // but give the browser one tick to return focus to the editor.
-        await new Promise(r => setTimeout(r, 0));
-        restoreSavedRange();
-        document.execCommand('insertText', false, result);
-    }
-}

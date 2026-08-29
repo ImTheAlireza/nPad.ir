@@ -395,6 +395,9 @@ return [
         'tone_rewrite'      => 'Tone Rewriter…',
         'extract_todos'     => 'Extract To-Dos…',
         'smart_format'      => 'Smart Formatting…',
+        'text_to_table'     => 'Convert to Table…',
+        'text_to_table_needs_selection' => 'Select the text to convert into a table first.',
+        'text_to_table_not_tabular' => 'The AI could not turn this selection into a table — it probably does not contain table-shaped data (figures with labels, percentages, comparisons or delimited rows).',
         'ai_settings'       => 'AI Settings…',
 
         // Config / consent
@@ -432,13 +435,24 @@ return [
 
         // Common actions
         'working'           => 'AI is working…',
+        'applied'           => 'Applied to your note',
+        'note_created'      => 'Summary note created',
+        'todos_inserted'    => 'Checklist inserted',
+        'undone'            => 'Undone',
+        'undo'              => 'Undo',
+        'redo'              => 'Redo',
         'apply'             => 'Apply',
         'rewrite'           => 'Rewrite',
         'cancel'            => 'Cancel',
         'error'             => 'AI error',
         'empty_response'    => 'The AI returned an empty response.',
+        'html_response'     => 'The server returned an HTML page instead of a JSON API response (HTTP {status}). The Base URL probably points at a website, not an API — it should look like https://api.deepseek.com/v1',
+        'empty_length'      => 'The model hit its token limit before producing any text (finish reason "length"). Try again, select less text, or use a standard chat model instead of a reasoning model.',
+        'reasoning_only'    => 'The model returned only internal reasoning and no answer text. Use a standard chat model (e.g. deepseek-chat, gpt-4o-mini) for these features.',
+        'wrong_shape'       => 'The endpoint answered in a non-OpenAI format. Use the provider\'s OpenAI-compatible Base URL — for Gemini: https://generativelanguage.googleapis.com/v1beta/openai',
         'empty_note'        => 'The note has no content to process.',
         'note_too_short'    => 'The note is too short to summarize.',
+        'note_too_long'     => 'This note is too long for one pass — select the part to process and try again.',
 
         // Smart Title
         'pick_title'        => 'Choose a title to apply:',
@@ -483,6 +497,12 @@ return [
         'sel_expand'         => 'Expand',
         'sel_translate'      => 'Translate',
         'sel_word_replace'   => 'Suggest replacements',
+        'sel_word_explain'   => 'Explain word',
+
+        // Autocomplete
+        'autocomplete'       => 'Word autocomplete',
+        'autocomplete_on'    => 'Word autocomplete on — Tab completes the highlighted suggestion',
+        'autocomplete_off'   => 'Word autocomplete off',
 
         // Provider status & removal
         'status_user'        => '✓ Using your own credentials',

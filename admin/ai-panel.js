@@ -1,10 +1,15 @@
 /**
  * NPad admin dashboard — AI provider panel.
  *
- * Moved to an external file so the strict script-src CSP (no unsafe-inline,
- * no nonce) does not block execution. dashboard.php loads this with
- * <script src="…/admin/ai-panel.js" defer></script>.
+ * An ES module so it can share parseAIResponse() with the app: the test
+ * button diagnoses failures exactly like the editor does (HTML replies,
+ * reasoning-only answers, token-limit empties, provider errors with HTTP
+ * status + code) instead of the old false-"connected" empty-reply success.
+ * dashboard.php loads this with type="module" (deferred by default; the
+ * strict script-src CSP allows external scripts).
  */
+import { requestChatCompletion } from '../assets/js/ai-parse.js';
+
 (function () {
     'use strict';
 
@@ -91,33 +96,17 @@
                 : base + '/chat/completions';
 
             try {
-                const res = await fetch('/api/ai-proxy.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        endpoint : endpoint,
-                        apiKey   : apiKey,
-                        payload  : {
-                            model    : model,
-                            messages : [{ role: 'user', content: 'Reply with "ok".' }],
-                            max_tokens: 5,
-                        },
-                    }),
-                });
-
-                if (!res.ok) {
-                    var msg = 'HTTP ' + res.status;
-                    try {
-                        var errData = await res.json();
-                        msg = (errData && errData.error && errData.error.message) || msg;
-                    } catch (e) { /* ignore */ }
-                    throw new Error(msg);
-                }
-
-                const data  = await res.json();
-                const reply = (data && data.choices && data.choices[0] &&
-                               data.choices[0].message && data.choices[0].message.content)
-                              || '(empty)';
+                // Same diagnostics and reasoning-model mitigations as the
+                // editor: provider errors with HTTP status/code, HTML
+                // replies and reasoning-only answers fail with an
+                // explanation; thinking models get a real token budget and
+                // one automatic retry instead of a false "connected".
+                const reply = await requestChatCompletion(endpoint, apiKey, {
+                    model    : model,
+                    messages : [{ role: 'user', content: 'Reply with "ok".' }],
+                    max_tokens: 32,
+                    max_completion_tokens: 32,
+                }, {});
                 setStatus('✓ Connected! Model replied: "' + reply.slice(0, 40) + '"', 'green');
             } catch (err) {
                 setStatus('✗ ' + err.message, 'red');
