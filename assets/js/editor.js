@@ -83,6 +83,10 @@ import {
     runSmartFormat,
     openAISettings,
     handleSelectionAI,
+    aiHasUndo,
+    aiHasRedo,
+    aiUndo,
+    aiRedo,
     hasConsent,
     setConsent,
     getAIConfig,
@@ -1432,6 +1436,20 @@ export function initEditor({ strings, onEvent }) {
     // supported way to drive contenteditable formatting without shipping a
     // full editing engine. Calls are centralised here for easy replacement.
     function exec(command, value = null) {
+        // AI direct-apply history takes precedence while it has entries: the
+        // native undo stack cannot reliably span the async AI replacement.
+        if (command === 'undo' && aiHasUndo()) {
+            editor.focus();
+            aiUndo(editor);
+            finishFormatting();
+            return;
+        }
+        if (command === 'redo' && aiHasRedo()) {
+            editor.focus();
+            aiRedo(editor);
+            finishFormatting();
+            return;
+        }
         editor.focus();
         restoreEditorSelection();
         try {
@@ -2850,13 +2868,22 @@ export function initEditor({ strings, onEvent }) {
                 strings,
                 showDialog,
                 toast,
-                (title, content) => {
+                async (title, content) => {
                     const note = createNoteRecord({ title: title.slice(0, 120) });
                     note.content = content.replace(/\n/g, '<br>');
-                    saveNote(note).then(() => {
-                        renderNotes();
-                        toast(strings.aiSaveAsNote, 'success');
-                    });
+                    await saveNote(note);
+                    renderNotes();
+                    toast(strings.aiSaveAsNote, 'success');
+                    return {
+                        undo: async () => {
+                            await deleteNote(note.id);
+                            renderNotes();
+                        },
+                        redo: async () => {
+                            await saveNote(note);
+                            renderNotes();
+                        },
+                    };
                 },
                 x,
                 y,
@@ -4107,13 +4134,22 @@ ${exportHtml()}
         },
 
         'ai-summarize': () => {
-            runSummarize(editor, strings, showDialog, toast, (title, content) => {
+            runSummarize(editor, strings, showDialog, toast, async (title, content) => {
                 const note = createNoteRecord({ title: `${title} — ${activeNote()?.title || ''}`.slice(0, 120) });
                 note.content = content.replace(/\n/g, '<br>');
-                saveNote(note).then(() => {
-                    renderNotes();
-                    toast(strings.aiSaveAsNote, 'success');
-                });
+                await saveNote(note);
+                renderNotes();
+                toast(strings.aiSaveAsNote, 'success');
+                return {
+                    undo: async () => {
+                        await deleteNote(note.id);
+                        renderNotes();
+                    },
+                    redo: async () => {
+                        await saveNote(note);
+                        renderNotes();
+                    },
+                };
             });
             track('ai_summarize');
         },

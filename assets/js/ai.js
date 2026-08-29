@@ -407,6 +407,123 @@ function focusEditorWithRange(editorEl, range) {
 }
 
 /* -------------------------------------------------------------------------
+   Direct-apply history (AI undo / redo)
+   Non-configuration AI actions apply their result straight into the note.
+   Every in-editor mutation first snapshots the full content, so the app's
+   own undo/redo buttons (routed through aiUndo/aiRedo in editor.js) can
+   revert or re-apply it in one step — native undo cannot reliably span the
+   async AI round-trip.
+   ------------------------------------------------------------------------- */
+
+const AI_HISTORY_LIMIT = 25;
+const _aiUndoStack = [];   // { html } — content BEFORE each direct apply
+const _aiRedoStack = [];   // { html } — content a redo would restore
+
+export function aiHasUndo() { return _aiUndoStack.length > 0; }
+export function aiHasRedo() { return _aiRedoStack.length > 0; }
+
+/** Snapshot before a mutation; clears the redo branch (like native undo). */
+function recordApply(editorEl) {
+    if (!editorEl) return;
+    _aiUndoStack.push({ html: editorEl.innerHTML });
+    if (_aiUndoStack.length > AI_HISTORY_LIMIT) _aiUndoStack.shift();
+    _aiRedoStack.length = 0;
+}
+
+/** Restore the previous content. Returns true when an entry was applied. */
+export function aiUndo(editorEl) {
+    const entry = _aiUndoStack.pop();
+    if (!entry || !editorEl) return false;
+    _aiRedoStack.push({ html: editorEl.innerHTML });
+    if (_aiRedoStack.length > AI_HISTORY_LIMIT) _aiRedoStack.shift();
+    editorEl.innerHTML = entry.html;
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+}
+
+/** Re-apply the most recently undone content. Returns true when applied. */
+export function aiRedo(editorEl) {
+    const entry = _aiRedoStack.pop();
+    if (!entry || !editorEl) return false;
+    _aiUndoStack.push({ html: editorEl.innerHTML });
+    editorEl.innerHTML = entry.html;
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+}
+
+/**
+ * Success toast for direct applies with an Undo control that flips to Redo.
+ * `onUndo`/`onRedo` come from the feature: content restores use aiUndo/
+ * aiRedo; note-creation flows return { undo, redo } handles instead.
+ */
+function showAppliedToast(message, strings, { onUndo, onRedo } = {}) {
+    const region = document.getElementById('toastRegion');
+    if (!region) return;
+    const el = document.createElement('div');
+    el.className = 'toast toast--success ai-applied-toast';
+    const text = document.createElement('span');
+    text.className = 'ai-applied-toast__text';
+    text.textContent = message;
+    el.appendChild(text);
+
+    let dismissed = false;
+    const dismiss = () => {
+        if (dismissed) return;
+        dismissed = true;
+        el.classList.add('toast--leaving');
+        setTimeout(() => el.remove(), 200);
+    };
+    const timer = setTimeout(dismiss, 8000);
+
+    if (typeof onUndo === 'function') {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ai-applied-toast__action';
+        btn.textContent = strings?.aiUndo || 'Undo';
+        let undone = false;
+        btn.addEventListener('click', () => {
+            clearTimeout(timer);
+            if (!undone) {
+                onUndo();
+                undone = true;
+                text.textContent = strings?.aiUndone || 'Undone';
+                if (typeof onRedo === 'function') {
+                    btn.textContent = strings?.aiRedo || 'Redo';
+                } else {
+                    dismiss();
+                }
+            } else {
+                onRedo();
+                dismiss();
+            }
+        });
+        el.appendChild(btn);
+    }
+    region.appendChild(el);
+}
+
+/** Apply a text/HTML replacement directly, with history + toast. */
+function applyDirectToEditor(editorEl, strings, label, hasSelection, savedRange, runInsert) {
+    recordApply(editorEl);
+    try {
+        if (hasSelection) {
+            focusEditorWithRange(editorEl, savedRange);
+        } else {
+            editorEl.focus();
+            document.execCommand('selectAll');
+        }
+        runInsert();
+    } catch (err) {
+        _aiUndoStack.pop(); // nothing changed — do not keep a bogus entry
+        throw err;
+    }
+    showAppliedToast(label, strings, {
+        onUndo: () => aiUndo(editorEl),
+        onRedo: () => aiRedo(editorEl),
+    });
+}
+
+/* -------------------------------------------------------------------------
    Feature implementations
    Each function receives (editorEl, strings, showDialog, toast, createNote?)
    and returns early if cancelled at any gate.
@@ -480,18 +597,15 @@ export async function runSummarize(editorEl, strings, showDialog, toast, onCreat
         const result = await callAI(sys, text, strings, { temperature: 0.0, maxTokens: sumMaxTok });
         loadingToast();
 
-        const action = await showDialog({
-            title: strings.aiSummarize,
-            bodyHtml: `
-                <div style="max-height:260px;overflow-y:auto;font-size:13px;white-space:pre-wrap;font-family:var(--font-mono);background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md)">${escapeHtmlVal(result)}</div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiSummaryHint}</p>`,
-            buttons: [
-                { label: strings.aiSaveAsNote, action: 'save',   variant: 'btn--primary' },
-                { label: strings.cancel,        action: 'cancel', variant: 'btn--ghost' },
-            ],
-        });
-        if (action === 'save' && typeof onCreateNote === 'function') {
-            onCreateNote(strings.aiSummaryNoteTitle, result);
+        // Apply directly: create the summary note without a confirmation
+        // round. onCreateNote returns { undo, redo } so the toast button can
+        // remove/re-create it.
+        if (typeof onCreateNote === 'function') {
+            const handle = await onCreateNote(strings.aiSummaryNoteTitle, result);
+            showAppliedToast(strings.aiNoteCreated || 'Summary note created', strings, {
+                onUndo: () => handle?.undo?.(),
+                onRedo: () => handle?.redo?.(),
+            });
         }
     } catch (err) {
         loadingToast();
@@ -562,29 +676,11 @@ export async function runToneRewrite(editorEl, strings, showDialog, toast) {
         const result = await callAI(sys, inputText, strings, { temperature: 1.0, maxTokens: maxTok });
         loadingToast();
 
-        const action = await showDialog({
-            title: `${strings.aiToneRewrite} — ${toneLabel}`,
-            bodyHtml: `
-                <div style="max-height:240px;overflow-y:auto;font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md)">${escapeHtmlVal(result)}</div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiRewriteHint}</p>`,
-            buttons: [
-                { label: strings.aiApply, action: 'apply', variant: 'btn--primary' },
-                { label: strings.cancel,   action: 'cancel', variant: 'btn--ghost' },
-            ],
+        // Apply directly (reversible via undo/redo) — the tone picker above
+        // stays because it is a genuine option choice.
+        applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, () => {
+            document.execCommand('insertText', false, result);
         });
-        if (action === 'apply') {
-            if (hasSelection) {
-                // Re-focus the editor and restore the exact selection the
-                // user made — the modal dialog moved focus elsewhere and
-                // execCommand is a silent no-op without it.
-                focusEditorWithRange(editorEl, savedRange);
-                document.execCommand('insertText', false, result);
-            } else {
-                editorEl.focus();
-                document.execCommand('selectAll');
-                document.execCommand('insertText', false, result);
-            }
-        }
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
@@ -615,22 +711,18 @@ export async function runExtractTodos(editorEl, strings, showDialog, toast) {
         }
 
         const tasks = result.split('\n').map(t => t.replace(/^[-•*]\s*/, '').trim()).filter(Boolean);
-        const preview = tasks.map(t => `<li style="font-size:13px;margin:4px 0">${escapeHtmlVal(t)}</li>`).join('');
-
-        const action = await showDialog({
-            title: strings.aiExtractTodos,
-            bodyHtml: `
-                <p style="font-size:13px;color:var(--text-muted);margin-bottom:var(--space-2)">${strings.aiTodosFound.replace('{n}', tasks.length)}</p>
-                <ul style="max-height:200px;overflow-y:auto;padding-inline-start:var(--space-4)">${preview}</ul>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiTodosHint}</p>`,
-            buttons: [
-                { label: strings.aiInsertChecklist, action: 'insert', variant: 'btn--primary' },
-                { label: strings.cancel,             action: 'cancel', variant: 'btn--ghost' },
-            ],
-        });
-        if (action === 'insert') {
+        // Apply directly: the checklist is appended and can be undone.
+        recordApply(editorEl);
+        try {
             insertChecklistItems(editorEl, tasks);
+        } catch (err) {
+            _aiUndoStack.pop();
+            throw err;
         }
+        showAppliedToast(strings.aiTodosInserted || 'Checklist inserted', strings, {
+            onUndo: () => aiUndo(editorEl),
+            onRedo: () => aiRedo(editorEl),
+        });
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
@@ -678,28 +770,10 @@ export async function runSmartFormat(editorEl, strings, showDialog, toast) {
         const asHtml = /<[a-z][\s\S]*>/i.test(raw) ? raw : markdownToHtml(raw);
         const cleaned = sanitizeHtml(asHtml);
 
-        const action = await showDialog({
-            title: strings.aiSmartFormat,
-            bodyHtml: `
-                <div style="max-height:240px;overflow-y:auto;font-size:13px;border:1px solid var(--border-subtle);padding:var(--space-3);border-radius:var(--radius-md)">${cleaned}</div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:var(--space-2)">${strings.aiFormatHint}</p>`,
-            buttons: [
-                { label: strings.aiApply, action: 'apply', variant: 'btn--primary' },
-                { label: strings.cancel,   action: 'cancel', variant: 'btn--ghost' },
-            ],
+        // Apply directly (reversible via undo/redo) — no confirmation round.
+        applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, () => {
+            document.execCommand('insertHTML', false, cleaned);
         });
-        if (action === 'apply') {
-            if (hasSelection) {
-                // Re-focus the editor and restore the exact selection —
-                // without this the browser drops the insertHTML silently.
-                focusEditorWithRange(editorEl, savedRange);
-                document.execCommand('insertHTML', false, cleaned);
-            } else {
-                editorEl.focus();
-                document.execCommand('selectAll');
-                document.execCommand('insertHTML', false, cleaned);
-            }
-        }
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
@@ -955,22 +1029,14 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 text, strings, { temperature: 0.0, maxTokens: selSumMaxTok },
             );
             finishLoading();
-            const act = await showDialog({
-                title: strings.aiSelSummarize || 'Summarize',
-                bodyHtml: `<div style="font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md);max-height:200px;overflow-y:auto">${escapeHtmlVal(result)}</div>`,
-                buttons: [
-                    { label: strings.aiSaveAsNote || 'Save as note',       action: 'save',    variant: 'btn--primary' },
-                    { label: strings.aiApply      || 'Replace selection',   action: 'replace', variant: 'btn--ghost'   },
-                    { label: strings.cancel       || 'Cancel',              action: 'cancel',  variant: 'btn--ghost'   },
-                ],
-            });
-            if (act === 'save' && typeof onCreateNote === 'function') {
-                onCreateNote(strings.aiSummaryNoteTitle || 'Summary', result);
-            } else if (act === 'replace') {
-                // Focus first: after the dialog closed, focus sits on the
-                // toolbar button and execCommand would be dropped.
-                focusEditorWithRange(editorEl, savedRange);
-                document.execCommand('insertText', false, result);
+            // Apply directly: the summary becomes a new note (undoable via
+            // the toast button — deleting the created note restores state).
+            if (typeof onCreateNote === 'function') {
+                const handle = await onCreateNote(strings.aiSummaryNoteTitle || 'Summary', result);
+                showAppliedToast(strings.aiNoteCreated || 'Summary note created', strings, {
+                    onUndo: () => handle?.undo?.(),
+                    onRedo: () => handle?.redo?.(),
+                });
             }
 
         } else if (action === 'sel-rewrite') {
@@ -981,7 +1047,9 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 rwText, strings, { temperature: 1.0, maxTokens: Math.min(1200, Math.ceil(rwText.length / 3.5 * 1.2) + 30) },
             );
             finishLoading();
-            await _applyOrDiscard(result, strings, showDialog, editorEl, savedRange);
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'sel-shorten') {
             const shText = cleanInput(text, 15_000,
@@ -991,7 +1059,9 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 shText, strings, { temperature: 1.0, maxTokens: Math.min(600, Math.ceil(shText.length / 3.5 * 0.7) + 20) },
             );
             finishLoading();
-            await _applyOrDiscard(result, strings, showDialog, editorEl, savedRange);
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'sel-expand') {
             const exText = cleanInput(text, 8_000,
@@ -1001,7 +1071,9 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 exText, strings, { temperature: 1.0, maxTokens: 500 },
             );
             finishLoading();
-            await _applyOrDiscard(result, strings, showDialog, editorEl, savedRange);
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'sel-translate') {
             const trText = cleanInput(text, 25_000,
@@ -1011,7 +1083,9 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 trText, strings, { temperature: 1.3, maxTokens: Math.min(2000, Math.ceil(trText.length / 3.5 * 1.3) + 30) },
             );
             finishLoading();
-            await _applyOrDiscard(result, strings, showDialog, editorEl, savedRange);
+            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
+                document.execCommand('insertText', false, result);
+            });
 
         } else if (action === 'word-replace') {
             result = await callAI(
@@ -1058,21 +1132,3 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
     }
 }
 
-async function _applyOrDiscard(result, strings, showDialog, editorEl, savedRange) {
-    const act = await showDialog({
-        title: strings.aiApply || 'Result',
-        bodyHtml: `<div style="font-size:13px;white-space:pre-wrap;background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md);max-height:220px;overflow-y:auto">${escapeHtmlVal(result)}</div>`,
-        buttons: [
-            { label: strings.aiApply || 'Replace selection', action: 'apply',  variant: 'btn--primary' },
-            { label: strings.cancel  || 'Cancel',            action: 'cancel', variant: 'btn--ghost'   },
-        ],
-    });
-    if (act === 'apply') {
-        // Focus the editor and restore the saved range BEFORE inserting:
-        // after the dialog closed, focus sits on the toolbar button and
-        // execCommand is a silent no-op without the editor holding focus.
-        await new Promise(r => setTimeout(r, 0));
-        focusEditorWithRange(editorEl, savedRange);
-        document.execCommand('insertText', false, result);
-    }
-}

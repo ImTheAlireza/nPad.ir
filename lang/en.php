@@ -432,6 +432,12 @@ return [
 
         // Common actions
         'working'           => 'AI is working…',
+        'applied'           => 'Applied to your note',
+        'note_created'      => 'Summary note created',
+        'todos_inserted'    => 'Checklist inserted',
+        'undone'            => 'Undone',
+        'undo'              => 'Undo',
+        'redo'              => 'Redo',
         'apply'             => 'Apply',
         'rewrite'           => 'Rewrite',
         'cancel'            => 'Cancel',

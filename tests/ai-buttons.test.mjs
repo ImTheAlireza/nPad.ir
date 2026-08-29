@@ -64,14 +64,18 @@ function bootDom() {
     };
 
     // Emulate the browser rule: editing commands only take effect when the
-    // active element belongs to the editable host of the selection.
+    // active element belongs to the editable host of the selection. The
+    // insert commands also mutate the DOM so undo/redo can be asserted.
     window.__execCalls = [];
     window.document.execCommand = (cmd, ui, value) => {
         const editor = window.document.getElementById('editor');
         const active = window.document.activeElement;
         const inEditor = active === editor || editor.contains(active);
         window.__execCalls.push({ cmd, value, inEditor, active: active?.id || active?.tagName });
-        return inEditor;
+        if (!inEditor) return false;
+        if (cmd === 'insertHTML') editor.innerHTML = value;
+        else if (cmd === 'insertText') editor.textContent = value;
+        return true;
     };
 
     return dom;
@@ -176,17 +180,15 @@ export default async function run(check, group) {
         const done = ai.runSmartFormat(
             window.document.getElementById('editor'), strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
         await settle();
-
-        const apply = window.document.querySelector('#appDialog [data-action="apply"]');
-        assert.ok(apply, 'result dialog with Apply opened');
-        apply.click();
         await done;
         await settle(10);
 
+        assert.equal(window.document.getElementById('appDialog').open, false, 'no confirmation dialog');
         const inserts = window.__execCalls.filter((c) => c.cmd === 'insertHTML');
         assert.equal(inserts.length, 1, 'insertHTML called once');
         assert.equal(inserts[0].inEditor, true, `insert ran with editor focused (active=${inserts[0].active})`);
         assert.match(inserts[0].value, /<h2>Formatted<\/h2>/);
+        assert.ok(window.document.querySelector('.ai-applied-toast'), 'applied toast with undo is shown');
     });
 
     await check('tone rewrite: Apply re-focuses editor and replaces the selection', async () => {
@@ -208,12 +210,10 @@ export default async function run(check, group) {
         rewrite.click();
         await settle();
 
-        const apply = window.document.querySelector('#appDialog [data-action="apply"]');
-        assert.ok(apply, 'result dialog opened');
-        apply.click();
         await done;
         await settle(10);
 
+        assert.equal(window.document.getElementById('appDialog').open, false, 'no result dialog — applied directly');
         const inserts = window.__execCalls.filter((c) => c.cmd === 'insertText');
         assert.equal(inserts.length, 1, 'insertText called once');
         assert.equal(inserts[0].inEditor, true, `insert ran with editor focused (active=${inserts[0].active})`);
@@ -278,27 +278,21 @@ export default async function run(check, group) {
         const done = ai.runSmartFormat(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
         await settle();
 
-        const body = window.document.querySelector('#appDialog .dialog__body');
-        assert.ok(window.document.getElementById('appDialog').open, 'dialog opened');
-        assert.match(body.innerHTML, /<h3>Heading<\/h3>/, 'markdown heading became an element');
-        assert.match(body.innerHTML.replace(/\n/g, ''), /<ul><li>first point<\/li><li>second point<\/li><\/ul>/, 'markdown list became elements');
-        assert.match(body.innerHTML, /<strong>bold<\/strong>/, 'bold became an element');
-
-        const apply = window.document.querySelector('#appDialog [data-action="apply"]');
-        apply.click();
         await done;
         await settle(10);
 
         const inserts = window.__execCalls.filter((c) => c.cmd === 'insertHTML');
-        assert.equal(inserts.length, 1);
-        assert.match(inserts[0].value, /<h3>Heading<\/h3>/);
+        assert.equal(inserts.length, 1, 'inserted directly, no confirmation dialog');
+        const inserted = inserts[0].value.replace(/\n/g, '');
+        assert.match(inserted, /<h3>Heading<\/h3>/, 'markdown heading became an element');
+        assert.match(inserted, /<ul><li>first point<\/li><li>second point<\/li><\/ul>/, 'markdown list became elements');
+        assert.match(inserted, /<strong>bold<\/strong>/, 'bold became an element');
         AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
     });
 
     group('ai: truncation warning wiring');
 
-    await check('cleanInput fires the onTruncate callback when a cut happens', async () => {
-        // Indirect, through the real module: summarize uses limit 200_000.
+    await check('summarize creates the note directly and the toast undo removes it', async () => {
         const dom = bootDom();
         const { window } = dom;
         grantConfig(window);
@@ -306,23 +300,34 @@ export default async function run(check, group) {
         AI_REPLY = '## Summary\n- ok';
         const { ui, ai } = await loadModules(window);
         const editor = window.document.getElementById('editor');
-        editor.textContent = 'Sentence ends here. '.repeat(12_000); // ~240k chars > limit
+        editor.textContent = 'Sentence ends here. '.repeat(400);
         const toasts = [];
+        let created = null;
+        const handle = {
+            undoCalls: 0, redoCalls: 0,
+            undo() { this.undoCalls++; }, redo() { this.redoCalls++; },
+        };
 
         const done = ai.runSummarize(
             editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`),
-            () => {},
+            async (title, content) => {
+                created = { title, content };
+                return handle;
+            },
         );
         await settle();
-        // Close the result dialog — the assertion is about the warning toast.
-        window.document.querySelector('#appDialog [data-action="cancel"]')?.click();
         await done;
         await settle(10);
 
-        assert.ok(
-            toasts.some((t) => t.startsWith('info:')),
-            'truncation toast fired for the oversized note',
-        );
+        assert.equal(window.document.getElementById('appDialog').open, false, 'no confirmation dialog');
+        assert.ok(created, 'note created directly without a confirm round');
+        assert.match(created.content, /## Summary/, 'summary content passed through');
+
+        const undoBtn = window.document.querySelector('.ai-applied-toast__action');
+        assert.ok(undoBtn, 'applied toast carries an undo button');
+        undoBtn.click();
+        assert.equal(handle.undoCalls, 1, 'toast undo removes the created note');
+        assert.ok(undoBtn.textContent.length > 0, 'button flips to redo');
         AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
     });
 
@@ -562,6 +567,98 @@ export default async function run(check, group) {
         await ai.callAI('sys', 'user', strings, { maxTokens: 80, temperature: 0.5 });
         assert.equal(window.__lastAiPayload.temperature, undefined,
             'temperature must be omitted for o-series models');
+    });
+
+    group('ai: direct apply is reversible via undo/redo');
+
+    await check('applied content is restored by aiUndo and re-applied by aiRedo', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, anchorNode: null, getRangeAt: () => null, toString: () => '' });
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'Original plain text that will be reformatted by the AI action soon.';
+        const before = editor.innerHTML;
+
+        const done = ai.runSmartFormat(editor, strings, ui.showDialog, () => {});
+        await settle();
+        await done;
+        await settle(10);
+
+        assert.notEqual(editor.innerHTML, before, 'apply mutated the content');
+        assert.match(editor.innerHTML, /<h2>Formatted<\/h2>/);
+
+        assert.equal(ai.aiHasUndo(), true);
+        ai.aiUndo(editor);
+        assert.equal(editor.innerHTML, before, 'undo restored the original content');
+
+        assert.equal(ai.aiHasRedo(), true);
+        ai.aiRedo(editor);
+        assert.match(editor.innerHTML, /<h2>Formatted<\/h2>/, 'redo re-applied the formatted content');
+    });
+
+    await check('toast undo button restores content, redo button re-applies it', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        fakeSelection(window, 'Some drafted sentence');
+        AI_REPLY = 'Rewritten sentence.';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        const before = editor.innerHTML;
+
+        window.document.getElementById('aiMenuTrigger').focus();
+        const done = ai.runToneRewrite(editor, strings, ui.showDialog, () => {});
+        await settle();
+        const picker = window.document.querySelector('#appDialog [data-action="rewrite"]');
+        picker.click();
+        await done;
+        await settle(10);
+
+        assert.equal(editor.textContent, 'Rewritten sentence.');
+
+        const undoBtn = window.document.querySelector('.ai-applied-toast__action');
+        undoBtn.click(); // Undo
+        assert.equal(editor.innerHTML, before, 'toast undo restored the content');
+        assert.equal(undoBtn.textContent, strings.aiRedo, 'button flipped to redo');
+        undoBtn.click(); // Redo
+        assert.equal(editor.textContent, 'Rewritten sentence.', 'toast redo re-applied');
+        // Dismissal animates out over 200ms; the leaving class proves it fired.
+        assert.ok(
+            window.document.querySelector('.ai-applied-toast')?.classList.contains('toast--leaving'),
+            'toast dismissed after redo',
+        );
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
+    group('ai: option-based features keep their modals');
+
+    await check('smart title still shows its picker and applies the chosen title', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, anchorNode: null, getRangeAt: () => null, toString: () => '' });
+        AI_REPLY = 'Title One\nTitle Two\nTitle Three';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'A reasonably long note body so the title suggestion has something to work with. '.repeat(2);
+        let applied = null;
+
+        const done = ai.runSmartTitle(editor, strings, ui.showDialog, () => {}, (t) => { applied = t; });
+        await settle();
+
+        const dlg = window.document.getElementById('appDialog');
+        assert.equal(dlg.open, true, 'title picker modal opened');
+        const radios = dlg.querySelectorAll('input[name="ai-title"]');
+        assert.equal(radios.length, 3, 'three title options offered');
+        radios[1].checked = true;
+
+        dlg.querySelector('[data-action="apply"]').click();
+        await done;
+        await settle(10);
+        assert.equal(applied, 'Title Two', 'the chosen option was applied');
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
     });
 
     group('ai: admin dashboard shares the diagnostics');
