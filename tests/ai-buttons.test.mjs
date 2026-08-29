@@ -107,6 +107,37 @@ function fakeSelection(window, text = 'Hello') {
     return range;
 }
 
+/**
+ * Install a fake selection with explicit offsets — used to simulate making
+ * a new selection (different offsets ⇒ different selection identity).
+ */
+function setSelection(window, { anchorOffset = 0, focusOffset = 5, text = 'Hello' } = {}) {
+    const editor = window.document.getElementById('editor');
+    const first = editor.firstChild;
+    const range = {
+        collapsed: false,
+        startContainer: first,
+        endContainer: first,
+        startOffset: anchorOffset,
+        endOffset: focusOffset,
+        toString: () => text,
+        cloneRange() { return { ...this, cloneRange: undefined }; },
+    };
+    window.getSelection = () => ({
+        rangeCount: 1,
+        isCollapsed: false,
+        anchorNode: first,
+        focusNode: first,
+        anchorOffset,
+        focusOffset,
+        getRangeAt: () => range,
+        toString: () => text,
+        removeAllRanges() {},
+        addRange() {},
+    });
+    return range;
+}
+
 async function loadModules(window) {
     global.window = window;
     global.document = window.document;
@@ -640,6 +671,7 @@ export default async function run(check, group) {
         grantConfig(window);
         AI_REPLY = '- bullet one\n- bullet two';
         const { ui, ai } = await loadModules(window);
+        ai.__resetSelectionToolbarForTests();
         const editor = window.document.getElementById('editor');
         // Content must exist BEFORE the fake selection captures its node.
         editor.textContent = 'Before. A long passage the user highlighted for summarization. After.';
@@ -856,6 +888,62 @@ export default async function run(check, group) {
         assert.equal(table.nextElementSibling?.tagName, 'P', 'spacer paragraph added below the table');
         assert.ok(editor.contains(table.querySelector('td')), 'cells intact after the lift');
         AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
+    group('ai: floating popup stays hidden after toolbar clicks');
+
+    await check('clicking a main-toolbar button must not pop the AI selection popup back up', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        const { ui, ai } = await loadModules(window);
+        ai.__resetSelectionToolbarForTests();
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'Hello world of editing';
+
+        // 1. User makes a selection → popup appears.
+        setSelection(window, { anchorOffset: 0, focusOffset: 5, text: 'Hello' });
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20); // visibility applies one rAF later
+        const tb = window.document.querySelector('.ai-sel-toolbar');
+        assert.ok(tb, 'popup element exists');
+        assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), true, 'popup shown for the selection');
+
+        // 2. User clicks a main-toolbar button: pointerdown outside the
+        //    popup hides it (formatting buttons keep the selection alive).
+        const trigger = window.document.getElementById('aiMenuTrigger');
+        trigger.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+        assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), false, 'hidden on outside pointerdown');
+
+        // 3. The document pointerup handler re-evaluates with the SAME
+        //    (still-live) selection — it must NOT pop back up.
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20);
+        assert.equal(
+            tb.classList.contains('ai-sel-toolbar--visible'),
+            false,
+            'same selection must not re-surface the popup after a toolbar click',
+        );
+
+        // 4. Re-clicks keep it hidden while the selection is unchanged.
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20);
+        assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), false);
+
+        // 5. A genuinely new selection brings the popup back.
+        setSelection(window, { anchorOffset: 6, focusOffset: 11, text: 'world' });
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20);
+        assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), true, 'new selection shows the popup again');
+
+        // 6. Collapsing the selection hides it and re-arming works again.
+        window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, anchorNode: editor.firstChild, getRangeAt: () => null, toString: () => '' });
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(10);
+        assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), false, 'collapsed selection hides the popup');
+        setSelection(window, { anchorOffset: 0, focusOffset: 5, text: 'Hello' });
+        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
+        await settle(20);
+        assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), true, 're-selecting the same text works after a collapse');
     });
 
     group('ai: option-based features keep their modals');

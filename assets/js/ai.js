@@ -1108,6 +1108,35 @@ let _selToolbar    = null;
 let _selVisible    = false;
 let _savedRange    = null; // preserved before dialog steals focus
 let _ignoreNextUp  = false; // suppress re-evaluation when clicking toolbar itself
+// The selection the popup was already surfaced for. While the selection
+// stays live (no collapse), re-evaluations must not pop the popup back up
+// after the user clicked some other UI (formatting buttons, menus...).
+let _surfacedKey   = null;
+
+/** Drop the selection-toolbar singleton (test seam — one document per page in real use). */
+export function __resetSelectionToolbarForTests() {
+    _selToolbar = null;
+    _selVisible = false;
+    _savedRange = null;
+    _ignoreNextUp = false;
+    _surfacedKey = null;
+}
+
+/** Stable-enough identity for the live selection: endpoints + its text.
+ *  Collisions are harmless — the key is cleared whenever the selection
+ *  collapses, so an equal key always means the same uninterrupted selection. */
+function selectionKey(sel) {
+    try {
+        const text = sel.toString();
+        return [
+            sel.anchorNode?.nodeType, sel.anchorNode?.nodeName, sel.anchorOffset,
+            sel.focusNode?.nodeType, sel.focusNode?.nodeName, sel.focusOffset,
+            text.length, text.slice(0, 24),
+        ].join('|');
+    } catch {
+        return null;
+    }
+}
 
 function getSelToolbar() {
     if (_selToolbar) return _selToolbar;
@@ -1183,14 +1212,28 @@ export function handleSelectionAI(editorEl, strings, showDialog, toast, x, y) {
 
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        _surfacedKey = null;
         _hideSelToolbar();
         return;
     }
     // Selection must be inside the editor
     if (!editorEl.contains(sel.anchorNode) && !editorEl.contains(sel.focusNode)) {
+        _surfacedKey = null;
         _hideSelToolbar();
         return;
     }
+    // The editor's formatting buttons keep the selection alive (they
+    // preventDefault mousedown so focus stays in the editor), so every
+    // button click re-runs this handler with the selection intact. Surface
+    // the popup for a given selection exactly once: if this is still the
+    // selection the user already saw the popup for, keep it hidden — a NEW
+    // selection (different endpoints/text) brings it back.
+    const key = selectionKey(sel);
+    if (key !== null && key === _surfacedKey) {
+        _hideSelToolbar();
+        return;
+    }
+    _surfacedKey = key;
 
     const _rawSel = sel.toString().trim();
     const text = _rawSel.length > 40_000 ? _rawSel.slice(0, 40_000).trim() : _rawSel;
