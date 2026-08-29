@@ -680,6 +680,7 @@ export default async function run(check, group) {
 
         // Move focus like a real click on the floating toolbar would.
         window.document.getElementById('aiMenuTrigger').focus();
+        ai.setSelectionGestureOrigin(true);
         ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
         await settle(20);
 
@@ -736,28 +737,62 @@ export default async function run(check, group) {
         AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
     });
 
-    await check('prose selection is rejected before spending tokens', async () => {
+    await check('single-paragraph prose WITH embedded statistics now converts (model decides)', async () => {
+        // The exact case from the field report: one flowing paragraph, rich
+        // statistics inside — the old local heuristic rejected it unseen.
         const dom = bootDom();
         const { window } = dom;
         grantConfig(window);
+        AI_REPLY = [
+            '| عامل موفقیت | درصد دانش‌آموزان |',
+            '|-------------|------------------|',
+            '| برنامه‌ریزی | ۳۲ |',
+            '| مطالعه مستمر | ۲۶ |',
+            '| کلاس‌های تقویتی | ۲۱ |',
+        ].join('\n');
         const { ui, ai } = await loadModules(window);
         const editor = window.document.getElementById('editor');
-        editor.textContent = 'این یک پاراگراف معمولی درباره‌ی وضعیت هوا است و هیچ داده آماری در آن نیست. دیروز بارانی بود و امروز آفتابی.';
+        editor.textContent = 'بر اساس یک بررسی از میان ۱۰۰ دانش‌آموز، ۳۲ درصد برنامه‌ریزی را مهم‌ترین عامل موفقیت دانستند، ۲۶ درصد مطالعه مستمر و ۲۱ درصد کلاس‌های تقویتی را. این آمار نشان می‌دهد که موفقیت در دوران تحصیلان تنها به میزان مطالعه واستنه نیست، بلکه برنامه‌ریزی و مشارت با دیگران اهمیت دارد.';
         fakeSelection(window, editor.textContent);
         const toasts = [];
-        const fetchCalls = [];
-        window.__aiResponder = null;
-        const realFetch = window.fetch;
-        window.fetch = (...args) => { fetchCalls.push(args[0]); return realFetch(...args); };
 
         const done = ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
         await settle();
         await done;
         await settle(10);
 
-        assert.equal(fetchCalls.length, 0, 'no AI call for obvious prose');
+        const table = editor.querySelector('table');
+        assert.ok(table, 'statistical prose became a table — the model decided, not a local heuristic');
+        assert.match(table.textContent, /برنامه‌ریزی/);
+        assert.match(table.textContent, /۳۲/);
+        AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
+    });
+
+    await check('narrative prose with no table-shaped data is refused via NOT_TABLE', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        AI_REPLY = 'NOT_TABLE';
+        const { ui, ai } = await loadModules(window);
+        const editor = window.document.getElementById('editor');
+        editor.textContent = 'این یک پاراگراف معمولی درباره‌ی وضعیت هوا است و هیچ داده آماری در آن نیست. دیروز بارانی بود و امروز آفتابی.';
+        fakeSelection(window, editor.textContent);
+        const toasts = [];
+        let fetchCalls = 0;
+        const realFetch = window.fetch;
+        const countingFetch = (...args) => { fetchCalls++; return realFetch(...args); };
+        window.fetch = countingFetch;
+        global.fetch = countingFetch; // modules resolve the bare global
+
+        const done = ai.runTextToTable(editor, strings, ui.showDialog, (m, v) => toasts.push(`${v}:${m}`));
+        await settle();
+        await done;
+        await settle(10);
+
+        assert.equal(fetchCalls, 1, 'the model was consulted — it decides, not a local regex');
         assert.equal(editor.querySelector('table'), null, 'no table inserted');
         assert.ok(toasts.some((t) => t.startsWith('error:')), 'user told why it was rejected');
+        global.fetch = window.fetch;
     });
 
     await check('a NOT_TABLE reply is rejected with a clear message', async () => {
@@ -900,7 +935,9 @@ export default async function run(check, group) {
         const editor = window.document.getElementById('editor');
         editor.textContent = 'Hello world of editing';
 
-        // 1. User makes a selection → popup appears.
+        // 1. User makes a selection (pointer gesture starts IN the editor)
+        //    → popup appears.
+        ai.setSelectionGestureOrigin(true);
         setSelection(window, { anchorOffset: 0, focusOffset: 5, text: 'Hello' });
         ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
         await settle(20); // visibility applies one rAF later
@@ -908,34 +945,35 @@ export default async function run(check, group) {
         assert.ok(tb, 'popup element exists');
         assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), true, 'popup shown for the selection');
 
-        // 2. User clicks a main-toolbar button: pointerdown outside the
-        //    popup hides it (formatting buttons keep the selection alive).
+        // 2. User clicks a main-toolbar button: the gesture starts OUTSIDE
+        //    the editor. pointerdown outside the popup hides it...
+        ai.setSelectionGestureOrigin(false);
         const trigger = window.document.getElementById('aiMenuTrigger');
         trigger.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
         assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), false, 'hidden on outside pointerdown');
 
-        // 3. The document pointerup handler re-evaluates with the SAME
-        //    (still-live) selection — it must NOT pop back up.
+        // 3. ...and the pointerup re-evaluation must be skipped entirely —
+        //    formatting commands keep the selection alive AND mutate the
+        //    DOM (node splits change any fingerprint), so the gesture gate
+        //    is what keeps the popup down. Simulate the mutation too.
+        editor.innerHTML = '<p><b>Hello</b> world of editing</p>';
         ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
         await settle(20);
         assert.equal(
             tb.classList.contains('ai-sel-toolbar--visible'),
             false,
-            'same selection must not re-surface the popup after a toolbar click',
+            'toolbar click must never re-surface the popup, even after DOM mutations',
         );
 
-        // 4. Re-clicks keep it hidden while the selection is unchanged.
-        ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
-        await settle(20);
-        assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), false);
-
-        // 5. A genuinely new selection brings the popup back.
+        // 4. A new selection (new gesture in the editor) brings it back.
+        editor.textContent = 'Hello world of editing';
+        ai.setSelectionGestureOrigin(true);
         setSelection(window, { anchorOffset: 6, focusOffset: 11, text: 'world' });
         ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
         await settle(20);
         assert.equal(tb.classList.contains('ai-sel-toolbar--visible'), true, 'new selection shows the popup again');
 
-        // 6. Collapsing the selection hides it and re-arming works again.
+        // 5. Collapsing the selection hides it and re-arming works again.
         window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, anchorNode: editor.firstChild, getRangeAt: () => null, toString: () => '' });
         ai.handleSelectionAI(editor, strings, ui.showDialog, () => {}, 40, 40);
         await settle(10);

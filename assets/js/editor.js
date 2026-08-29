@@ -84,6 +84,7 @@ import {
     runTextToTable,
     openAISettings,
     handleSelectionAI,
+    setSelectionGestureOrigin,
     aiHasUndo,
     aiHasRedo,
     aiUndo,
@@ -2858,6 +2859,13 @@ export function initEditor({ strings, onEvent }) {
     // Listen on document so the popup still fires when the pointer is
     // released outside the editor element (common during a drag-select).
     // One frame of defer lets the browser commit the final selection range.
+    // Where did this gesture begin? A drag-select often ENDS outside the
+    // editor, so the pointerup target is not enough — the pointerdown
+    // origin decides whether the AI popup may be re-evaluated.
+    document.addEventListener('pointerdown', (event) => {
+        setSelectionGestureOrigin(editor.contains(event.target));
+    }, true);
+
     document.addEventListener('pointerup', (event) => {
         // Ignore right-click / middle-click — those open context menus
         if (event.button !== 0) return;

@@ -838,28 +838,6 @@ function parseMarkdownTable(reply) {
     return { header, rows: fixed };
 }
 
-/**
- * Decide whether the selection looks like tabular/statistical data at all —
- * a cheap pre-flight so obvious prose is rejected before burning tokens.
- * Signals: many lines, delimiters (| ; tab), CSV shape, or repeating
- * number-led patterns (label + number), which is how "statistical" text
- * usually looks.
- */
-export function looksTabular(text) {
-    const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    if (lines.length < 2) return false;
-    const delimited = lines.filter((l) => /\t|\s[|;]\s|^\s*\S+\s*[|;]/.test(l) || l.includes(';')).length;
-    if (delimited >= 2) return true;
-    // \p{Nd} matches digits in every script (Persian ۱۲۳, Arabic ٤٥٦, ASCII 123).
-    const numbered = lines.filter((l) => /\p{Nd}+([.,٫]\p{Nd}+)?\s*(٪|%|درصد|هزار|میلیون|میلیارد|tbn|k|m)?/iu.test(l)).length;
-    const withLabel = lines.filter((l) => /[\p{L}«"'»]/u.test(l.replace(/[\p{Nd}\p{P}\s]/gu, '')) && l.length > 3).length;
-    if (numbered >= 2 && withLabel >= 2) return true;
-    // A mostly-numeric selection (a column of dates/amounts/scores) is
-    // tabular on its own even without text labels; the model gate still
-    // makes the final call.
-    return numbered >= 2 && numbered >= Math.ceil(lines.length * 0.6);
-}
-
 /** Build a table element from parsed rows (header + rows, escaped). */
 function buildTableElement({ header, rows }) {
     const table = document.createElement('table');
@@ -941,33 +919,35 @@ export async function runTextToTable(editorEl, strings, showDialog, toast) {
     // captured range is what every other tool restores anyway.
     const savedRange = captureSelectionRange(editorEl);
 
-    const rawText = sel.toString();
-    if (!looksTabular(rawText)) {
-        // Reject obvious prose up front — no tokens spent, no guessing.
-        toast(strings.aiTextToTableNotTabular || 'This selection does not look like data that can become a table. Select rows of figures, comparisons or delimited items (lines with numbers, | or ;).', 'error');
-        return;
-    }
-
-    const inputText = cleanInput(rawText, 15_000,
+    const inputText = cleanInput(sel.toString(), 15_000,
         (o, cut) => toast(`${strings.aiTruncated || 'Text trimmed to'} ${fmtWords(cut)} ${strings.aiTruncatedFor || 'for AI'}`, 'info'));
     if (!inputText) { toast(strings.aiEmptyNote, 'info'); return; }
 
+    const notTabular = () => toast(
+        strings.aiTextToTableNotTabular
+            || 'The AI could not turn this selection into a table — it probably does not contain table-shaped data.',
+        'error',
+    );
+
     const loadingToast = showLoadingIndicator(strings.aiWorking);
     try {
-        const sys = `Convert the user's text into ONE Markdown table. Rules: answer with the table only, no explanation. First row is the header. Keep the input language. Columns reflect the data's categories; rows reflect the items. If the text contains no tabular/statistical data, reply exactly NOT_TABLE.`;
+        // The MODEL decides whether the text is table-shaped — prose with
+        // embedded statistics must convert (the old local heuristic wrongly
+        // rejected it). The parser below stays as the hard quality gate.
+        const sys = `Turn the user's text into ONE Markdown table. First decide whether the text contains table-shaped information: figures with labels, percentages, comparisons, categories, ranked or delimited rows — even inside flowing prose. If it does, answer with the table only, no explanation: first row is the header, keep the input language, columns are the categories, rows are the items. If the text truly has no table-shaped data, reply exactly NOT_TABLE.`;
         const result = await callAI(sys, inputText, strings, { temperature: 0.0, maxTokens: 1200 });
         loadingToast();
 
         const reply = result.trim();
         if (/^NOT_TABLE\b/i.test(reply)) {
-            toast(strings.aiTextToTableNotTabular || 'This selection does not look like data that can become a table. Select rows of figures, comparisons or delimited items (lines with numbers, | or ;).', 'error');
+            notTabular();
             return;
         }
         // Strip a possible code fence, then re-parse the table ourselves.
         const raw = reply.replace(/^```(?:markdown|md)?\n?/i, '').replace(/\n?```$/, '').trim();
         const parsed = parseMarkdownTable(raw);
         if (!parsed) {
-            toast(strings.aiTextToTableNotTabular || 'This selection does not look like data that can become a table. Select rows of figures, comparisons or delimited items (lines with numbers, | or ;).', 'error');
+            notTabular();
             return;
         }
 
@@ -1112,6 +1092,22 @@ let _ignoreNextUp  = false; // suppress re-evaluation when clicking toolbar itse
 // stays live (no collapse), re-evaluations must not pop the popup back up
 // after the user clicked some other UI (formatting buttons, menus...).
 let _surfacedKey   = null;
+// Whether the active pointer gesture began inside the editor (see
+// setSelectionGestureOrigin).
+let _gestureInEditor = false;
+
+/**
+ * Record where the current pointer gesture began. editor.js reports every
+ * document-level pointerdown (capture phase). The popup may only be
+ * (re-)evaluated when the gesture started INSIDE the editor: a drag-select
+ * that ends outside still qualifies, but clicking any toolbar button, menu
+ * or panel does not — formatting commands keep the selection alive (they
+ * preventDefault mousedown) and even mutate the DOM, so without this gate
+ * the popup popped right back up over the clicked button.
+ */
+export function setSelectionGestureOrigin(inEditor) {
+    _gestureInEditor = !!inEditor;
+}
 
 /** Drop the selection-toolbar singleton (test seam — one document per page in real use). */
 export function __resetSelectionToolbarForTests() {
@@ -1120,6 +1116,7 @@ export function __resetSelectionToolbarForTests() {
     _savedRange = null;
     _ignoreNextUp = false;
     _surfacedKey = null;
+    _gestureInEditor = false;
 }
 
 /** Stable-enough identity for the live selection: endpoints + its text.
@@ -1209,6 +1206,10 @@ function _showSelToolbar(el, x, y) {
 export function handleSelectionAI(editorEl, strings, showDialog, toast, x, y) {
     // If the user just clicked a toolbar button, skip this evaluation
     if (_ignoreNextUp) { _ignoreNextUp = false; return; }
+    // Only selection gestures that STARTED in the editor may surface the
+    // popup — clicking any other UI (formatting buttons keep the selection
+    // alive and mutate the DOM) must never bring it back.
+    if (!_gestureInEditor) return;
 
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
