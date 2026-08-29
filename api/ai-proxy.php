@@ -157,6 +157,37 @@ $statusLine = $http_response_header[0] ?? 'HTTP/1.1 200 OK';
 preg_match('/HTTP\/\S+\s+(\d+)/', $statusLine, $m);
 $upstreamStatus = (int) ($m[1] ?? 200);
 
+// Determine the upstream content type.
+$contentType = '';
+foreach ($http_response_header as $header) {
+    if (preg_match('/^content-type:\s*(.+)$/i', $header, $cm)) {
+        $contentType = strtolower(trim($cm[1]));
+        break;
+    }
+}
+
+// A non-JSON upstream response almost always means the Base URL points at
+// a website rather than an OpenAI-compatible API root. Forwarding the HTML
+// page would make the browser fail with a cryptic JSON parse error, so
+// wrap it in a clear, actionable error instead.
+$bodyStart = ltrim($responseBody);
+$looksJson = str_contains($contentType, 'json')
+    || ($contentType === '' && $bodyStart !== '' && ($bodyStart[0] === '{' || $bodyStart[0] === '['));
+
+if (!$looksJson) {
+    $snippet  = mb_substr(trim(strip_tags((string) $responseBody)), 0, 120);
+    http_response_code(502);
+    echo json_encode([
+        'error' => [
+            'message' => 'The AI endpoint did not return a JSON API response'
+                . ($contentType !== '' ? ' (content-type: ' . $contentType . ')' : '')
+                . '. Check the Base URL — it should be the provider\'s OpenAI-compatible API root, e.g. https://api.deepseek.com/v1'
+                . ($snippet !== '' ? ' — Response started with: "' . $snippet . '"…' : ''),
+        ],
+    ], JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 http_response_code($upstreamStatus);
 echo $responseBody;
 exit;

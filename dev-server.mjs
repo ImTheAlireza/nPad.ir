@@ -75,6 +75,19 @@ async function handleAiProxy(res, bodyBuf) {
             signal: AbortSignal.timeout(60_000),
         });
         const text = await upstream.text();
+
+        // Mirror of the PHP proxy guard: a non-JSON upstream reply means the
+        // Base URL points at a website rather than an API root — wrap it in
+        // a clear error instead of forwarding an unparseable page.
+        const contentType = (upstream.headers.get('content-type') ?? '').toLowerCase();
+        const trimmed = text.trim();
+        const looksJson = contentType.includes('json')
+            || (contentType === '' && (trimmed.startsWith('{') || trimmed.startsWith('[')));
+        if (!looksJson) {
+            const snippet = trimmed.replace(/<[^>]*>/g, '').slice(0, 120);
+            return send(502, { error: { message: `The AI endpoint did not return a JSON API response (content-type: ${contentType || 'unknown'}). Check the Base URL — it should be the provider's OpenAI-compatible API root, e.g. https://api.deepseek.com/v1${snippet ? ` — Response started with: "${snippet}"…` : ''}` } });
+        }
+
         res.writeHead(upstream.status, {
             'Content-Type': upstream.headers.get('content-type') ?? 'application/json; charset=utf-8',
             'Cache-Control': 'no-store',

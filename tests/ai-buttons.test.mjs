@@ -113,10 +113,27 @@ async function loadModules(window) {
     global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 
     // Modules resolve bare `fetch` from the Node global → stub both realms.
-    window.fetch = async () => ({
-        ok: true,
-        json: async () => ({ choices: [{ message: { content: AI_REPLY } }] }),
-    });
+    // The default responder returns AI_REPLY as a 200 JSON chat completion;
+    // tests can replace window.__aiResponder(requestBody) to simulate any
+    // provider/proxy behaviour. The request payload is recorded on
+    // window.__lastAiPayload for assertions.
+    window.__aiResponder = null;
+    window.__lastAiPayload = null;
+    window.fetch = async (_url, opts = {}) => {
+        const requestBody = opts.body ? JSON.parse(opts.body) : null;
+        window.__lastAiPayload = requestBody?.payload ?? null;
+        const reply = window.__aiResponder
+            ? window.__aiResponder(requestBody)
+            : { status: 200, body: { choices: [{ message: { content: AI_REPLY } }] } };
+        const text = typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body);
+        const status = reply.status ?? 200;
+        return {
+            ok: status >= 200 && status < 300,
+            status,
+            text: async () => text,
+            json: async () => JSON.parse(text),
+        };
+    };
     global.fetch = window.fetch;
 
     const ui = await import(pathToFileURL(path.join(ROOT, 'assets/js/ui.js')));
@@ -125,7 +142,15 @@ async function loadModules(window) {
 }
 
 let AI_REPLY = '<h2>Formatted</h2><p>Nice text.</p>';
-const strings = new Proxy({}, { get: (_t, k) => String(k) });
+const strings = new Proxy({
+    // Real English copy for the diagnostic keys so assertions exercise the
+    // actual user-facing messages (mirrors lang/en.php).
+    aiHtmlResponse: 'The server returned an HTML page instead of a JSON API response (HTTP {status}). The Base URL probably points at a website, not an API — it should look like https://api.deepseek.com/v1',
+    aiEmptyLength: 'The model hit its token limit before producing any text (finish reason "length"). Try again, select less text, or use a standard chat model instead of a reasoning model.',
+    aiReasoningOnly: 'The model returned only internal reasoning and no answer text. Use a standard chat model (e.g. deepseek-chat, gpt-4o-mini) for these features.',
+    aiWrongShape: "The endpoint answered in a non-OpenAI format. Use the provider's OpenAI-compatible Base URL — for Gemini: https://generativelanguage.googleapis.com/v1beta/openai",
+    aiEmptyResponse: 'The AI returned an empty response.',
+}, { get: (t, k) => (k in t ? t[k] : String(k)) });
 
 function grantConfig(window) {
     window.localStorage.setItem('npad:ai-base-url', 'https://api.example.com/v1');
@@ -331,6 +356,129 @@ export default async function run(check, group) {
         }, JSON.stringify({ endpoint: 'http://example.com/v1', apiKey: 'k', payload: {} }));
         assert.equal(status.status, 400);
         assert.match(status.body, /Only HTTPS/);
+    });
+
+    group('ai: provider response parsing is diagnosable');
+
+    await check('callAI returns text for a normal chat completion', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        const text = await ai.callAI('sys', 'user', strings);
+        assert.equal(text, '<h2>Formatted</h2><p>Nice text.</p>');
+        assert.equal(window.__lastAiPayload.max_completion_tokens, window.__lastAiPayload.max_tokens,
+            'max_completion_tokens sent alongside max_tokens (o-series compat)');
+    });
+
+    await check('HTML reply with HTTP 200 produces the Base-URL hint, not a SyntaxError', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({
+            status: 200,
+            body: '<!DOCTYPE html><html><head><title>Sign in</title></head><body>Login page</body></html>',
+        });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => /HTML page instead of a JSON API response \(HTTP 200\)/.test(err.message)
+                && /Base URL/.test(err.message),
+        );
+    });
+
+    await check('HTML reply with HTTP 404 also produces the Base-URL hint', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({ status: 404, body: '<!doctype html><html><body>not found</body></html>' });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => /HTML page instead of a JSON API response \(HTTP 404\)/.test(err.message),
+        );
+    });
+
+    await check('provider error body with HTTP 200 surfaces the provider message', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({
+            status: 200,
+            body: { error: { message: 'Insufficient balance' } },
+        });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => err.message === 'Insufficient balance',
+        );
+    });
+
+    await check('finish_reason "length" with empty content explains the token cap', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({
+            status: 200,
+            body: { choices: [{ message: { content: '' }, finish_reason: 'length' }] },
+        });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => /token limit/.test(err.message) && /reasoning model/.test(err.message),
+        );
+    });
+
+    await check('reasoning-only answers point at standard chat models', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({
+            status: 200,
+            body: { choices: [{ message: { content: '', reasoning_content: 'Let me think…' }, finish_reason: 'stop' }] },
+        });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => /internal reasoning/.test(err.message),
+        );
+    });
+
+    await check('non-OpenAI shapes (Gemini candidates) hint at the compat Base URL', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({
+            status: 200,
+            body: { candidates: [{ content: { parts: [{ text: 'hi' }] } }] },
+        });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => /non-OpenAI format/.test(err.message) && /v1beta\/openai/.test(err.message),
+        );
+    });
+
+    await check('legacy completions shape (choices[0].text) still works', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({ status: 200, body: { choices: [{ text: 'Legacy reply' }] } });
+        const text = await ai.callAI('sys', 'user', strings);
+        assert.equal(text, 'Legacy reply');
+    });
+
+    await check('non-JSON error body without HTML falls back to status + snippet', async () => {
+        const dom = bootDom();
+        const { window } = dom;
+        grantConfig(window);
+        const { ai } = await loadModules(window);
+        window.__aiResponder = () => ({ status: 502, body: 'Bad gateway' });
+        await assert.rejects(
+            () => ai.callAI('sys', 'user', strings),
+            (err) => /HTTP 502/.test(err.message) && /Bad gateway/.test(err.message),
+        );
     });
 }
 
