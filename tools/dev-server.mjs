@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT ?? 8787);
 const VFS = '/site';
 
@@ -165,13 +165,22 @@ const handler = new PHPRequestHandler({
     php,
     documentRoot: VFS,
     absoluteUrl: `http://127.0.0.1:${PORT}/`,
-    // Mirrors the .htaccess rewrites: the sitemap is generated and the
-    // landing pages live at pretty URLs. Note the handler strips trailing
-    // slashes from the URL prefix, so rules must match the leading-slash form.
+    // Mirrors the .htaccess rewrites: the sitemap is generated, the landing
+    // pages live at pretty URLs, and the legacy /favicon.ico path keeps
+    // working. Note the handler strips trailing slashes from the URL prefix,
+    // so rules must match the leading-slash form.
     rewriteRules: [
+        { match: /^\/favicon\.ico$/, replacement: '/assets/icons/favicon.ico' },
+        { match: /^\/favicon\.svg$/, replacement: '/assets/icons/favicon.svg' },
+        { match: /^\/apple-touch-icon\.png$/, replacement: '/assets/icons/apple-touch-icon.png' },
+        { match: /^\/icon-192(-maskable)?\.png$/, replacement: '/assets/icons/icon-192$1.png' },
+        { match: /^\/icon-512(-maskable)?\.png$/, replacement: '/assets/icons/icon-512$1.png' },
+        { match: /^\/og-image\.png$/, replacement: '/assets/img/og-image.png' },
+        { match: /^\/fonts\/(.+)$/, replacement: '/assets/fonts/$1' },
+
         { match: /^\/sitemap\.xml$/, replacement: '/sitemap.php' },
-        { match: /^\/(online-notepad|markdown-editor|math-notepad|checklist-app)\/?$/, replacement: '/$1.php' },
-        { match: /^\/fa\/(online-notepad|markdown-editor|math-notepad|checklist-app)\/?$/, replacement: '/fa/$1.php' },
+        { match: /^\/(online-notepad|markdown-editor|math-notepad|checklist-app|text-editor|word-counter|rich-text-editor|compare)\/?$/, replacement: '/$1.php' },
+        { match: /^\/fa\/(online-notepad|markdown-editor|math-notepad|checklist-app|text-editor|word-counter|rich-text-editor|compare)\/?$/, replacement: '/fa/$1.php' },
     ],
     // Mirrors ErrorDocument 404 /404.php; the original REQUEST_URI is
     // preserved so the 404 page can keep Persian visitors in Persian.

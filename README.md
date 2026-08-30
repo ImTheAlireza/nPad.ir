@@ -40,6 +40,9 @@ Live: <https://npad.ir>
 │
 ├─ assets/
 │  ├─ css/app.css         Design tokens + all styling
+│  ├─ fonts/              Self-hosted Inter + Vazirmatn (+ KaTeX typefaces)
+│  ├─ icons/              favicon, apple-touch-icon, PWA icons
+│  ├─ img/og-image.png    Social-share card
 │  └─ js/
 │     ├─ app.js           Entry point
 │     ├─ editor.js        Document tabs, note UI, editing, autosave, shortcuts
@@ -61,9 +64,10 @@ Live: <https://npad.ir>
 │     ├─ wordlist.js      Bundled en/fa dictionary (18.7k words, ~125 KB)
 │     └─ vendor/          Self-hosted Chart.js 4.5.1 + Prism 1.30.0 + KaTeX 0.18.4
 │
-├─ fonts/                 Self-hosted Inter + Vazirmatn (WOFF2, ~96 KB)
 ├─ api/track.php          Event collector
 ├─ admin/                 Dashboard + CSV export (private)
+├─ docs/                  Project docs (audits, plans, SEO notes)
+├─ tools/                 Dev tooling (dev-server.mjs, runone.mjs)
 └─ tests/                 Test suite
 ```
 
@@ -136,11 +140,12 @@ npm install
 npm run dev       # serves the real site on http://0.0.0.0:8787
 ```
 
-`dev-server.mjs` mirrors the repository into the php-wasm filesystem,
+`tools/dev-server.mjs` mirrors the repository into the php-wasm filesystem,
 watches for file changes, and emulates the `.htaccess` rules (sitemap
-rewrite, `ErrorDocument 404`, trailing-slash redirect). For local analytics,
-create a `config.php` — see the example above (or use a SQLite-backed
-variant for machines without MySQL).
+rewrite, pretty landing URLs, legacy `/favicon.ico`, `ErrorDocument 404`,
+trailing-slash redirect). For local analytics, create a `config.php` — see
+the example above (or use a SQLite-backed variant for machines without
+MySQL).
 
 ## Document import and export
 
@@ -418,8 +423,8 @@ every page view.
 
 ## Licences
 
-- Inter — SIL Open Font License 1.1 (`fonts/LICENSE-Inter.txt`)
-- Vazirmatn — SIL Open Font License 1.1 (`fonts/LICENSE-Vazirmatn.txt`)
+- Inter — SIL Open Font License 1.1 (`assets/fonts/LICENSE-Inter.txt`)
+- Vazirmatn — SIL Open Font License 1.1 (`assets/fonts/LICENSE-Vazirmatn.txt`)
 - Chart.js 4.5.1 — MIT (`assets/js/vendor/LICENSE-chartjs.md`)
 - Prism 1.30.0 — MIT (`assets/js/vendor/LICENSE-prism.md`)
 - KaTeX 0.18.4 — MIT; bundled KaTeX typefaces under SIL OFL 1.1

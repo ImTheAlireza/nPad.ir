@@ -65,17 +65,17 @@ $faAlt = $lang === 'fa' ? $canonicalPath
 <meta property="og:url" content="<?= e(npad_url($canonicalPath)) ?>">
 <meta property="og:title" content="<?= e($ogTitle) ?>">
 <meta property="og:description" content="<?= e($ogDesc) ?>">
-<meta property="og:image" content="<?= e(npad_url('/og-image.png')) ?>">
+<meta property="og:image" content="<?= e(npad_url('/assets/img/og-image.png')) ?>">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="<?= e($ogTitle) ?>">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="<?= e($twitterTitle) ?>">
 <meta name="twitter:description" content="<?= e($twitterDesc) ?>">
-<meta name="twitter:image" content="<?= e(npad_url('/og-image.png')) ?>">
+<meta name="twitter:image" content="<?= e(npad_url('/assets/img/og-image.png')) ?>">
 
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
 
 <?php
@@ -106,11 +106,11 @@ $faAlt = $lang === 'fa' ? $canonicalPath
 // Preload the fonts actually used by this language only — both weights,
 // since headings and toolbar labels render with the 600 face above the fold.
 if ($lang === 'fa'): ?>
-<link rel="preload" href="/fonts/vazirmatn-arabic-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/vazirmatn-arabic-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/vazirmatn-arabic-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/vazirmatn-arabic-600.woff2" as="font" type="font/woff2" crossorigin>
 <?php else: ?>
-<link rel="preload" href="/fonts/inter-latin-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/inter-latin-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/inter-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/inter-latin-600.woff2" as="font" type="font/woff2" crossorigin>
 <?php endif; ?>
 
 <link rel="stylesheet" href="<?= e(asset('assets/css/app.css')) ?>">

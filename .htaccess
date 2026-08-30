@@ -30,11 +30,11 @@ ErrorDocument 404 /404.php
 
 # Source directories are never requested directly. The partials also guard
 # themselves in PHP, but blocking at the server is the cheaper first line.
-# node_modules and dev tooling must never ship to the webroot; they are
-# blocked here in case a deploy copies them anyway.
+# node_modules and dev tooling (tools/, *.mjs) must never ship to the
+# webroot; they are blocked here in case a deploy copies them anyway.
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(includes|lang|tests|node_modules)(/|$) - [F,L]
+    RewriteRule ^(includes|lang|tests|tools|docs|node_modules)(/|$) - [F,L]
     RewriteRule ^(dev-server|runone)\.mjs$ - [F,L]
 </IfModule>
 
@@ -82,6 +82,17 @@ ErrorDocument 404 /404.php
     RewriteRule ^track\.php$ /api/track.php [L,R=301]
     RewriteRule ^dashboard\.php$ /admin/dashboard.php [L,R=301]
     RewriteRule ^export\.php$ /admin/export.php [L,R=301]
+
+    # Legacy asset paths from before the assets/ reorg. Browsers request
+    # /favicon.ico directly, and stale caches may still hold the old URLs —
+    # keep them served from their new homes so nothing 404s after a deploy.
+    RewriteRule ^favicon\.ico$ /assets/icons/favicon.ico [L]
+    RewriteRule ^favicon\.svg$ /assets/icons/favicon.svg [L]
+    RewriteRule ^apple-touch-icon\.png$ /assets/icons/apple-touch-icon.png [L]
+    RewriteRule ^icon-192(-maskable)?\.png$ /assets/icons/icon-192$1.png [L]
+    RewriteRule ^icon-512(-maskable)?\.png$ /assets/icons/icon-512$1.png [L]
+    RewriteRule ^og-image\.png$ /assets/img/og-image.png [L]
+    RewriteRule ^fonts/(.+)$ /assets/fonts/$1 [L]
 </IfModule>
 
 # ------------------------------------------------------------------------------

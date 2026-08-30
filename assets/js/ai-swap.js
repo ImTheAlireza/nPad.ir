@@ -1,9 +1,10 @@
 /**
  * AI glow swap — the neon transition played when AI rewrites text in place.
  *
- * A direct port of the reference prototype (index.txt): same layers, same
- * keyframes, same easing, same timings. Only the colour roles are re-pointed
- * at the site's accent — see the module's CSS section in app.css.
+ * A direct port of the reference prototype (docs/scratch/index.txt): same
+ * layers, same keyframes, same easing, same timings. Only the colour roles
+ * are re-pointed at the site's accent — see the module's CSS section in
+ * app.css.
  *
  * The prototype stacks three things: a crisp "ink" copy of the text (burns
  * out, then materialises), a blurred, blown-out "bloom" copy behind it, and a

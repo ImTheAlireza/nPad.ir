@@ -3,12 +3,13 @@ deployment:
     - export DEPLOYPATH=/home/gniwvzcf/public_html/
     # Preserve the git-ignored config.php across deploys.
     - /bin/cp -a $DEPLOYPATH/config.php /home/gniwvzcf/config_backup.php 2>/dev/null || true
-    # Explicit allow-list: dev tooling (node_modules, tests, *.mjs), docs and
-    # other non-site files must never land in public_html. The previous
-    # recursive wildcard copy shipped everything present in the checkout.
-    - /bin/cp -R assets css $DEPLOYPATH 2>/dev/null || true
-    - /bin/cp -R fonts $DEPLOYPATH
+    # Explicit allow-list: dev tooling (docs/, tools/, tests/, node_modules,
+    # *.mjs) and the rest of the checkout must never land in public_html.
+    # The previous recursive wildcard copy shipped everything present in the
+    # checkout. assets/ carries CSS, JS, fonts (incl. KaTeX), icons and the
+    # OG image.
+    - /bin/cp -R assets $DEPLOYPATH
     - /bin/cp -R includes lang api admin fa $DEPLOYPATH
-    - /bin/cp online-notepad.php markdown-editor.php math-notepad.php checklist-app.php $DEPLOYPATH
-    - /bin/cp index.php privacy.php 404.php sitemap.php offline.html sw.js robots.txt site.webmanifest .htaccess .user.ini favicon.svg favicon.ico og-image.png icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png apple-touch-icon.png $DEPLOYPATH
+    - /bin/cp online-notepad.php markdown-editor.php math-notepad.php checklist-app.php text-editor.php word-counter.php rich-text-editor.php compare.php $DEPLOYPATH
+    - /bin/cp index.php privacy.php 404.php sitemap.php offline.html sw.js robots.txt site.webmanifest .htaccess .user.ini $DEPLOYPATH
     - /bin/cp -a /home/gniwvzcf/config_backup.php $DEPLOYPATH/config.php 2>/dev/null || true

@@ -151,8 +151,8 @@ export default function run(check, group) {
 
     check('source directories are blocked at the server', () => {
         const ht = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
-        assert.ok(/\^\(includes\|lang\|tests(\|node_modules)?\)\(/.test(ht),
-            'includes/, lang/ and tests/ are reachable over HTTP');
+        assert.ok(/\^\(includes\|lang\|tests\|tools\|docs(\|node_modules)?\)\(/.test(ht),
+            'includes/, lang/, tests/, tools/ and docs/ are reachable over HTTP');
     });
 
     check('index.html is gone', () => {
@@ -170,7 +170,7 @@ export default function run(check, group) {
     });
 
     check('font files are valid WOFF2', () => {
-        const fonts = walk(path.join(ROOT, 'fonts'), (n) => n.endsWith('.woff2'));
+        const fonts = walk(path.join(ROOT, 'assets/fonts'), (n) => n.endsWith('.woff2'));
         assert.ok(fonts.length >= 4, `only ${fonts.length} fonts`);
         for (const f of fonts) {
             const magic = fs.readFileSync(f).subarray(0, 4).toString('latin1');
@@ -255,7 +255,7 @@ export default function run(check, group) {
 
     check('dev tooling is blocked at the server and not deployed', () => {
         const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
-        assert.ok(/\(includes\|lang\|tests\|node_modules\)/.test(htaccess), 'rewrite does not deny node_modules');
+        assert.ok(/\(includes\|lang\|tests\|tools\|docs\|node_modules\)/.test(htaccess), 'rewrite does not deny node_modules');
         assert.ok(/\(dev-server\|runone\)\\\.mjs\$/.test(htaccess), 'rewrite does not deny dev *.mjs files');
         assert.ok(/\(log\|sql\|sqlite\|bak\|old\|backup\|ini\|md\|mjs\|lock\)\$/.test(htaccess), 'FilesMatch does not deny *.mjs');
         const cpanel = fs.readFileSync(path.join(ROOT, '.cpanel.yml'), 'utf8');
@@ -273,9 +273,17 @@ export default function run(check, group) {
             'the renderer must emit the has-submenu class (no :has() dependency)');
     });
 
-    check('og image and favicon.ico exist', () => {
-        assert.ok(fs.existsSync(path.join(ROOT, 'og-image.png')), 'missing og-image.png');
-        assert.ok(fs.existsSync(path.join(ROOT, 'favicon.ico')), 'missing favicon.ico');
+    check('og image and favicon.ico exist at their assets paths', () => {
+        assert.ok(fs.existsSync(path.join(ROOT, 'assets/img/og-image.png')), 'missing assets/img/og-image.png');
+        assert.ok(fs.existsSync(path.join(ROOT, 'assets/icons/favicon.ico')), 'missing assets/icons/favicon.ico');
+        // Legacy URLs (browsers request /favicon.ico directly, stale caches
+        // may hold the pre-reorg paths) must keep resolving after the move.
+        const htaccess = fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8');
+        assert.ok(htaccess.includes('RewriteRule ^favicon\\.ico$ /assets/icons/favicon.ico [L]'),
+            '.htaccess no longer redirects the legacy /favicon.ico');
+        assert.ok(htaccess.includes('RewriteRule ^og-image\\.png$ /assets/img/og-image.png [L]'),
+            '.htaccess no longer redirects the legacy /og-image.png');
+        assert.ok(htaccess.includes('RewriteRule ^fonts/(.+)'), '.htaccess no longer redirects legacy /fonts/ paths');
     });
 
     group('static: landing pages');

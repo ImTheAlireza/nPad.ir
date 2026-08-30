@@ -194,7 +194,7 @@ if (empty($_SESSION['logged_in'])) {
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="robots" content="noindex, nofollow">
         <title>Sign in — NPad Analytics</title>
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
         <link rel="stylesheet" href="<?= e(asset('assets/css/app.css')) ?>">
     </head>
     <body>
@@ -344,7 +344,7 @@ $hasChartJs = is_file(NPAD_ROOT . '/assets/js/vendor/chart.umd.min.js');
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>NPad Analytics</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="<?= e(asset('assets/css/app.css')) ?>">
 <style>
     .dash-grid {

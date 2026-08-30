@@ -133,7 +133,7 @@ $graph = [
             'url'    => npad_url('/'),
             'logo'   => [
                 '@type'  => 'ImageObject',
-                'url'    => npad_url('/icon-512.png'),
+                'url'    => npad_url('/assets/icons/icon-512.png'),
                 'width'  => 512,
                 'height' => 512,
             ],
