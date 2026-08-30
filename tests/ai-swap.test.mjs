@@ -217,7 +217,10 @@ export default async function run(check, group) {
             payload: { type: 'text', value: 'rewritten' },
             commit: commitWith(() => { editor.innerHTML = '<div>rewritten</div>'; }),
         });
-        assert.ok(shell.classList.contains('is-ai-burst'), 'card did not flare');
+        // The frame that lights up is the text area. .editor-shell also wraps
+        // the tabs, the toolbar and the status bar — those must stay dark.
+        assert.ok(editor.classList.contains('is-ai-burst'), 'text area did not flare');
+        assert.ok(!shell.classList.contains('is-ai-burst'), 'toolbar frame must not flare');
         assert.equal(editor.getAttribute('contenteditable'), 'false', 'editor not locked');
         await promise;
         assert.equal(committed, 1);

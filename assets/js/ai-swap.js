@@ -82,15 +82,6 @@ function reducedMotion() {
     }
 }
 
-/** The card that lights up with the text. */
-function flareTarget(editorEl) {
-    try {
-        return editorEl.closest('.editor-shell') || null;
-    } catch {
-        return null;
-    }
-}
-
 /** Let the app re-count words, re-save and re-run the find bar. */
 function notifyChange(editorEl) {
     try {
@@ -256,7 +247,6 @@ function unwrap(wrapper, editorEl) {
 async function runRangeSwap(editorEl, wrapper, options) {
     const { payload, commit } = options;
     const doc = editorEl.ownerDocument;
-    const shell = flareTarget(editorEl);
     const ink = wrapper.querySelector('.ai-swap__ink');
     const bloom = wrapper.querySelector('.ai-swap__bloom');
 
@@ -269,7 +259,9 @@ async function runRangeSwap(editorEl, wrapper, options) {
         // prototype's stage — but only over the text being replaced.
         wrapper.classList.add('is-burst', 'is-leaving');
         bloom?.classList.add('is-echo-old');
-        shell?.classList.add('is-ai-burst');
+        // The *text area* lights up — not .editor-shell, which also wraps the
+        // tabs, the toolbar and the status bar.
+        editorEl.classList.add('is-ai-burst');
 
         await wait(LEAVE_MS);
         // The user (or an undo) removed the text we were animating — drop the
@@ -300,7 +292,7 @@ async function runRangeSwap(editorEl, wrapper, options) {
         const last = wrapper.isConnected ? unwrap(wrapper, editorEl) : null;
         wrapper.classList.remove('is-burst', 'is-leaving', 'is-arriving');
         bloom?.classList.remove('is-echo-old', 'is-echo-new');
-        shell?.classList.remove('is-ai-burst');
+        editorEl.classList.remove('is-ai-burst');
         active = null;
         if (last) placeCaretAfter(editorEl, last);
         notifyChange(editorEl);
@@ -311,14 +303,15 @@ async function runRangeSwap(editorEl, wrapper, options) {
 /** Whole-note replacement: the editor surface itself plays the transition. */
 async function runEditorSwap(editorEl, options) {
     const { payload, commit } = options;
-    const shell = flareTarget(editorEl);
     const previousEditable = editorEl.getAttribute('contenteditable');
     let committed = false;
 
     active = { editorEl, whole: true };
     try {
         editorEl.classList.add('ai-swap-host', 'is-leaving');
-        shell?.classList.add('is-ai-burst');
+        // The *text area* lights up — not .editor-shell, which also wraps the
+        // tabs, the toolbar and the status bar.
+        editorEl.classList.add('is-ai-burst');
         // Locked for the length of the transition, like the prototype's buttons.
         editorEl.setAttribute('contenteditable', 'false');
 
@@ -346,9 +339,8 @@ async function runEditorSwap(editorEl, options) {
             }
         }
     } finally {
-        editorEl.classList.remove('ai-swap-host', 'is-leaving', 'is-arriving');
+        editorEl.classList.remove('ai-swap-host', 'is-leaving', 'is-arriving', 'is-ai-burst');
         editorEl.setAttribute('contenteditable', previousEditable || 'true');
-        shell?.classList.remove('is-ai-burst');
         active = null;
         notifyChange(editorEl);
     }

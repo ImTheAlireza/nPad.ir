@@ -4642,6 +4642,14 @@ body.focus-mode .focus-exit { display: inline-flex; }
        out  leaving  / old text   the same accent, a shade deeper
        halo the soft rim inside the card's glow
 
+   Two deliberate departures from the prototype, both requested:
+     - The frame that lights up is the text area itself, not the shell that
+       wraps the tabs, toolbar and status bar. The ring is drawn as an inset
+       shadow, so it costs no layout and cannot nudge the text.
+     - The frame's glow ramps in and out over ~600ms instead of snapping:
+       same peak, same 2s span, ease-in-out rather than the prototype's
+       front-loaded curve.
+
    The prototype layers three things:
      1. a crisp "ink" copy of the text (burns out, then materialises)
      2. a blurred, blown-out "bloom" copy stacked behind it
@@ -4680,11 +4688,12 @@ body.focus-mode .focus-exit { display: inline-flex; }
     /* --- glow stacks: the prototype's six layers, 15px cap ---------------
        Light theme drops the prototype's white core: a white core on a white
        page is invisible, so the accent itself carries the light. */
-    --ai-glow-in: 0 0 1px var(--ai-in-soft), 0 0 2px var(--ai-in-soft),
-                  0 0 4px var(--ai-in), 0 0 7px var(--ai-in),
+    --ai-core: color-mix(in srgb, var(--accent) 70%, #ffffff);
+    --ai-glow-in: 0 0 1px var(--ai-core), 0 0 2px var(--ai-core),
+                  0 0 4px var(--ai-in-soft), 0 0 7px var(--ai-in),
                   0 0 11px var(--ai-in), 0 0 15px var(--ai-in-rim);
-    --ai-glow-out: 0 0 1px var(--ai-out-soft), 0 0 2px var(--ai-out-soft),
-                   0 0 4px var(--ai-out), 0 0 7px var(--ai-out),
+    --ai-glow-out: 0 0 1px var(--ai-core), 0 0 2px var(--ai-core),
+                   0 0 4px var(--ai-out-soft), 0 0 7px var(--ai-out),
                    0 0 11px var(--ai-out), 0 0 15px var(--ai-out-rim);
     --ai-glow-ghost: 0 0 2px currentColor, 0 0 4px currentColor,
                      0 0 8px currentColor, 0 0 15px currentColor;
@@ -4702,61 +4711,73 @@ body.focus-mode .focus-exit { display: inline-flex; }
     --ai-f-note-0: blur(6px) brightness(1.10) saturate(4.5);
     --ai-f-note-44: blur(1.2px) brightness(1.06) saturate(3.6);
 
-    /* --- the card: resting edge and flared edge -------------------------- */
-    --ai-card-border-flare: var(--accent);
-    --ai-card-shadow-flare:
+    /* --- the frame: the text area's own edge, lit and at rest -------------
+       The lit edge is an inset ring (no layout cost); the outward rings are
+       deliberately the faintest layers, so the light reads as belonging to
+       the text area and only spills a little over the toolbar. */
+    --ai-frame-glow:
         inset 0 0 0 1px color-mix(in srgb, var(--accent) 95%, transparent),
-        inset 0 0 3px color-mix(in srgb, var(--accent) 70%, transparent),
-        inset 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent),
-        inset 0 0 14px color-mix(in srgb, var(--ai-halo) 40%, transparent),
-        0 0 2px color-mix(in srgb, var(--accent) 90%, transparent),
-        0 0 5px color-mix(in srgb, var(--accent) 75%, transparent),
-        0 0 10px color-mix(in srgb, var(--accent) 60%, transparent),
-        0 0 15px color-mix(in srgb, var(--ai-out) 45%, transparent);
+        inset 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent),
+        inset 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent),
+        inset 0 0 14px color-mix(in srgb, var(--ai-halo) 22%, transparent),
+        0 0 2px color-mix(in srgb, var(--accent) 60%, transparent),
+        0 0 5px color-mix(in srgb, var(--accent) 45%, transparent),
+        0 0 10px color-mix(in srgb, var(--accent) 32%, transparent),
+        0 0 15px color-mix(in srgb, var(--ai-out) 24%, transparent);
+    --ai-frame-rest:
+        inset 0 0 0 0 transparent, inset 0 0 0 0 transparent,
+        inset 0 0 0 0 transparent, inset 0 0 0 0 transparent,
+        0 0 0 0 transparent, 0 0 0 0 transparent,
+        0 0 0 0 transparent, 0 0 0 0 transparent;
 }
 
 [data-theme='dark'] {
     /* The prototype's palette, in the site accent: the cyan role is
-       var(--accent) and the pink role is the same accent a shade deeper. */
+       var(--accent) and the pink role is the same accent a shade deeper.
+       Nothing is allowed to blow out to white here — brightness() stays low
+       enough that the accent's hue survives it (see the filters below), so
+       the glow reads cyan instead of white. */
     --ai-in: var(--accent);
-    --ai-in-soft: #d7fbff;                                  /* prototype's pale core */
-    --ai-in-core: #ffffff;
+    --ai-in-soft: color-mix(in srgb, var(--accent) 55%, #ffffff);
+    --ai-in-core: var(--accent);
     --ai-in-rim: color-mix(in srgb, var(--accent) 88%, transparent);
     --ai-out: color-mix(in srgb, var(--accent) 85%, #0b1120);
-    --ai-out-soft: color-mix(in srgb, var(--accent) 55%, #ffffff);
+    --ai-out-soft: color-mix(in srgb, var(--accent) 80%, #ffffff);
     --ai-out-rim: color-mix(in srgb, var(--accent) 96%, transparent);
     --ai-halo: var(--accent);
+    --ai-core: color-mix(in srgb, var(--accent) 70%, #ffffff);
 
-    --ai-glow-in: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px var(--ai-in-soft),
-                  0 0 7px var(--ai-in), 0 0 11px var(--ai-in),
-                  0 0 15px var(--ai-out-rim);
-    --ai-glow-out: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px var(--ai-out-soft),
-                   0 0 7px var(--ai-out), 0 0 11px var(--ai-out),
-                   0 0 15px var(--ai-out-rim);
-    --ai-glow-ghost: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px currentColor,
-                     0 0 7px currentColor, 0 0 11px currentColor,
-                     0 0 15px currentColor;
+    --ai-glow-in: 0 0 1px var(--ai-core), 0 0 2px var(--ai-core),
+                  0 0 4px var(--ai-in-soft), 0 0 7px var(--ai-in),
+                  0 0 11px var(--ai-in), 0 0 15px var(--ai-out-rim);
+    --ai-glow-out: 0 0 1px var(--ai-core), 0 0 2px var(--ai-core),
+                   0 0 4px var(--ai-out-soft), 0 0 7px var(--ai-out),
+                   0 0 11px var(--ai-out), 0 0 15px var(--ai-out-rim);
+    --ai-glow-ghost: 0 0 1px var(--ai-core), 0 0 2px var(--ai-core),
+                     0 0 4px currentColor, 0 0 7px currentColor,
+                     0 0 11px currentColor, 0 0 15px currentColor;
 
-    /* The prototype's filters, unchanged. */
-    --ai-f-leave: blur(4px) brightness(8) saturate(1.9);
-    --ai-f-ghost: blur(6px) brightness(8.4) saturate(1.9);
-    --ai-f-arrive-0: blur(6px) brightness(9) saturate(2);
-    --ai-f-arrive-44: blur(1.2px) brightness(5.8) saturate(1.7);
-    --ai-f-flare: brightness(2.25) saturate(1.85);
-    --ai-f-note-leave: blur(4px) brightness(13) saturate(3.5);
-    --ai-f-note-0: blur(6px) brightness(20) saturate(3.7);
-    --ai-f-note-44: blur(1.2px) brightness(13) saturate(3.1);
+    /* The prototype's filters, with brightness held down so the accent's hue
+       survives instead of clipping to white: light comes from the layered,
+       accent-coloured glow rather than from blowing the text out. */
+    --ai-f-leave: blur(4px) brightness(1.7) saturate(2.2);
+    --ai-f-ghost: blur(6px) brightness(2) saturate(2.4);
+    --ai-f-arrive-0: blur(6px) brightness(1.8) saturate(2.4);
+    --ai-f-arrive-44: blur(1.2px) brightness(1.5) saturate(2.1);
+    --ai-f-flare: brightness(1.35) saturate(1.45);
+    --ai-f-note-leave: blur(4px) brightness(2.4) saturate(3.2);
+    --ai-f-note-0: blur(6px) brightness(2.5) saturate(3.4);
+    --ai-f-note-44: blur(1.2px) brightness(2) saturate(3);
 
-    --ai-card-border-flare: rgba(255, 255, 255, 0.99);
-    --ai-card-shadow-flare:
-        inset 0 0 0 1px rgba(255, 255, 255, 0.98),
-        inset 0 0 3px rgba(233, 252, 255, 1),
-        inset 0 0 8px rgba(89, 237, 255, 0.98),
-        inset 0 0 14px rgba(156, 108, 255, 0.95),
-        0 0 2px rgba(255, 255, 255, 1),
-        0 0 5px rgba(233, 252, 255, 1),
-        0 0 10px rgba(89, 237, 255, 1),
-        0 0 15px rgba(255, 84, 189, 0.94);
+    --ai-frame-glow:
+        inset 0 0 0 1px color-mix(in srgb, var(--accent) 95%, transparent),
+        inset 0 0 3px color-mix(in srgb, var(--accent) 60%, transparent),
+        inset 0 0 8px color-mix(in srgb, var(--accent) 42%, transparent),
+        inset 0 0 14px color-mix(in srgb, var(--ai-halo) 28%, transparent),
+        0 0 2px color-mix(in srgb, var(--accent) 70%, transparent),
+        0 0 5px color-mix(in srgb, var(--accent) 55%, transparent),
+        0 0 10px color-mix(in srgb, var(--accent) 42%, transparent),
+        0 0 15px color-mix(in srgb, var(--ai-out) 32%, transparent);
 }
 
 /* --- 1. The swap box ----------------------------------------------------- */
@@ -4777,9 +4798,10 @@ body.focus-mode .focus-exit { display: inline-flex; }
 }
 
 /* The prototype's stage pass, scoped to the swapped text: brightness and
-   saturation rise with the card flare and multiply with the ink's filter. */
+   saturation rise with the frame flare and multiply with the ink's own
+   filter. Ramps match the frame's, so the two swell and fade together. */
 .ai-swap.is-burst {
-    animation: ai-swap-flare 2s cubic-bezier(.14, .72, .24, 1) both;
+    animation: ai-swap-flare 2s ease-in-out both;
 }
 
 /* --- 2. The ink: the copy the user reads --------------------------------- */
@@ -4840,31 +4862,32 @@ body.focus-mode .focus-exit { display: inline-flex; }
 }
 
 .editor.ai-swap-host.is-arriving {
-    animation: ai-note-materialize 1.45s cubic-bezier(.17, .9, .25, 1.1) both;
+    /* Both animations in one declaration: a second rule would replace this
+       one, and the frame flare has to keep running — offset by the 360ms it
+       has already played — while the note materialises. */
+    animation: ai-note-materialize 1.45s cubic-bezier(.17, .9, .25, 1.1) both,
+               ai-frame-flare 2s ease-in-out -360ms both;
 }
 
-/* --- 5. The card flare: the prototype's stage edge, on the editor card --- */
+/* --- 5. The frame flare: the text area's own edge, never the toolbar ---- */
 
-.editor-shell.is-ai-burst {
-    animation: ai-card-flare 2s cubic-bezier(.14, .72, .24, 1) both;
+.editor.is-ai-burst {
+    animation: ai-frame-flare 2s ease-in-out both;
 }
 
 /* --- 6. Keyframes: the prototype's curves, unchanged --------------------- */
 
-@keyframes ai-card-flare {
-    0%, 100% {
-        border-color: var(--border-subtle);
-        box-shadow: var(--shadow-md);
-    }
-    16%, 55% {
-        border-color: var(--ai-card-border-flare);
-        box-shadow: var(--ai-card-shadow-flare);
-    }
+/* Long, symmetric ramps: the light swells over ~600ms, holds while the new
+   text materialises, then fades over ~700ms. No border-colour jump, and each
+   layer fades in from its own transparent zero state. */
+@keyframes ai-frame-flare {
+    0%, 100% { box-shadow: var(--ai-frame-rest); }
+    30%, 65% { box-shadow: var(--ai-frame-glow); }
 }
 
 @keyframes ai-swap-flare {
     0%, 100% { filter: brightness(1) saturate(1); }
-    16%, 55% { filter: var(--ai-f-flare); }
+    30%, 65% { filter: var(--ai-f-flare); }
 }
 
 @keyframes ai-text-materialize {
