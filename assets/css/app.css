@@ -4634,11 +4634,13 @@ body.focus-mode .focus-exit { display: inline-flex; }
    AI glow swap — a direct port of the reference transition (index.txt)
    --------------------------------------------------------------------------
    Same structure, same keyframes, same easing, same timings as the
-   prototype — only the colour roles are re-pointed at the site's accent:
+   prototype — only the colours are re-pointed at the site's accent
+   (dark #22d3ee, light #0e7490). Both phases glow in that one accent;
+   they are told apart by the direction of the light, not by hue:
 
-       in   arriving / new text   → var(--accent)   (dark #22d3ee, light #0e7490)
-       out  leaving  / old text   → the prototype's hot pink
-       halo the cool rim inside the card's glow
+       in   arriving / new text   the accent at full strength
+       out  leaving  / old text   the same accent, a shade deeper
+       halo the soft rim inside the card's glow
 
    The prototype layers three things:
      1. a crisp "ink" copy of the text (burns out, then materialises)
@@ -4664,13 +4666,15 @@ body.focus-mode .focus-exit { display: inline-flex; }
 :root {
     /* --- colour roles ---------------------------------------------------- */
     --ai-in: var(--accent);
-    --ai-in-soft: color-mix(in srgb, var(--accent) 55%, #ffffff);
+    --ai-in-soft: color-mix(in srgb, var(--accent) 45%, #ffffff);
     --ai-in-core: color-mix(in srgb, var(--accent) 85%, #000000);
     --ai-in-rim: color-mix(in srgb, var(--accent) 45%, transparent);
-    --ai-out: #d81b60;
-    --ai-out-soft: #f472b6;
-    --ai-out-rim: rgba(216, 27, 96, 0.55);
-    --ai-halo: #7c3aed;
+    /* Same hue, a shade deeper: the outgoing light reads as dying embers
+       rather than a second colour. */
+    --ai-out: color-mix(in srgb, var(--accent) 88%, #000000);
+    --ai-out-soft: color-mix(in srgb, var(--accent) 40%, #ffffff);
+    --ai-out-rim: color-mix(in srgb, var(--accent) 50%, transparent);
+    --ai-halo: var(--accent);
     --ai-ink-rest: var(--text-strong);
 
     /* --- glow stacks: the prototype's six layers, 15px cap ---------------
@@ -4712,15 +4716,16 @@ body.focus-mode .focus-exit { display: inline-flex; }
 }
 
 [data-theme='dark'] {
-    /* The prototype's palette, with the cyan role retuned to the site accent. */
+    /* The prototype's palette, in the site accent: the cyan role is
+       var(--accent) and the pink role is the same accent a shade deeper. */
     --ai-in: var(--accent);
-    --ai-in-soft: #d7fbff;
+    --ai-in-soft: #d7fbff;                                  /* prototype's pale core */
     --ai-in-core: #ffffff;
     --ai-in-rim: color-mix(in srgb, var(--accent) 88%, transparent);
-    --ai-out: #ff54bd;
-    --ai-out-soft: #ffd2ec;
-    --ai-out-rim: rgba(255, 84, 189, 0.96);
-    --ai-halo: #9c6cff;
+    --ai-out: color-mix(in srgb, var(--accent) 85%, #0b1120);
+    --ai-out-soft: color-mix(in srgb, var(--accent) 55%, #ffffff);
+    --ai-out-rim: color-mix(in srgb, var(--accent) 96%, transparent);
+    --ai-halo: var(--accent);
 
     --ai-glow-in: 0 0 1px #fff, 0 0 2px #fff, 0 0 4px var(--ai-in-soft),
                   0 0 7px var(--ai-in), 0 0 11px var(--ai-in),
