@@ -1,5 +1,6 @@
 import { sanitizeHtml } from './sanitize.js';
 import { requestChatCompletion } from './ai-parse.js';
+import { glowSwap } from './ai-swap.js';
 
 /**
  * NPad AI module.
@@ -541,17 +542,51 @@ function showAppliedToast(message, strings, { onUndo, onRedo } = {}) {
     region.appendChild(el);
 }
 
-/** Apply a text/HTML replacement directly, with history + toast. */
-function applyDirectToEditor(editorEl, strings, label, hasSelection, savedRange, runInsert) {
+/**
+ * Apply a text/HTML replacement directly, with history + toast.
+ *
+ * The edit itself runs through the glow transition: the old text burns out in
+ * place, the new text materialises out of the light, and the editor card
+ * flares with it. `commit` below is the plain, un-animated insert — it stays
+ * the writer for the whole-note path (execCommand keeps block structure and
+ * the undo stack sane) and the safety net whenever the animation cannot run.
+ *
+ * @param {HTMLElement} editorEl
+ * @param {object} strings
+ * @param {string} label
+ * @param {boolean} hasSelection
+ * @param {Range|null} savedRange
+ * @param {{type: 'text'|'html', value: string}} payload
+ */
+async function applyDirectToEditor(editorEl, strings, label, hasSelection, savedRange, payload) {
     recordApply(editorEl);
-    try {
+
+    const commit = () => {
         if (hasSelection) {
             focusEditorWithRange(editorEl, savedRange);
         } else {
             editorEl.focus();
             document.execCommand('selectAll');
         }
-        runInsert();
+        if (payload.type === 'html') {
+            document.execCommand('insertHTML', false, payload.value);
+        } else {
+            document.execCommand('insertText', false, payload.value);
+        }
+    };
+
+    try {
+        if (hasSelection && !savedRange) {
+            // The captured range is gone (the note moved on during the AI
+            // round-trip): write at the caret exactly as before, no animation.
+            commit();
+        } else {
+            await glowSwap(editorEl, {
+                range: hasSelection ? savedRange : null,
+                payload,
+                commit,
+            });
+        }
     } catch (err) {
         _aiUndoStack.pop(); // nothing changed — do not keep a bogus entry
         throw err;
@@ -717,9 +752,7 @@ export async function runToneRewrite(editorEl, strings, showDialog, toast) {
 
         // Apply directly (reversible via undo/redo) — the tone picker above
         // stays because it is a genuine option choice.
-        applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, () => {
-            document.execCommand('insertText', false, result);
-        });
+        await applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, { type: 'text', value: result });
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
@@ -810,9 +843,7 @@ export async function runSmartFormat(editorEl, strings, showDialog, toast) {
         const cleaned = sanitizeHtml(asHtml);
 
         // Apply directly (reversible via undo/redo) — no confirmation round.
-        applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, () => {
-            document.execCommand('insertHTML', false, cleaned);
-        });
+        await applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', hasSelection, savedRange, { type: 'html', value: cleaned });
     } catch (err) {
         loadingToast();
         toast(`${strings.aiError}: ${err.message}`, 'error');
@@ -1348,9 +1379,7 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
             finishLoading();
             // Apply directly into the selection — a selection summary is an
             // in-place edit, not a new note (undoable like the other tools).
-            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
-                document.execCommand('insertText', false, result);
-            });
+            await applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, { type: 'text', value: result });
 
         } else if (action === 'sel-rewrite') {
             const rwText = cleanInput(text, 15_000,
@@ -1360,9 +1389,7 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 rwText, strings, { temperature: 1.0, maxTokens: Math.min(1200, Math.ceil(rwText.length / 3.5 * 1.2) + 30) },
             );
             finishLoading();
-            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
-                document.execCommand('insertText', false, result);
-            });
+            await applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, { type: 'text', value: result });
 
         } else if (action === 'sel-shorten') {
             const shText = cleanInput(text, 15_000,
@@ -1372,9 +1399,7 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 shText, strings, { temperature: 1.0, maxTokens: Math.min(600, Math.ceil(shText.length / 3.5 * 0.7) + 20) },
             );
             finishLoading();
-            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
-                document.execCommand('insertText', false, result);
-            });
+            await applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, { type: 'text', value: result });
 
         } else if (action === 'sel-expand') {
             const exText = cleanInput(text, 8_000,
@@ -1384,9 +1409,7 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 exText, strings, { temperature: 1.0, maxTokens: 500 },
             );
             finishLoading();
-            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
-                document.execCommand('insertText', false, result);
-            });
+            await applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, { type: 'text', value: result });
 
         } else if (action === 'sel-translate') {
             const trText = cleanInput(text, 25_000,
@@ -1396,9 +1419,7 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                 trText, strings, { temperature: 1.3, maxTokens: Math.min(2000, Math.ceil(trText.length / 3.5 * 1.3) + 30) },
             );
             finishLoading();
-            applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, () => {
-                document.execCommand('insertText', false, result);
-            });
+            await applyDirectToEditor(editorEl, strings, strings.aiApplied || 'Applied to your note', true, savedRange, { type: 'text', value: result });
 
         } else if (action === 'word-replace') {
             // Context makes the suggestions fit how the word is used here
@@ -1434,8 +1455,23 @@ async function runSelectionAction(action, text, editorEl, strings, showDialog, t
                             // then restore the saved range and insert.
                             if (dlg) dlg.close();
                             setTimeout(() => {
-                                focusEditorWithRange(editorEl, savedRange);
-                                document.execCommand('insertText', false, word);
+                                const plainInsert = () => {
+                                    focusEditorWithRange(editorEl, savedRange);
+                                    document.execCommand('insertText', false, word);
+                                };
+                                // A single word is the smallest possible swap:
+                                // it burns out and the replacement lights up in
+                                // exactly the same space, leaving the sentence
+                                // around it untouched.
+                                if (!savedRange) {
+                                    plainInsert();
+                                    return;
+                                }
+                                glowSwap(editorEl, {
+                                    range: savedRange,
+                                    payload: { type: 'text', value: word },
+                                    commit: plainInsert,
+                                });
                             }, 0);
                         });
                     });
