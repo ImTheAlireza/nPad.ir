@@ -1,9 +1,14 @@
 /**
  * AI glow swap — the neon transition played when AI rewrites text in place.
  *
- * The reference animation (a standalone prototype) has two stacked copies of
- * the same text: a crisp "ink" copy the user reads, and a blurred, blown-out
- * "bloom" copy behind it. Swapping between two texts never moves the text —
+ * A direct port of the reference prototype (index.txt): same layers, same
+ * keyframes, same easing, same timings. Only the colour roles are re-pointed
+ * at the site's accent — see the module's CSS section in app.css.
+ *
+ * The prototype stacks three things: a crisp "ink" copy of the text (burns
+ * out, then materialises), a blurred, blown-out "bloom" copy behind it, and a
+ * stage whose edge flares for 2s while its `filter` doubles the brightness of
+ * everything inside it. Swapping between two texts never moves the text —
  * only light, blur and opacity change:
  *
  *   1. 0–360ms      the old text burns out: it glows pink, blurs and fades to
@@ -14,14 +19,16 @@
  *   4. 0–2000ms     the editor card flares in sync, capped at a 15px spread so
  *                   the light never smears outside the frame.
  *
- * Inside the real editor the same effect has to obey two extra rules the
+ * Inside the real editor the same effect has to obey three extra rules the
  * prototype did not have:
  *
  *   - The rest of the note must not move, re-wrap or change colour. The swap
  *     box therefore occupies the *same* inline space as the text it replaces
  *     (the original nodes are preserved during the burn-out phase), and the
- *     card flare animates only border + box-shadow — never `filter` — so the
- *     surrounding text keeps its exact colours.
+ *     stage pass sits on the swap box instead of on the editor — on the editor
+ *     it would brighten the whole note.
+ *   - The bloom copy is stacked only while the text sits on a single line,
+ *     because a grid cell cannot break across lines the way inline text does.
  *   - The editor's DOM must come out clean. When the transition ends the
  *     wrapper elements are unwrapped and the new content is left as plain
  *     nodes, indistinguishable from a normal AI insert.
@@ -31,10 +38,13 @@
  * any unexpected error while the animation is running.
  */
 
-/* Timings are the prototype's, unchanged. The 2s card flare is CSS-only
-   (.editor-shell.is-ai-burst) and simply runs alongside these two phases. */
-const LEAVE_MS  = 360;    // burn-out
-const ARRIVE_MS = 1450;   // materialise
+/* Timings are the prototype's, unchanged. The card flare and the stage pass
+   run for the full 2s in CSS, so the box is only taken apart once they are
+   back at their resting values. */
+const LEAVE_MS  = 360;                                   // burn-out
+const ARRIVE_MS = 1450;                                  // materialise
+const FLARE_MS  = 2000;                                  // card flare + stage pass
+const SETTLE_MS = FLARE_MS - LEAVE_MS - ARRIVE_MS;       // 190
 
 /** Block-level tags: they may not stay nested inside <p>/<h1-6> after unwrap. */
 const BLOCK_TAGS = new Set([
@@ -254,7 +264,10 @@ async function runRangeSwap(editorEl, wrapper, options) {
 
     active = { editorEl, wrapper };
     try {
-        wrapper.classList.add('is-leaving');
+        // `is-burst` carries the stage pass (brightness + saturation) for the
+        // whole 2s and multiplies with the ink's own filter, exactly like the
+        // prototype's stage — but only over the text being replaced.
+        wrapper.classList.add('is-burst', 'is-leaving');
         bloom?.classList.add('is-echo-old');
         shell?.classList.add('is-ai-burst');
 
@@ -274,7 +287,7 @@ async function runRangeSwap(editorEl, wrapper, options) {
         // Counts and autosave now that the note really changed.
         notifyChange(editorEl);
 
-        await wait(ARRIVE_MS);
+        await wait(ARRIVE_MS + SETTLE_MS);
     } catch (err) {
         if (!committed && err?.message !== ABORT) {
             try {
@@ -285,7 +298,7 @@ async function runRangeSwap(editorEl, wrapper, options) {
         }
     } finally {
         const last = wrapper.isConnected ? unwrap(wrapper, editorEl) : null;
-        wrapper.classList.remove('is-leaving', 'is-arriving');
+        wrapper.classList.remove('is-burst', 'is-leaving', 'is-arriving');
         bloom?.classList.remove('is-echo-old', 'is-echo-new');
         shell?.classList.remove('is-ai-burst');
         active = null;
@@ -322,7 +335,7 @@ async function runEditorSwap(editorEl, options) {
         editorEl.classList.add('is-arriving');
         notifyChange(editorEl);
 
-        await wait(ARRIVE_MS);
+        await wait(ARRIVE_MS + SETTLE_MS);
     } catch (err) {
         if (!committed && err?.message !== ABORT) {
             try {
